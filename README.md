@@ -13,6 +13,11 @@ A transparent, movable character panel with click-through mode, reliable
 character detection, proven live memory fields, and per-field API verification
 status. Unsupported or stale readings must be visible as such.
 
+The initial target is DWM-Titus on X11 with Picom. The panel must be an unmanaged
+X11 window (`override_redirect=true`), with an explicit DWM-Titus stacking rule
+for real fullscreen. Phase 0 must verify input, focus, transparency, and visibility
+on this desktop before the UI backend is selected.
+
 Later phases cover personal combat analytics, encounter history, timers, and
 other quality-of-life features. These depend on establishing reliable sources.
 

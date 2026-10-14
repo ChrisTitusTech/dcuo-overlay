@@ -6,14 +6,45 @@ features; record that explicitly rather than marking unproven features complete.
 
 ## Phase 0: Linux and Wine feasibility
 
-Record the target machine, compositor, launcher, runtime, display mode, and game
-build. Identify the correct process and mapped executable. Prototype a bounded
-read of a known character value and a transparent overlay with click-through and
-an edit toggle. Determine a workable process-access arrangement.
+Record the target Fedora/X11 machine, running DWM-Titus build, Picom version and
+configuration, launcher, runtime, display mode, and game build. Identify the
+correct process and mapped executable. Prototype a bounded read of a known
+character value and a transparent unmanaged overlay following the SPEC.md
+DWM-Titus contract. Determine a workable process-access arrangement.
+
+Create the overlay with `override_redirect=true` before mapping and stable
+class/instance/title properties. Prove the narrow DWM-Titus `alwaysontop=1` rule,
+empty input region, reachable edit toggle, and application-owned placement and
+visibility. Test Picom fullscreen unredirection with this overlay; record any
+required configuration change and its rollback before selecting the backend.
 
 Exit: repeatable reading across three game launches and demonstrated overlay
 behavior on the target desktop. Record focus, stacking, scaling, and fullscreen
-limitations. Select the initial backend only from this evidence.
+limitations. Select the initial backend only from this evidence, with the
+following overlay checks:
+
+- Locate the panel using `xwininfo -root -tree` or a diagnostic window ID; a
+  click-through panel cannot reliably be selected by clicking it. Run
+  `xwininfo -id 0xWINDOW_ID` and require `Override Redirect State: yes` on initial
+  display, hide/show, edit entry/exit, and every recreated window.
+- Run `xprop -id 0xWINDOW_ID WM_CLASS WM_NAME _NET_WM_NAME _NET_WM_STATE` and verify
+  the stable rule identity. Inspect `_NET_WM_STATE` on the game window separately
+  and record DWM mode and geometry: neither appearance nor the fullscreen atom
+  alone distinguishes all DWM-Titus fake-fullscreen variants from real fullscreen.
+- Verify no tiling, DWM border, layout displacement, or focus-cycle entry for the
+  overlay. Test stacking in windowed, borderless, fake-fullscreen, and real
+  fullscreen modes, including refocus/restacking and rule reload. Check both
+  before and after the configured Picom unredirection delay.
+- Exercise pointer clicks, scrolling, and keyboard input over the panel in play
+  mode; the game must retain them. Enter edit mode from outside the panel, move
+  and resize it, then exit/cancel without trapped input or focus theft.
+- Switch tags and applications, minimize/restore the game, move it between
+  monitors, change resolution/scaling, and restart it. Require correct hiding,
+  reappearance, placement, and session/window rebinding without stale overlays.
+
+Automate X11 attribute/input-region and visibility-state regression checks where
+possible. A nested X server or synthetic window test does not replace live
+DWM-Titus, Picom, and Wine/Proton acceptance evidence.
 
 If either experiment fails, document the specific blocker and the next bounded
 experiment. Do not build the full UI around an unproven backend.
@@ -50,14 +81,16 @@ API responses and controlled observations without publishing personal snapshots.
 
 ## Phase 4: First usable overlay
 
-Deliver the character panel using only proven fields. Add placement persistence,
-scaling, opacity, hide/show, and click-through/edit modes. Display source and
-unavailable/stale status without overwhelming the main panel.
+Deliver the character panel using only proven fields and the Phase 0 unmanaged
+X11 backend. Add placement persistence, scaling, opacity, hide/show, and
+click-through/edit modes while retaining the DWM-Titus contract. Display source
+and unavailable/stale status without overwhelming the main panel.
 
-Exit: a full play session demonstrates focus behavior, character switching,
-reattachment, and recovery. Record CPU, memory, update latency, and game frame-time
-impact against a baseline on the target machine. Set acceptance budgets from
-Phase 0 measurements before this validation, not after seeing results.
+Exit: a full play session passes the Phase 0 overlay checks with the real panel
+and demonstrates character switching, reattachment, and recovery. Record CPU,
+memory, update latency, and game frame-time impact against a baseline on the
+target machine. Set acceptance budgets from Phase 0 measurements before this
+validation, not after seeing results.
 
 Milestone: a usable memory-backed character overlay with API cross-verification.
 
@@ -78,6 +111,8 @@ Estimates remain labeled. Group metrics and other unproven sources remain deferr
 Test the supported launcher/compositor matrix, extended sessions, scaling,
 outages, restarts, and unsupported game updates. Package the application with
 setup instructions, diagnostics, local data locations, and profile controls.
+Include the verified DWM-Titus overlay rule, identity inspection commands,
+supported fullscreen modes, and any proven Picom exception with rollback.
 
 Exit: build, formatting, lint, tests, and documented live smoke tests pass. Verify
 install/uninstall and rollback to the previous package/profile. Disable affected
