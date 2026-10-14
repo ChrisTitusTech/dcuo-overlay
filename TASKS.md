@@ -417,3 +417,9 @@ superseded by the managed companion-window decision recorded in the next entry.
   samples in the currently observed unsupported instance took 9-10 ms; a renewed
   outdoor performance comparison remains pending. Updated local gates pass
   70 workspace tests and 58 non-window tests, format and strict all-target lint.
+
+- Second independent Codex review found a repaint-timing gap at slow UI settings.
+  Live refresh is now capped at 250 ms and scheduled no later than the current
+  sample expiry; the regression test passes. The optimized companion measured
+  7.8% of one CPU core over ten seconds in the current instance. Pause/Resume
+  restored resources; the unsupported-area marker remained correctly hidden.

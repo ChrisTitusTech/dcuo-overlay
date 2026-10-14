@@ -33,6 +33,26 @@ Usage: dcuo-companion [--smoke-seconds SECONDS] [--position X Y]
   --help                  Show help.
 ";
 
+fn repaint_delay(
+    configured: Duration,
+    connected: bool,
+    observed: Option<Instant>,
+    now: Instant,
+) -> Duration {
+    let mut delay = if connected {
+        configured.min(Duration::from_millis(250))
+    } else {
+        configured
+    };
+    if let Some(observed) = observed {
+        let age = now
+            .checked_duration_since(observed)
+            .unwrap_or(Duration::from_secs(1));
+        delay = delay.min(Duration::from_secs(1).saturating_sub(age));
+    }
+    delay
+}
+
 struct Options {
     smoke: Option<Duration>,
     position: Option<(i32, i32)>,
@@ -350,7 +370,13 @@ impl eframe::App for Probe {
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        ctx.request_repaint_after(Duration::from_millis(self.preferences.poll_ms));
+        let view = self.controller.view();
+        ctx.request_repaint_after(repaint_delay(
+            Duration::from_millis(self.preferences.poll_ms),
+            view.connected,
+            view.native.as_ref().map(|sample| sample.observed_at),
+            Instant::now(),
+        ));
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let view = self.controller.view().clone();
@@ -492,7 +518,7 @@ impl eframe::App for Probe {
                     ui.label("API base URL"); ui.add(egui::TextEdit::singleline(&mut self.base).desired_width(f32::INFINITY).char_limit(2048));
                     ui.label("Reference world ID"); ui.add(egui::TextEdit::singleline(&mut self.world).char_limit(10));
                     ui.label("Local map catalog"); ui.add(egui::TextEdit::singleline(&mut self.map.catalog_path).desired_width(f32::INFINITY).char_limit(4096));
-                    ui.add(egui::Slider::new(&mut self.preferences.poll_ms, 100..=2000).text("UI refresh interval (ms)"));
+                    ui.add(egui::Slider::new(&mut self.preferences.poll_ms, 100..=2000).text("Idle UI refresh interval (ms)"));
                     ui.add_enabled(false, egui::Checkbox::new(&mut self.preferences.auto_reconnect, "Automatic reconnect - unavailable"));
                     if ui.button("Apply and save preferences").clicked() { self.save_preferences(); }
                     ui.label(&self.preference_status);
@@ -592,6 +618,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn live_repaint_never_waits_past_sample_expiry() {
+        let now = Instant::now();
+        let slow = Duration::from_secs(2);
+        assert_eq!(repaint_delay(slow, false, None, now), slow);
+        assert_eq!(
+            repaint_delay(slow, true, None, now),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            repaint_delay(slow, true, Some(now - Duration::from_millis(990)), now),
+            Duration::from_millis(10)
+        );
+        assert_eq!(
+            repaint_delay(slow, true, Some(now - Duration::from_secs(2)), now),
+            Duration::ZERO
+        );
+    }
     #[test]
     fn accepts_explicit_session_and_bounded_reference_mode() {
         let options = parse_options(args(&[

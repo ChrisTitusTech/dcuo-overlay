@@ -22,7 +22,8 @@ remain unverified. API references retain their independent source labels.
   cache hashes and image checksums. See [format and provenance](local-map-import.md).
 - The Map tab provides local browsing, live experimental markers, zoom, pan,
   fit and follow/recenter. Context, age, session changes and pause state gate the
-  marker. Unknown areas have no marker. These are overview layers; separate floors
+  marker. UI repaint timing respects sample expiry even with slow idle refresh
+  preferences. Unknown areas have no marker. These are overview layers; separate floors
   and other instances are not yet supported.
 - Settings, theme, scale, UI refresh interval and map catalog persist in XDG
   configuration. Corrupt preferences recover to defaults with an explanation.
@@ -52,7 +53,8 @@ instance: resources recovered but the marker correctly remained unavailable. War
 with the outdoor streaming array took approximately 0.22-0.24 seconds; first-sample
 schema discovery took about 1.3 seconds. The initial implementation consumed approximately 85% of one CPU core; this is
 not acceptable as a polling baseline. After bounded scatter reads, warm samples in a different indoor area took
-39-41 ms in the debug build and 9-10 ms in the optimized build. Outdoor and
+39-41 ms in the debug build and 9-10 ms in the optimized build. The optimized application used 7.8% of one CPU core in a ten-second check in
+that instance. Pause/Resume cleared and restored resources. Outdoor and
 extended-session comparison remains pending. The optimization target is warm samples
 below 50 ms and average companion CPU below 10% of one core at four samples per
 second, with fresh marker age below one second. These are provisional targets,
@@ -66,7 +68,7 @@ kept outside Git. No game memory writes, injection or gameplay automation are us
 
 The integrated slice passed `cargo fmt --all -- --check`,
 `cargo clippy --locked --workspace --all-targets -- -D warnings`,
-`cargo test --locked --workspace` (70 passed, one opt-in local import ignored),
+`cargo test --locked --workspace` (71 passed, one opt-in local import ignored),
 `cargo build --locked --workspace`, the optimized workspace build, and
 `cargo test --locked --no-default-features --lib` (58 passed).
 `xvfb-run -a python3 scripts/check_x11.py` passed two normal-window launches and
