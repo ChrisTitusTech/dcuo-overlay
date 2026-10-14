@@ -1,0 +1,627 @@
+//! Single background worker shared by all application tabs.
+use crate::{
+    api::{self, CharacterReference},
+    discovery::{NameSearch, Progress},
+    memory, process,
+};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{self, Receiver, SyncSender},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
+};
+
+#[derive(Clone, Debug)]
+pub struct ProcessChoice {
+    pub pid: i32,
+    pub start_ticks: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct BuildInfo {
+    pub pid: i32,
+    pub sha256: String,
+    pub executable_bytes: u64,
+    pub machine: u16,
+    pub header_access: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct View {
+    pub candidates: Vec<ProcessChoice>,
+    pub selected_pid: Option<i32>,
+    pub connected: bool,
+    pub busy: bool,
+    pub paused: bool,
+    pub status: String,
+    pub build: Option<BuildInfo>,
+    pub scan: Option<Progress>,
+    pub api: Option<CharacterReference>,
+    pub api_status: String,
+    pub api_fetched: Option<Instant>,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        Self {
+            candidates: Vec::new(),
+            selected_pid: None,
+            connected: false,
+            busy: false,
+            paused: false,
+            status: "Select a game session to inspect".into(),
+            build: None,
+            scan: None,
+            api: None,
+            api_status: "No reference requested".into(),
+            api_fetched: None,
+        }
+    }
+}
+
+enum Operation {
+    Refresh,
+    Connect(i32, Option<u64>),
+    Clear,
+    ResetSearch,
+    Lookup {
+        base: String,
+        name: String,
+        world: String,
+        request: u64,
+    },
+    Scan(String),
+}
+struct Command {
+    generation: u64,
+    cancel: Arc<AtomicBool>,
+    operation: Operation,
+}
+enum Update {
+    Choices(Result<Vec<ProcessChoice>, String>),
+    Connected(Result<BuildInfo, String>),
+    Reference(u64, Result<CharacterReference, String>),
+    Scan(Result<Progress, String>),
+    Done,
+    Lost,
+}
+struct Event {
+    generation: u64,
+    update: Update,
+}
+
+pub struct Controller {
+    view: View,
+    sender: SyncSender<Command>,
+    receiver: Receiver<Event>,
+    generation: Arc<AtomicU64>,
+    stopping: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+    pending: usize,
+    api_request: u64,
+    api_pending: bool,
+}
+
+impl Default for Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Controller {
+    pub fn new() -> Self {
+        let (sender, commands) = mpsc::sync_channel(8);
+        // At most eight queued commands, one active command and one lost event.
+        let (events, receiver) = mpsc::sync_channel(16);
+        let generation = Arc::new(AtomicU64::new(0));
+        let stopping = Arc::new(AtomicBool::new(false));
+        let worker_generation = generation.clone();
+        let worker_stop = stopping.clone();
+        let worker =
+            thread::spawn(move || worker_loop(commands, events, worker_generation, worker_stop));
+        let mut result = Self {
+            view: View::default(),
+            sender,
+            receiver,
+            generation,
+            stopping,
+            cancel: Arc::new(AtomicBool::new(false)),
+            worker: Some(worker),
+            pending: 0,
+            api_request: 0,
+            api_pending: false,
+        };
+        result.refresh_sessions();
+        result
+    }
+    pub fn view(&self) -> &View {
+        &self.view
+    }
+    fn epoch(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+    fn invalidate(&mut self) {
+        if self.api_pending {
+            self.view.api_status = "Reference request cancelled; look up again when ready".into();
+            self.api_pending = false;
+        }
+        self.cancel.store(true, Ordering::Release);
+        self.cancel = Arc::new(AtomicBool::new(false));
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.pending = 0;
+        self.view.busy = false;
+    }
+    fn queue(&mut self, operation: Operation) -> bool {
+        let command = Command {
+            generation: self.epoch(),
+            cancel: self.cancel.clone(),
+            operation,
+        };
+        match self.sender.try_send(command) {
+            Ok(()) => {
+                self.pending += 1;
+                self.view.busy = true;
+                true
+            }
+            Err(_) => {
+                self.view.status =
+                    "Worker queue is busy; retry when the current operation finishes".into();
+                false
+            }
+        }
+    }
+    pub fn refresh_sessions(&mut self) {
+        self.queue(Operation::Refresh);
+    }
+    pub fn connect(&mut self, pid: i32) {
+        self.begin_connect(pid, None);
+    }
+    pub fn connect_selection(&mut self, pid: i32, start_ticks: u64) {
+        self.begin_connect(pid, Some(start_ticks));
+    }
+    fn begin_connect(&mut self, pid: i32, expected_start: Option<u64>) {
+        self.invalidate();
+        let candidates = std::mem::take(&mut self.view.candidates);
+        self.view = View {
+            candidates,
+            selected_pid: Some(pid),
+            status: "Checking process, executable and read access...".into(),
+            ..View::default()
+        };
+        self.queue(Operation::Connect(pid, expected_start));
+        self.refresh_sessions();
+    }
+    pub fn disconnect(&mut self) {
+        self.invalidate();
+        let candidates = std::mem::take(&mut self.view.candidates);
+        self.view = View {
+            candidates,
+            status: "Disconnected; previous session data cleared".into(),
+            ..View::default()
+        };
+        self.queue(Operation::Clear);
+    }
+    pub fn pause(&mut self) {
+        if !self.view.connected {
+            return;
+        }
+        self.invalidate();
+        self.view.paused = true;
+        self.view.scan = None;
+        self.view.status = "Memory experiments paused; previous occurrences discarded".into();
+        self.queue(Operation::ResetSearch);
+    }
+    pub fn resume(&mut self) {
+        if !self.view.connected {
+            return;
+        }
+        self.view.paused = false;
+        self.view.status = "Session attached; no supported live character profile".into();
+    }
+    pub fn lookup_reference(&mut self, base: &str, name: &str, world: &str) {
+        self.api_request = self.api_request.wrapping_add(1);
+        self.view.api = None;
+        self.view.api_fetched = None;
+        self.view.api_status = "Fetching exact API reference...".into();
+        self.api_pending = self.queue(Operation::Lookup {
+            base: base.into(),
+            name: name.into(),
+            world: world.into(),
+            request: self.api_request,
+        });
+        if !self.api_pending {
+            self.view.api_status = "Reference request was not queued; retry when ready".into();
+        }
+    }
+    pub fn scan_name(&mut self, name: &str) {
+        if !self.view.connected || self.view.paused || self.view.busy {
+            return;
+        }
+        self.view.status = "Reading one bounded name-discovery batch...".into();
+        self.queue(Operation::Scan(name.into()));
+    }
+    pub fn poll(&mut self) {
+        while let Ok(event) = self.receiver.try_recv() {
+            if event.generation != self.epoch() {
+                continue;
+            }
+            if !matches!(event.update, Update::Lost) {
+                self.pending = self.pending.saturating_sub(1);
+            }
+            match event.update {
+                Update::Choices(Ok(choices)) => self.view.candidates = choices,
+                Update::Choices(Err(error)) => self.view.status = error,
+                Update::Connected(Ok(build)) => {
+                    self.view.connected = true;
+                    self.view.build = Some(build);
+                    self.view.status =
+                        "Read access confirmed; live character profile unsupported".into();
+                }
+                Update::Connected(Err(error)) => {
+                    self.view.connected = false;
+                    self.view.build = None;
+                    self.view.status = format!("Cannot attach: {error}");
+                }
+                Update::Reference(request, result) if request == self.api_request => {
+                    self.api_pending = false;
+                    match result {
+                        Ok(reference) => {
+                            self.view.api = Some(reference);
+                            self.view.api_fetched = Some(Instant::now());
+                            self.view.api_status = "API reference received; upstream freshness unknown; not memory verified".into();
+                        }
+                        Err(error) => self.view.api_status = error,
+                    }
+                }
+                Update::Scan(Ok(progress)) => {
+                    self.view.status = progress.status.clone();
+                    self.view.scan = Some(progress);
+                }
+                Update::Scan(Err(error)) => {
+                    self.view.scan = None;
+                    self.view.status = format!("Name experiment stopped: {error}");
+                }
+                Update::Lost => {
+                    self.disconnect();
+                    self.view.status =
+                        "Game process or executable mapping changed; all session data cleared"
+                            .into();
+                }
+                Update::Reference(_, _) | Update::Done => {}
+            }
+            self.view.busy = self.pending > 0;
+        }
+    }
+}
+impl Drop for Controller {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Release);
+        self.stopping.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn unchanged(expected: &process::Candidate) -> bool {
+    process::candidate(expected.identity.pid).is_ok_and(|current| {
+        current.identity == expected.identity && current.mapping == expected.mapping
+    })
+}
+fn check_selection(
+    identity: &process::Identity,
+    expected_start: Option<u64>,
+) -> Result<(), String> {
+    if expected_start.is_some_and(|expected| expected != identity.start_ticks) {
+        return Err("Selected process was replaced; refresh and explicitly select it again".into());
+    }
+    Ok(())
+}
+fn inspect(
+    pid: i32,
+    expected_start: Option<u64>,
+) -> Result<(process::Candidate, BuildInfo), String> {
+    let candidate = process::candidate(pid).map_err(|e| e.to_string())?;
+    check_selection(&candidate.identity, expected_start)?;
+    let metadata = process::executable_metadata(&candidate).map_err(|e| e.to_string())?;
+    let header = memory::read_exact(&candidate.identity, candidate.mapping.start, 64)
+        .map_err(|e| e.to_string())?;
+    if !metadata.matches_dos_header(&header) || !unchanged(&candidate) {
+        return Err("Mapped executable changed or header did not match".into());
+    }
+    Ok((
+        candidate,
+        BuildInfo {
+            pid,
+            sha256: metadata.sha256,
+            executable_bytes: metadata.size,
+            machine: metadata.machine,
+            header_access: true,
+        },
+    ))
+}
+fn deliver(
+    events: &SyncSender<Event>,
+    mut event: Event,
+    generation: &AtomicU64,
+    stopping: &AtomicBool,
+) {
+    loop {
+        if stopping.load(Ordering::Acquire)
+            || event.generation != generation.load(Ordering::Acquire)
+        {
+            return;
+        }
+        match events.try_send(event) {
+            Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => return,
+            Err(mpsc::TrySendError::Full(returned)) => {
+                event = returned;
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+}
+
+fn worker_loop(
+    commands: Receiver<Command>,
+    events: SyncSender<Event>,
+    generation: Arc<AtomicU64>,
+    stopping: Arc<AtomicBool>,
+) {
+    let mut attached: Option<process::Candidate> = None;
+    let mut attached_generation = 0;
+    let mut search: Option<(String, NameSearch)> = None;
+    let mut last_check = Instant::now();
+    while !stopping.load(Ordering::Acquire) {
+        let command = match commands.recv_timeout(Duration::from_millis(100)) {
+            Ok(command) => Some(command),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        if let Some(command) = command {
+            let active = || {
+                !command.cancel.load(Ordering::Acquire)
+                    && generation.load(Ordering::Acquire) == command.generation
+                    && !stopping.load(Ordering::Acquire)
+            };
+            if !active() {
+                continue;
+            }
+            let update = match command.operation {
+                Operation::Refresh => Update::Choices(
+                    process::discover()
+                        .map(|choices| {
+                            choices
+                                .into_iter()
+                                .map(|c| ProcessChoice {
+                                    pid: c.identity.pid,
+                                    start_ticks: c.identity.start_ticks,
+                                })
+                                .collect()
+                        })
+                        .map_err(|e| format!("Process discovery failed: {e}")),
+                ),
+                Operation::Connect(pid, expected_start) => {
+                    attached = None;
+                    search = None;
+                    match inspect(pid, expected_start) {
+                        Ok((candidate, info)) if active() => {
+                            attached = Some(candidate);
+                            attached_generation = command.generation;
+                            Update::Connected(Ok(info))
+                        }
+                        Ok(_) => continue,
+                        Err(error) => Update::Connected(Err(error)),
+                    }
+                }
+                Operation::Clear => {
+                    attached = None;
+                    search = None;
+                    Update::Done
+                }
+                Operation::ResetSearch => {
+                    search = None;
+                    attached_generation = command.generation;
+                    Update::Done
+                }
+                Operation::Lookup {
+                    base,
+                    name,
+                    world,
+                    request,
+                } => Update::Reference(request, api::lookup(&base, &name, &world)),
+                Operation::Scan(name) => {
+                    if let Some(candidate) = attached.as_ref().filter(|c| unchanged(c)) {
+                        let result = (|| {
+                            if search.as_ref().is_none_or(|(previous, scan)| {
+                                previous != &name || scan.progress().done
+                            }) {
+                                search = Some((
+                                    name.clone(),
+                                    NameSearch::new(candidate.identity.pid, &name)?,
+                                ));
+                            }
+                            search.as_mut().unwrap().1.step(&command.cancel)
+                        })();
+                        if result.is_err() {
+                            search = None;
+                        }
+                        Update::Scan(result)
+                    } else {
+                        Update::Lost
+                    }
+                }
+            };
+            if active() {
+                if attached.as_ref().is_some_and(|c| !unchanged(c)) {
+                    attached = None;
+                    search = None;
+                    deliver(
+                        &events,
+                        Event {
+                            generation: command.generation,
+                            update: Update::Lost,
+                        },
+                        &generation,
+                        &stopping,
+                    );
+                } else {
+                    deliver(
+                        &events,
+                        Event {
+                            generation: command.generation,
+                            update,
+                        },
+                        &generation,
+                        &stopping,
+                    );
+                }
+            }
+        }
+        if attached_generation == generation.load(Ordering::Acquire)
+            && last_check.elapsed() >= Duration::from_secs(1)
+        {
+            last_check = Instant::now();
+            if attached.as_ref().is_some_and(|c| !unchanged(c)) {
+                attached = None;
+                search = None;
+                deliver(
+                    &events,
+                    Event {
+                        generation: attached_generation,
+                        update: Update::Lost,
+                    },
+                    &generation,
+                    &stopping,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn full_event_queue_does_not_block_shutdown() {
+        let (events, _receiver) = mpsc::sync_channel(1);
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Done,
+            })
+            .unwrap();
+        let generation = Arc::new(AtomicU64::new(1));
+        let stopping = Arc::new(AtomicBool::new(false));
+        let stop_worker = stopping.clone();
+        let worker = thread::spawn(move || {
+            deliver(
+                &events,
+                Event {
+                    generation: 1,
+                    update: Update::Done,
+                },
+                &generation,
+                &stop_worker,
+            )
+        });
+        thread::sleep(Duration::from_millis(20));
+        stopping.store(true, Ordering::Release);
+        worker.join().unwrap();
+    }
+    fn offline_controller() -> (Controller, SyncSender<Event>) {
+        let (sender, _commands) = mpsc::sync_channel(8);
+        let (events, receiver) = mpsc::sync_channel(16);
+        (
+            Controller {
+                view: View::default(),
+                sender,
+                receiver,
+                generation: Arc::new(AtomicU64::new(1)),
+                stopping: Arc::new(AtomicBool::new(false)),
+                cancel: Arc::new(AtomicBool::new(false)),
+                worker: None,
+                pending: 1,
+                api_request: 2,
+                api_pending: false,
+            },
+            events,
+        )
+    }
+    #[test]
+    fn old_session_results_cannot_populate_new_session() {
+        let (mut controller, events) = offline_controller();
+        events
+            .send(Event {
+                generation: 0,
+                update: Update::Connected(Ok(BuildInfo {
+                    pid: 42,
+                    sha256: "synthetic".into(),
+                    executable_bytes: 64,
+                    machine: 0x8664,
+                    header_access: true,
+                })),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(!controller.view.connected);
+        assert!(controller.view.build.is_none());
+    }
+    #[test]
+    fn superseded_reference_error_is_ignored() {
+        let (mut controller, events) = offline_controller();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Reference(1, Err("old failure".into())),
+            })
+            .unwrap();
+        controller.poll();
+        assert_eq!(controller.view.api_status, "No reference requested");
+    }
+    #[test]
+    fn pause_cancels_pending_reference_without_leaving_loading_state() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.api_status = "Fetching exact API reference...".into();
+        controller.api_pending = true;
+        controller.pause();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Reference(2, Err("old result".into())),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.api_status.contains("cancelled"));
+        assert!(!controller.api_pending);
+        assert!(controller.view.api.is_none());
+    }
+    #[test]
+    fn selected_process_start_time_must_still_match() {
+        let identity = process::Identity {
+            pid: 42,
+            start_ticks: 900,
+        };
+        assert!(check_selection(&identity, Some(800)).is_err());
+        assert!(check_selection(&identity, Some(900)).is_ok());
+        assert!(check_selection(&identity, None).is_ok());
+    }
+    #[test]
+    fn disconnect_clears_session_results_and_cancels_work() {
+        let (mut controller, _) = offline_controller();
+        controller.view.connected = true;
+        controller.view.selected_pid = Some(42);
+        let cancel = controller.cancel.clone();
+        controller.disconnect();
+        assert!(cancel.load(Ordering::Acquire));
+        assert!(!controller.view.connected);
+        assert!(controller.view.selected_pid.is_none());
+        assert!(controller.view.scan.is_none());
+        assert!(controller.view.api.is_none());
+    }
+}
