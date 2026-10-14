@@ -4,30 +4,31 @@
 
 Planning foundation prepared. No Rust implementation, memory profile, or live
 compatibility result exists yet. Next implementation work is Phase 0.
-The initial desktop target is Fedora/X11 with DWM-Titus and Picom; the overlay
-must be unmanaged. This is a requirement, not a verified runtime capability.
+The initial desktop target is Fedora/X11 with DWM-Titus. The application is a
+normal managed companion window on another monitor from the game. This replaces
+the earlier overlay design and remains unverified at runtime.
 
 ## Planning
 
 - [x] Inspect the existing API contract and cache behavior.
 - [x] Review DCUO-Assistant for feature inspiration.
 - [x] Document scope, source limitations, architecture, and phased acceptance criteria.
-- [x] Specify the unmanaged X11/DWM-Titus contract and its acceptance checks.
+- [x] Specify the managed X11 companion-window contract and two-monitor acceptance checks.
 - [ ] Resolve remaining desktop/launcher details and initial feature priorities.
 - [ ] Select a project license before application code is distributed.
 
 ## Phase 0
 
-- [ ] Record running DWM-Titus/Picom revisions, configuration, monitors/scaling, and game display mode.
+- [ ] Record running DWM-Titus revision, monitor layout/scaling, companion monitor/tag, and game display mode.
 - [ ] Record launcher, Wine/Proton version, executable build, and architecture.
 - [ ] Identify the correct process and establish a bounded read-only access path.
 - [ ] Demonstrate a known character value across three launches.
-- [ ] Prove `override_redirect=true` before first map and after edit/hide/show/recreation.
-- [ ] Verify stable X11 identities and the narrow DWM-Titus fullscreen stacking rule.
-- [ ] Prove alpha transparency with Picom, including fullscreen unredirection behavior.
-- [ ] Prove click-through, no focus theft, and a reachable edit toggle with input recovery.
-- [ ] Validate windowed, borderless, fake-fullscreen, and real fullscreen stacking.
-- [ ] Validate app-owned placement/visibility across tags, focus, monitors, and game restart.
+- [ ] Prove `override_redirect=false`, normal window type, and DWM management across recreation.
+- [ ] Verify stable X11 identities and monitor/tag placement, including relaunch.
+- [ ] Prove ordinary input, resizing/tiling, focus cycling, and no focus theft from updates.
+- [ ] Validate visible updates on the other monitor during windowed and fullscreen gameplay.
+- [ ] Validate independent window visibility and session status across game focus/exit/restart.
+- [ ] Validate scaling, monitor-disconnection recovery, and rendering with/without Picom.
 - [ ] Record findings, performance baselines/budgets, backend decision, and blockers.
 
 ## Phase 1
@@ -56,8 +57,8 @@ must be unmanaged. This is a requirement, not a verified runtime capability.
 ## Phase 4
 
 - [ ] Implement the proven character panel and data-status display.
-- [ ] Add saved placement, scaling, opacity, hide/show, and edit controls.
-- [ ] Preserve the unmanaged X11 contract and repeat Phase 0 checks with the real panel.
+- [ ] Add responsive layout, adjustable UI scaling, and saved UI preferences.
+- [ ] Preserve normal DWM management and repeat Phase 0 checks with the real panel.
 - [ ] Validate full-session use and recovery on the target desktop.
 - [ ] Measure overhead against the agreed Phase 0 budgets.
 
@@ -72,7 +73,7 @@ must be unmanaged. This is a requirement, not a verified runtime capability.
 
 - [ ] Complete the supported environment matrix and extended-session tests.
 - [ ] Package and document setup, local storage, and diagnostics.
-- [ ] Document verified DWM-Titus/Picom setup, supported modes, and configuration rollback.
+- [ ] Document DWM-Titus monitor/tag setup, display recovery, and configuration rollback.
 - [ ] Validate installation, removal, rollback, and unsupported-build behavior.
 - [ ] Complete release checks; publish only with explicit authorization.
 
@@ -82,7 +83,10 @@ No implementation validation has run. Add dated entries per phase with commit,
 environment, checks, observed results, and unresolved limitations. Do not mark
 tasks complete solely because code was written.
 
-### 2026-10-13: DWM-Titus planning review
+### 2026-10-13: DWM-Titus overlay planning review (superseded)
+
+Historical evidence for commit `c2a3457`. The overlay requirements below were
+superseded by the managed companion-window decision recorded in the next entry.
 
 - Read-only inspection found Fedora 44, `XDG_SESSION_TYPE=x11`, a running `dwm`
   process, and `picom --backend glx`. The installed `dwm -v` reports `dwm-0.7.2`;
@@ -99,3 +103,17 @@ tasks complete solely because code was written.
   the four added external references passed. Scope/acceptance consistency was
   reviewed across SPEC.md, ROADMAP.md, TASKS.md, and README.md. Rust build/lint/test
   gates are not applicable until a package exists; live checks need the prototype.
+
+### 2026-10-13: Managed companion-window plan
+
+- Replaced the overlay scope with a normal DWM-managed X11 window on a separate
+  monitor, at the user's request. DWM owns window placement, tags, and focus.
+- Removed active transparency, click-through/edit-mode, fullscreen stacking, and
+  game-relative visibility requirements. Added independent session-status display,
+  normal input, two-monitor operation, and monitor-disconnection recovery checks.
+- The actual companion monitor/tag and startup rule remain Phase 0 setup choices.
+  No application code or desktop configuration changed; live validation is pending.
+- Documentation checks passed for whitespace, ASCII, code fences, and relative
+  links. Reviewed all six repository documents for consistent scope; obsolete
+  requirements remain only as explicitly superseded history or exclusions.
+  Rust build/lint/test gates remain inapplicable until a package exists.

@@ -9,7 +9,8 @@ implementation and record any scope changes explicitly.
 Phase 1 will select and record a supported Rust toolchain, system dependencies,
 and the actual application run command. Do not assume every Wine launcher or
 Wayland compositor is supported. Live validation needs access to the intended
-Linux desktop and a running DCUO session.
+Linux desktop, two monitors for the primary companion-window setup, and a running
+DCUO session.
 
 ## Validation
 
@@ -28,7 +29,7 @@ repository. Add feature-specific checks as needed. UI and memory changes also
 need the applicable live acceptance evidence from ROADMAP.md.
 
 Report failed or skipped gates and their blockers. Do not use synthetic fixtures
-as proof that live memory layouts or desktop overlay behavior work.
+as proof that live memory layouts or managed companion-window behavior work.
 
 ## Changes and publication
 
