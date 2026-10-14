@@ -152,6 +152,11 @@ impl Catalog {
         }
     }
 }
+pub(crate) fn catalog_directory(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+}
 pub fn load_catalog(path: &Path) -> Result<Catalog, String> {
     let data = bounded_read(path, CATALOG_LIMIT)?;
     let catalog: Catalog =
@@ -166,7 +171,7 @@ pub fn load_catalog(path: &Path) -> Result<Catalog, String> {
         if !contexts.insert(&entry.context) || !ids.insert(&entry.id) {
             return Err("Duplicate map identity or ambiguous context".into());
         }
-        confined_asset(entry, path.parent().unwrap_or(Path::new(".")))?;
+        confined_asset(entry, catalog_directory(path))?;
     }
     Ok(catalog)
 }
@@ -352,6 +357,22 @@ mod tests {
             affine: [1., 0., 0., 0., 1., 0.],
             world_bounds: [0., 0., 100., 100.],
         }
+    }
+    #[test]
+    fn catalog_parent_handles_bare_filenames_and_nested_paths() {
+        assert_eq!(catalog_directory(Path::new("catalog.json")), Path::new("."));
+        assert_eq!(
+            catalog_directory(Path::new("./catalog.json")),
+            Path::new(".")
+        );
+        assert_eq!(
+            catalog_directory(Path::new("maps/catalog.json")),
+            Path::new("maps")
+        );
+        assert_eq!(
+            catalog_directory(Path::new("/maps/catalog.json")),
+            Path::new("/maps")
+        );
     }
     #[test]
     fn fits_inverted_rotated_landmarks() {

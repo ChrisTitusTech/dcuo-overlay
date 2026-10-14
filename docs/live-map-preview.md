@@ -45,10 +45,18 @@ and CPU image memory.
 
 A paired live observation at the Old Gotham Subway entrance in Gotham placed the
 companion marker at the same edge and neighboring buildings as the game's marker.
-Zoom and Follow were exercised in the real companion window. Warm native samples
+Zoom and Follow were exercised in the real companion window. The user then
+confirmed that normal movement is tracked in the correct place. A live Pause
+check removed the marker immediately. The game then changed to an unsupported
+instance: resources recovered but the marker correctly remained unavailable. Warm native samples
 with the outdoor streaming array took approximately 0.22-0.24 seconds; first-sample
-schema discovery took about 1.3 seconds. These observations do not establish an
-extended-session performance bound. Indoor artwork matches the in-game layout;
+schema discovery took about 1.3 seconds. The initial implementation consumed approximately 85% of one CPU core; this is
+not acceptable as a polling baseline. After bounded scatter reads, warm samples in a different indoor area took
+39-41 ms in the debug build and 9-10 ms in the optimized build. Outdoor and
+extended-session comparison remains pending. The optimization target is warm samples
+below 50 ms and average companion CPU below 10% of one core at four samples per
+second, with fresh marker age below one second. These are provisional targets,
+not passed acceptance or an extended-session performance bound. Indoor artwork matches the in-game layout;
 indoor live-marker accuracy still needs an independently paired observation.
 
 Personal screenshots, coordinates, memory observations and imported assets are
@@ -58,17 +66,18 @@ kept outside Git. No game memory writes, injection or gameplay automation are us
 
 The integrated slice passed `cargo fmt --all -- --check`,
 `cargo clippy --locked --workspace --all-targets -- -D warnings`,
-`cargo test --locked --workspace` (65 passed, one opt-in local import ignored),
-`cargo build --locked --workspace`, and
-`cargo test --locked --no-default-features --lib` (53 passed).
+`cargo test --locked --workspace` (70 passed, one opt-in local import ignored),
+`cargo build --locked --workspace`, the optimized workspace build, and
+`cargo test --locked --no-default-features --lib` (58 passed).
 `xvfb-run -a python3 scripts/check_x11.py` passed two normal-window launches and
-clean exits. The opt-in importer was separately exercised twice with installed
+clean exits. Rust 1.95 minimum-version check and strict all-target Clippy also
+passed. The opt-in importer was separately exercised twice with installed
 assets; private results are not fixtures. Independent review and remote CI are
 recorded in the PR rather than inferred from these local checks.
 
 ## Remaining acceptance
 
-- User movement comparison and multiple independent landmarks in both areas.
+- Multiple independent landmarks in both areas and indoor movement comparison.
 - Indoor/outdoor switching, repeated instance entry, floor/teleport behavior and
   three fresh game launches, including unsupported-build rejection.
 - Current-character identity binding and per-field semantic/API comparisons.

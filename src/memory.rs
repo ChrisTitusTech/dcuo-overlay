@@ -2,6 +2,8 @@
 use crate::process::{self, Identity, Mapping};
 use std::{fmt, io};
 pub const MAX_READ_BYTES: usize = 4096;
+pub const MAX_SCATTER_RANGES: usize = 128;
+pub const MAX_SCATTER_BYTES: usize = 65536;
 #[derive(Debug)]
 pub enum ReadError {
     InvalidRequest,
@@ -84,6 +86,84 @@ pub fn read_exact(identity: &Identity, address: usize, len: usize) -> Result<Vec
     finish(result, len, matches)?;
     Ok(bytes)
 }
+fn scatter_size(ranges: &[(usize, usize)]) -> Result<usize, ReadError> {
+    if ranges.is_empty() || ranges.len() > MAX_SCATTER_RANGES {
+        return Err(ReadError::InvalidRequest);
+    }
+    let mut total = 0usize;
+    for &(address, len) in ranges {
+        if address == 0 || len == 0 || len > MAX_READ_BYTES || address.checked_add(len).is_none() {
+            return Err(ReadError::InvalidRequest);
+        }
+        total = total.checked_add(len).ok_or(ReadError::InvalidRequest)?;
+        if total > MAX_SCATTER_BYTES {
+            return Err(ReadError::InvalidRequest);
+        }
+    }
+    Ok(total)
+}
+fn finish_scatter(
+    result: io::Result<usize>,
+    total: usize,
+    identity_matches: bool,
+    buffers: Vec<Vec<u8>>,
+) -> Result<Vec<Vec<u8>>, ReadError> {
+    finish(result, total, identity_matches)?;
+    Ok(buffers)
+}
+/// Read at most 128 separately bounded ranges in one read-only syscall.
+/// Fresh mappings validate every range. A partial batch or changed PID discards
+/// every buffer, including ranges the kernel may have copied successfully.
+pub fn read_scatter(
+    identity: &Identity,
+    ranges: &[(usize, usize)],
+) -> Result<Vec<Vec<u8>>, ReadError> {
+    let total = scatter_size(ranges)?;
+    if process::identity(identity.pid).ok().as_ref() != Some(identity) {
+        return Err(ReadError::IdentityChanged);
+    }
+    let maps = process::mappings(identity.pid).map_err(ReadError::Metadata)?;
+    for &(address, len) in ranges {
+        validate(address, len, &maps)?;
+    }
+    let mut buffers: Vec<Vec<u8>> = ranges.iter().map(|(_, len)| vec![0; *len]).collect();
+    let local: Vec<libc::iovec> = buffers
+        .iter_mut()
+        .map(|bytes| libc::iovec {
+            iov_base: bytes.as_mut_ptr().cast(),
+            iov_len: bytes.len(),
+        })
+        .collect();
+    let remote: Vec<libc::iovec> = ranges
+        .iter()
+        .map(|(address, len)| libc::iovec {
+            iov_base: *address as *mut libc::c_void,
+            iov_len: *len,
+        })
+        .collect();
+    // SAFETY: each local iovec points at a distinct allocated buffer which is
+    // neither resized nor moved during the call. Both arrays contain the same
+    // bounded number of valid iovecs. All foreign ranges were checked against
+    // fresh readable mappings; only the kernel dereferences remote addresses.
+    let count = unsafe {
+        libc::process_vm_readv(
+            identity.pid,
+            local.as_ptr(),
+            local.len() as _,
+            remote.as_ptr(),
+            remote.len() as _,
+            0,
+        )
+    };
+    let result = if count < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(count as usize)
+    };
+    let matches = process::identity(identity.pid).ok().as_ref() == Some(identity);
+    finish_scatter(result, total, matches, buffers)
+}
+
 /// Larger read path exclusively for bounded discovery. Callers periodically
 /// revalidate the exact mapping; PID identity is checked around every read.
 pub(crate) fn read_discovery(
@@ -150,6 +230,71 @@ mod tests {
             inode: 0,
             path: None,
         }
+    }
+    #[test]
+    fn synthetic_scatter_preserves_range_order() {
+        let first = [1u8, 2, 3];
+        let second = [4u8, 5];
+        let identity = process::identity(std::process::id() as i32).unwrap();
+        let ranges = [
+            (second.as_ptr() as usize, second.len()),
+            (first.as_ptr() as usize, first.len()),
+        ];
+        assert_eq!(
+            read_scatter(&identity, &ranges).unwrap(),
+            vec![second.to_vec(), first.to_vec()]
+        );
+    }
+    #[test]
+    fn scatter_bounds_ranges_and_reused_pid_fail_closed() {
+        let identity = process::identity(std::process::id() as i32).unwrap();
+        assert_eq!(
+            scatter_size(&vec![(1, 1); MAX_SCATTER_RANGES]).unwrap(),
+            MAX_SCATTER_RANGES
+        );
+        assert_eq!(
+            scatter_size(&[(1, MAX_READ_BYTES); 16]).unwrap(),
+            MAX_SCATTER_BYTES
+        );
+        for ranges in [
+            vec![],
+            vec![(1, 0)],
+            vec![(0, 1)],
+            vec![(usize::MAX, 2)],
+            vec![(1, 4097)],
+            vec![(1, 1); 129],
+            vec![(1, 4096); 17],
+        ] {
+            assert!(matches!(
+                read_scatter(&identity, &ranges),
+                Err(ReadError::InvalidRequest)
+            ));
+        }
+        assert!(matches!(
+            read_scatter(&identity, &[(1, 4)]),
+            Err(ReadError::UnreadableRange)
+        ));
+        let mut reused = identity;
+        reused.start_ticks += 1;
+        assert!(matches!(
+            read_scatter(&reused, &[(1, 4)]),
+            Err(ReadError::IdentityChanged)
+        ));
+    }
+    #[test]
+    fn partial_scatter_discards_even_completed_buffers() {
+        assert!(matches!(
+            finish_scatter(Ok(4), 8, true, vec![vec![1; 4], vec![0; 4]]),
+            Err(ReadError::Partial {
+                requested: 8,
+                received: 4
+            })
+        ));
+        assert!(matches!(
+            finish_scatter(Ok(8), 8, false, vec![vec![1; 4], vec![2; 4]]),
+            Err(ReadError::IdentityChanged)
+        ));
+        assert!(finish_scatter(Ok(8), 8, true, vec![vec![1; 4], vec![2; 4]]).is_ok());
     }
     #[test]
     fn request_boundaries() {

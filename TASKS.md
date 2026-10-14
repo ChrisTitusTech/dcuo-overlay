@@ -68,6 +68,10 @@ as PR #1; current map work is being validated for the next authorized PR.
   while following, an explicit Browse/current-area mode, larger usable map canvas,
   and regressions for stale/unavailable context. Experimental markers must never
   be labeled verified. Lead owns application wiring and live acceptance.
+- Follow-up `native_reader` owns `src/memory.rs` and `src/native.rs`: reduce
+  measured polling overhead with bounded scatter reads, preserving process
+  identity, readable-range, partial-read and sample-generation checks. Synthetic
+  self-process tests only; lead measures real sampling cost. No session/UI edits.
 - Lead owns public module wiring, dependency selection, CI,
   live discovery, documentation and final validation. No worker live reads,
   commits or nested workers. Research source offsets failed the current build;
@@ -401,3 +405,15 @@ superseded by the managed companion-window decision recorded in the next entry.
   Format, strict all-target lint, 65 workspace tests, 53 non-window tests, build
   and two nested-X startup/shutdown checks passed. One local-asset test is opt-in
   and was separately run twice. Independent review is in progress.
+
+- The user confirmed the live Gotham marker follows movement in the correct place.
+
+- Independent Codex review found three actionable defects: name-search progress
+  reset on native errors, bare catalog paths, and timestamps assigned after
+  validation. Fixed all three with relevant regression checks. The supplemental
+  CodeRabbit invocation could not start; it is not a required repository gate.
+- Added bounded scatter reads to reduce polling cost while preserving fresh
+  mapping/PID checks and all-or-nothing partial-read handling. Warm optimized
+  samples in the currently observed unsupported instance took 9-10 ms; a renewed
+  outdoor performance comparison remains pending. Updated local gates pass
+  70 workspace tests and 58 non-window tests, format and strict all-target lint.

@@ -275,6 +275,33 @@ impl Reader {
         memory::read_discovery(&self.candidate.identity, mapping, address, size)
             .map_err(|e| e.to_string())
     }
+    fn read_scatter(&self, ranges: &[(usize, usize)]) -> Result<Vec<Vec<u8>>, String> {
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|token| token.load(Ordering::Acquire))
+        {
+            return Err("Experimental read cancelled".into());
+        }
+        let bytes = ranges
+            .iter()
+            .try_fold(0usize, |sum, (_, len)| sum.checked_add(*len))
+            .ok_or("Experimental scatter byte overflow")?;
+        if self.scope_start.get().elapsed() > std::time::Duration::from_secs(3)
+            || self
+                .scope_bytes
+                .get()
+                .checked_add(bytes)
+                .is_none_or(|total| total > 2 * 1024 * 1024)
+        {
+            return Err("Experimental sample exceeded time or byte budget".into());
+        }
+        self.scope_bytes.set(self.scope_bytes.get() + bytes);
+        self.scope_reads.set(self.scope_reads.get() + 1);
+        // The scatter helper obtains fresh mappings for every batch and checks
+        // process identity around the whole syscall, discarding partial batches.
+        memory::read_scatter(&self.candidate.identity, ranges).map_err(|error| error.to_string())
+    }
     fn ptr(&self, address: usize) -> Result<usize, String> {
         pointer(u64_at(&self.read(address, 8)?, 0)?)
     }
@@ -537,24 +564,27 @@ impl Reader {
         let mut packages = Vec::new();
         let mut seen = HashSet::new();
         let mut validated_classes = HashSet::new();
-        for address in &members {
-            if !seen.insert(*address) {
-                return Err("Duplicate streaming object membership".into());
-            }
-            let object = self.read(*address, 0x88)?;
-            let class = pointer(u64_at(&object, 0x4c)?)?;
-            if validated_classes.insert(class) {
-                self.area_schema(class, false)?;
-            }
-            let loaded = u64_at(&object, 0x64)?;
-            if loaded == 0 || u32_at(&object, 0x84)? & 1 == 0 {
-                continue;
-            }
-            let loaded = pointer(loaded)?;
-            let package = self.name(u32_at(&object, 0x5c)?)?;
-            if area_signal(&package, u32_at(&object, 0x60)?)? {
-                signals.push((*address, u32_at(&object, 8)?, loaded, package.clone()));
-                packages.push(package);
+        for batch in members.chunks(memory::MAX_SCATTER_RANGES) {
+            let ranges: Vec<_> = batch.iter().map(|address| (*address, 0x88)).collect();
+            let objects = self.read_scatter(&ranges)?;
+            for (address, object) in batch.iter().zip(objects) {
+                if !seen.insert(*address) {
+                    return Err("Duplicate streaming object membership".into());
+                }
+                let class = pointer(u64_at(&object, 0x4c)?)?;
+                if validated_classes.insert(class) {
+                    self.area_schema(class, false)?;
+                }
+                let loaded = u64_at(&object, 0x64)?;
+                if loaded == 0 || u32_at(&object, 0x84)? & 1 == 0 {
+                    continue;
+                }
+                let loaded = pointer(loaded)?;
+                let package = self.name(u32_at(&object, 0x5c)?)?;
+                if area_signal(&package, u32_at(&object, 0x60)?)? {
+                    signals.push((*address, u32_at(&object, 8)?, loaded, package.clone()));
+                    packages.push(package);
+                }
             }
         }
         // Recheck membership and header after traversal. Loaded/visible fields are
@@ -619,6 +649,7 @@ impl Reader {
             Err(error) => error.clone(),
         };
         before.area = area.ok();
+        let observed_at = Instant::now();
         let bytes = self.read(add(pawn, 0xd0)?, 12)?;
         let position = [float(&bytes, 0)?, float(&bytes, 4)?, float(&bytes, 8)?];
         let bytes = self.read(add(pawn, 0x5f4)?, 16)?;
@@ -647,7 +678,7 @@ impl Reader {
             outer_package: before.package.clone(),
             area_key: before.area.as_ref().and_then(|area| area.key.clone()),
             area_status,
-            observed_at: Instant::now(),
+            observed_at,
             owner: before,
         })
     }
@@ -759,6 +790,18 @@ mod tests {
         reader.scope_start.set(Instant::now());
         reader.scope_bytes.set(2 * 1024 * 1024);
         assert!(reader.read(0x10000, 4).unwrap_err().contains("budget"));
+        assert!(
+            reader
+                .read_scatter(&[(0x10000, 4)])
+                .unwrap_err()
+                .contains("budget")
+        );
+        reader.scope_bytes.set(0);
+        reader.set_cancel(Arc::new(AtomicBool::new(true)));
+        assert_eq!(
+            reader.read_scatter(&[(0x10000, 4)]).unwrap_err(),
+            "Experimental read cancelled"
+        );
     }
     #[test]
     fn pointers_and_arithmetic_fail_closed() {

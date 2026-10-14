@@ -53,7 +53,7 @@ impl MapView {
                         maps::load_catalog(&path).map(|catalog| {
                             Loaded::Catalog(
                                 catalog,
-                                path.parent().unwrap_or(std::path::Path::new(".")).into(),
+                                maps::catalog_directory(&path).into(),
                             )
                         }),
                     ),

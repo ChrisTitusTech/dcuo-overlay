@@ -347,7 +347,6 @@ impl Controller {
                                 self.view.location_generation =
                                     self.view.location_generation.wrapping_add(1);
                             }
-                            self.view.scan = None;
                             self.view.native_status =
                                 format!("Experimental physics unavailable: {error}");
                         }
@@ -684,8 +683,6 @@ fn worker_loop(
                     search = None;
                 }
                 last_owner = Some(sample.clone());
-            } else {
-                search = None;
             }
             deliver(
                 &events,
@@ -876,6 +873,33 @@ mod tests {
         assert!(controller.view.native.is_some());
         assert_eq!(controller.pending, 1);
         assert!(controller.view.busy);
+    }
+    #[test]
+    fn unavailable_native_profile_preserves_independent_name_progress() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.scan = Some(Progress {
+            bytes_scanned: 4096,
+            total_bytes: 8192,
+            utf8_hits: 0,
+            utf16_hits: 0,
+            candidate_count: 0,
+            done: false,
+            status: "Searching".into(),
+            observed_name: None,
+        });
+        for _ in 0..3 {
+            events
+                .send(Event {
+                    generation: 1,
+                    update: Update::Native(Err("Unsupported executable".into())),
+                })
+                .unwrap();
+            controller.poll();
+            assert_eq!(controller.view.scan.as_ref().unwrap().bytes_scanned, 4096);
+        }
+        controller.disconnect();
+        assert!(controller.view.scan.is_none());
     }
     #[test]
     fn stale_and_failed_samples_remove_values() {
