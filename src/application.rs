@@ -258,7 +258,16 @@ struct Probe {
 
 impl Probe {
     fn new(options: Options, name: String) -> Self {
-        let (mut preferences, warning) = settings::load();
+        let (preferences, warning) = settings::load();
+        Self::with_preferences(options, name, preferences, warning)
+    }
+
+    fn with_preferences(
+        options: Options,
+        name: String,
+        mut preferences: Settings,
+        warning: Option<String>,
+    ) -> Self {
         if options.world_explicit {
             preferences.world = options.world.clone();
         }
@@ -270,6 +279,7 @@ impl Probe {
             map.load();
         }
         let mut controller = Controller::new();
+        controller.set_auto_reconnect(preferences.auto_reconnect);
         if let Some(pid) = options.pid {
             controller.connect(pid);
         }
@@ -304,7 +314,6 @@ impl Probe {
         self.preferences.world = self.world.clone();
         self.preferences.ui_scale = self.scale;
         self.preferences.map_catalog = self.map.catalog_path.clone();
-        self.preferences.auto_reconnect = false;
         self.preference_status = if self.smoke.is_some() {
             "Smoke mode: preferences are not saved.".into()
         } else {
@@ -324,6 +333,18 @@ impl Drop for Probe {
             }
         }
     }
+}
+
+fn sanitized_session_diagnostics(view: &crate::session::View) -> String {
+    format!(
+        "DCUO Companion {}\nBackend: managed X11 / OpenGL\nConnection: {}\nPaused: {}\nHeader evidence available: {}\nAPI reference available: {}\nNative profile: experimental physics/resource chain v1\nFresh native sample available: {}\nLive character identity: unverified\nTrusted live location: unavailable\n",
+        env!("CARGO_PKG_VERSION"),
+        view.connected,
+        view.paused,
+        view.build.is_some(),
+        view.api.is_some(),
+        view.native.is_some()
+    )
 }
 
 fn row(ui: &mut egui::Ui, label: &str, value: impl std::fmt::Display) {
@@ -351,7 +372,16 @@ impl eframe::App for Probe {
         }
         self.map.poll(ctx);
         self.controller.poll();
-        if self.selected.is_none() && self.controller.view().connected {
+        if self.controller.view().connected
+            && self.selected.is_none_or(|selected| {
+                !self
+                    .controller
+                    .view()
+                    .candidates
+                    .iter()
+                    .any(|candidate| (candidate.pid, candidate.start_ticks) == selected)
+            })
+        {
             self.selected = self
                 .controller
                 .view()
@@ -380,6 +410,12 @@ impl eframe::App for Probe {
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let view = self.controller.view().clone();
+        self.draw(ui, &view);
+    }
+}
+
+impl Probe {
+    fn draw(&mut self, ui: &mut egui::Ui, view: &crate::session::View) {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -393,7 +429,7 @@ impl eframe::App for Probe {
                     });
                     if ui.add_enabled(!view.busy, egui::Button::new("Refresh processes")).clicked() { self.controller.refresh_sessions(); }
                     if ui.add_enabled(self.selected.is_some() && !view.busy, egui::Button::new("Connect")).clicked() { let (pid, start) = self.selected.unwrap(); self.controller.connect_selection(pid, start); }
-                    if ui.add_enabled(view.connected || view.busy, egui::Button::new("Disconnect")).clicked() { self.controller.disconnect(); self.startup_scan = false; }
+                    if ui.add_enabled(view.connected || view.busy || self.controller.is_recovering(), egui::Button::new("Disconnect")).clicked() { self.controller.disconnect(); self.startup_scan = false; }
                     if view.connected && ui.button(if view.paused { "Resume" } else { "Pause" }).clicked() {
                         if view.paused { self.controller.resume(); } else { self.controller.pause(); }
                     }
@@ -477,6 +513,7 @@ impl eframe::App for Probe {
                             valid: view.connected && !view.paused,
                         }));
                         self.map.ui(ui, sample.as_ref(), Some(MarkerGate {
+                            profile: Some(crate::native::PROFILE_ID),
                             session_generation: view.location_generation,
                             zone_generation: view.location_generation,
                             paused: view.paused,
@@ -505,7 +542,7 @@ impl eframe::App for Probe {
                         ui.label("Normal managed window; exact identity checked before mapping. DWM controls placement and focus.");
                         ui.label(format!("Uptime: {:.0}s", self.started.elapsed().as_secs_f64()));
                         ui.separator(); ui.heading("Sanitized diagnostic preview");
-                        let diagnostic = format!("DCUO Companion {}\nBackend: managed X11 / OpenGL\nConnection: {}\nPaused: {}\nHeader evidence available: {}\nAPI reference available: {}\nNative profile: experimental physics/resource chain v1\nFresh native sample available: {}\nLive character identity: unverified\nTrusted live location: unavailable\n", env!("CARGO_PKG_VERSION"), view.connected, view.paused, view.build.is_some(), view.api.is_some(), view.native.is_some());
+                        let diagnostic = format!("{}{}", sanitized_session_diagnostics(view), self.map.sanitized_diagnostics(Some(crate::native::PROFILE_ID)));
                         ui.monospace(&diagnostic);
                         if ui.button("Copy sanitized diagnostics").clicked() { ui.ctx().copy_text(diagnostic); }
                     }
@@ -519,8 +556,23 @@ impl eframe::App for Probe {
                     ui.label("Reference world ID"); ui.add(egui::TextEdit::singleline(&mut self.world).char_limit(10));
                     ui.label("Local map catalog"); ui.add(egui::TextEdit::singleline(&mut self.map.catalog_path).desired_width(f32::INFINITY).char_limit(4096));
                     ui.add(egui::Slider::new(&mut self.preferences.poll_ms, 100..=2000).text("Idle UI refresh interval (ms)"));
-                    ui.add_enabled(false, egui::Checkbox::new(&mut self.preferences.auto_reconnect, "Automatic reconnect - unavailable"));
+                    if ui.checkbox(&mut self.preferences.auto_reconnect, "Reconnect after the game restarts").changed() {
+                        self.controller.set_auto_reconnect(self.preferences.auto_reconnect);
+                    }
+                    ui.small("Optional: reconnect only to one matching game build after a connection is lost. Disconnect cancels recovery; this does not launch the game.");
                     if ui.button("Apply and save preferences").clicked() { self.save_preferences(); }
+                    if ui.button("Reset preferences to defaults").clicked() {
+                        self.preferences = Settings::default();
+                        self.base = self.preferences.api_base.clone();
+                        self.world = self.preferences.world.clone();
+                        self.scale = self.preferences.ui_scale;
+                        self.map = MapView::new(String::new());
+                        self.controller.set_auto_reconnect(false);
+                        ui.ctx().set_zoom_factor(self.scale);
+                        ui.ctx().set_visuals(egui::Visuals::dark());
+                        self.save_preferences();
+                    }
+                    ui.small("Reset clears preferences; imported map files are kept.");
                     ui.label(&self.preference_status);
                 }
                 if self.about {
@@ -604,6 +656,85 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    // Replay presentation only: no PID, name lookup, persisted preferences, or
+    // process attachment. Backend generation/expiry tests live in session/maps.
+    #[test]
+    fn offline_presentation_replay_at_supported_scales() {
+        let mut app = Probe::with_preferences(
+            Options {
+                smoke: Some(Duration::from_secs(1)),
+                ..Options::default()
+            },
+            String::new(),
+            Settings::default(),
+            None,
+        );
+        app.settings = true;
+        app.about = true;
+        let mut states = vec![crate::session::View::default()];
+        let loading = crate::session::View {
+            busy: true,
+            status: "Synthetic loading".into(),
+            ..Default::default()
+        };
+        states.push(loading);
+        states.push(crate::session::View {
+            connected: true,
+            paused: true,
+            status: "Synthetic paused".into(),
+            ..Default::default()
+        });
+        states.push(crate::session::View {
+            api_status: "Reference service unavailable".into(),
+            native_status: "Sample expired".into(),
+            ..Default::default()
+        });
+        let mut sample = crate::native::Sample::synthetic(1);
+        sample.area_status = "Unsupported synthetic area".into();
+        states.push(crate::session::View {
+            connected: true,
+            native: Some(sample),
+            ..Default::default()
+        });
+        for scale in [0.75, 1.0, 2.0] {
+            let ctx = egui::Context::default();
+            ctx.set_zoom_factor(scale);
+            for view in &states {
+                for tab in [Tab::Character, Tab::Map, Tab::Diagnostics] {
+                    app.tab = tab;
+                    let mut output = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(640.0 / scale, 480.0 / scale),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| app.draw(ui, view),
+                    );
+                    assert!(!output.shapes.is_empty());
+                    output.textures_delta.clear();
+                    assert!(!app.controller.view().connected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exported_diagnostics_exclude_session_identifiers_and_errors() {
+        let view = crate::session::View {
+            selected_pid: Some(123456789),
+            status: "PRIVATE status with URL and character".into(),
+            api_status: "PRIVATE api error".into(),
+            native_status: "PRIVATE coordinates".into(),
+            ..Default::default()
+        };
+        let output = sanitized_session_diagnostics(&view);
+        assert!(!output.contains("PRIVATE"));
+        assert!(!output.contains("123456789"));
+        assert!(output.contains("Live character identity: unverified"));
     }
 
     #[test]

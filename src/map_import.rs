@@ -12,6 +12,10 @@ use std::{
         unix::fs::{DirBuilderExt, OpenOptionsExt},
     },
     path::{Component, Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -20,6 +24,78 @@ const DECODE_LIMIT: usize = 32 * 1024 * 1024;
 const REMAP_LIMIT: usize = 8 * 1024 * 1024;
 const TILE_LIMIT: usize = 1024 * 1024;
 const MAGIC: u32 = 0x9e2a83c1;
+
+/// Cooperative cancellation shared by the UI and its import worker.
+#[derive(Clone, Debug, Default)]
+pub struct ImportCancellation(Arc<AtomicBool>);
+impl ImportCancellation {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+    fn checkpoint(&self) -> Result<(), String> {
+        if self.is_cancelled() {
+            Err("Map import cancelled".into())
+        } else {
+            Ok(())
+        }
+    }
+}
+struct CancellableFile<'a> {
+    file: File,
+    cancellation: &'a ImportCancellation,
+}
+impl Write for CancellableFile<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.cancellation
+            .checkpoint()
+            .map_err(std::io::Error::other)?;
+        self.file.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.cancellation
+            .checkpoint()
+            .map_err(std::io::Error::other)?;
+        self.file.flush()
+    }
+}
+impl Seek for CancellableFile<'_> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.cancellation
+            .checkpoint()
+            .map_err(std::io::Error::other)?;
+        self.file.seek(position)
+    }
+}
+struct ImportOutput {
+    path: PathBuf,
+    published: bool,
+}
+impl Drop for ImportOutput {
+    fn drop(&mut self) {
+        if !self.published {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+fn with_import_output<T>(
+    destination: &Path,
+    cancellation: &ImportCancellation,
+    work: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    cancellation.checkpoint()?;
+    let mut output = ImportOutput {
+        path: new_output(destination)?,
+        published: false,
+    };
+    cancellation.checkpoint()?;
+    let result = work(&output.path)?;
+    cancellation.checkpoint()?;
+    output.published = true;
+    Ok(result)
+}
 
 #[derive(Debug, Clone)]
 pub struct MapMetadata {
@@ -757,7 +833,9 @@ fn assemble(
     m: &MapMetadata,
     all_tiles: &[Tile],
     mappings: &HashMap<u32, u32>,
+    cancellation: &ImportCancellation,
 ) -> Result<RgbaImage, String> {
+    cancellation.checkpoint()?;
     let scale = if area == "MGOT101" { 2 } else { 1 };
     let size = m.tile_size / scale;
     let width = m.columns.checked_mul(size).ok_or("Map width overflow")?;
@@ -768,6 +846,7 @@ fn assemble(
     let mut out = RgbaImage::new(width, height);
     let mut positions = HashSet::new();
     for tile in all_tiles {
+        cancellation.checkpoint()?;
         if tile.flags != 17
             || tile.offset != -1
             || !matches!(tile.format, 5 | 7)
@@ -783,6 +862,7 @@ fn assemble(
                 return Err("Duplicate tile position".into());
             }
             let image = tile_image(root, tile, mappings)?;
+            cancellation.checkpoint()?;
             let image = if scale == 2 {
                 image::imageops::resize(&image, size, size, image::imageops::FilterType::Triangle)
             } else {
@@ -796,6 +876,7 @@ fn assemble(
             );
         }
     }
+    cancellation.checkpoint()?;
     if positions.len() != (m.rows * m.columns) as usize {
         return Err("Incomplete map tile grid".into());
     }
@@ -846,42 +927,58 @@ fn new_output(root: &Path) -> Result<PathBuf, String> {
 /// Creates a fresh private import directory; never overwrites an existing catalog.
 /// Projection remains explicitly unverified until the lead records live landmarks.
 pub fn import_maps(cooked_pc: &Path, destination: &Path) -> Result<PathBuf, String> {
+    import_maps_cancellable(cooked_pc, destination, &ImportCancellation::default())
+}
+/// Imports privately and removes its incomplete output on error or cancellation.
+pub fn import_maps_cancellable(
+    cooked_pc: &Path,
+    destination: &Path,
+    cancellation: &ImportCancellation,
+) -> Result<PathBuf, String> {
+    cancellation.checkpoint()?;
     let root = cooked_pc.canonicalize().map_err(|e| e.to_string())?;
     let mappings = remap(&read_confined(
         &root,
         Path::new("TEXTUREFILECACHE/UI_REMAP.BIN"),
         REMAP_LIMIT,
     )?)?;
-    let output = new_output(destination)?;
-    let result = (|| {
+    cancellation.checkpoint()?;
+    with_import_output(destination, cancellation, |output| {
         let mut entries = Vec::new();
         for (area, label, category) in [
             ("MGOT101", "Gotham", Category::OpenWorld),
             ("MPYR0224", "Old Gotham Subway", Category::Instance),
         ] {
+            cancellation.checkpoint()?;
             let raw = read_confined(&root, &package_path(area)?, PACKAGE_LIMIT)?;
+            cancellation.checkpoint()?;
             let source_sha = format!("{:x}", Sha256::digest(&raw));
             let pkg = Package::parse(&raw)?;
+            cancellation.checkpoint()?;
             drop(raw);
             let m = metadata(&pkg)?;
             let expected_grid = if area == "MGOT101" { (24, 25) } else { (2, 3) };
             if (m.rows, m.columns) != expected_grid {
                 return Err("Unsupported area grid revision".into());
             }
-            let image = assemble(&root, area, &m, &tiles(&pkg)?, &mappings)?;
+            cancellation.checkpoint()?;
+            let image = assemble(&root, area, &m, &tiles(&pkg)?, &mappings, cancellation)?;
+            cancellation.checkpoint()?;
             let filename = format!("{area}.png");
             let path = output.join(&filename);
-            let mut file = OpenOptions::new()
+            let file = OpenOptions::new()
                 .write(true)
                 .mode(0o600)
                 .create_new(true)
                 .open(&path)
                 .map_err(|e| e.to_string())?;
+            let mut writer = CancellableFile { file, cancellation };
             image
-                .write_to(&mut file, ImageFormat::Png)
+                .write_to(&mut writer, ImageFormat::Png)
                 .map_err(|e| e.to_string())?;
-            file.sync_all().map_err(|e| e.to_string())?;
-            let bytes = read_confined(&output, Path::new(&filename), PACKAGE_LIMIT)?;
+            cancellation.checkpoint()?;
+            writer.file.sync_all().map_err(|e| e.to_string())?;
+            let bytes = read_confined(output, Path::new(&filename), PACKAGE_LIMIT)?;
             let width = image.width();
             let height = image.height();
             // UE map horizontal axes appear rotated relative to image axes. This
@@ -915,6 +1012,15 @@ pub fn import_maps(cooked_pc: &Path, destination: &Path) -> Result<PathBuf, Stri
                     height as f64 + m.min[0] * sy,
                 ],
                 world_bounds: [m.min[0], m.min[1], m.max[0], m.max[1]],
+                calibration: Some(crate::maps::Calibration {
+                    version: 1,
+                    profile: crate::native::PROFILE_ID.into(),
+                    confidence: crate::maps::LocationConfidence::Experimental,
+                    landmark_count: 0,
+                    independent_landmark_count: 0,
+                    max_error_pixels: None,
+                    accuracy_budget_pixels: None,
+                }),
             };
             e.validate()?;
             entries.push(e);
@@ -923,27 +1029,104 @@ pub fn import_maps(cooked_pc: &Path, destination: &Path) -> Result<PathBuf, Stri
             schema_version: 1,
             entries,
         };
+        cancellation.checkpoint()?;
         let path = output.join("catalog.json");
+        let temporary = output.join("catalog.partial");
         let mut file = OpenOptions::new()
             .write(true)
             .mode(0o600)
             .create_new(true)
-            .open(&path)
+            .open(&temporary)
             .map_err(|e| e.to_string())?;
+        cancellation.checkpoint()?;
         file.write_all(&serde_json::to_vec_pretty(&catalog).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
+        cancellation.checkpoint()?;
+        fs::rename(temporary, &path).map_err(|e| e.to_string())?;
         Ok(path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_dir_all(&output);
-    }
-    result
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn cancellation_fixture() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "dcuo-cancel-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+    #[test]
+    fn cancelled_import_stops_before_source_or_output_access() {
+        let destination = cancellation_fixture();
+        let cancellation = ImportCancellation::default();
+        cancellation.cancel();
+        let error =
+            import_maps_cancellable(Path::new("missing-source"), &destination, &cancellation)
+                .unwrap_err();
+        assert_eq!(error, "Map import cancelled");
+        assert!(!destination.exists());
+        let metadata = MapMetadata {
+            min: [0.; 3],
+            max: [1.; 3],
+            tile_size: 256,
+            zoom_value: 1.,
+            rows: 2,
+            columns: 3,
+        };
+        assert_eq!(
+            assemble(
+                Path::new("missing-source"),
+                "MPYR0224",
+                &metadata,
+                &[],
+                &HashMap::new(),
+                &cancellation
+            )
+            .unwrap_err(),
+            "Map import cancelled"
+        );
+    }
+    #[test]
+    fn cancellation_before_publication_cleans_only_its_incomplete_output() {
+        let destination = cancellation_fixture();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("keep"), b"unrelated").unwrap();
+        let cancellation = ImportCancellation::default();
+        let result = with_import_output(&destination, &cancellation, |output| {
+            fs::write(output.join("image.png"), b"synthetic partial image").unwrap();
+            fs::write(output.join("catalog.partial"), b"synthetic partial catalog").unwrap();
+            cancellation.cancel();
+            Ok(())
+        });
+        assert_eq!(result.unwrap_err(), "Map import cancelled");
+        assert_eq!(fs::read(destination.join("keep")).unwrap(), b"unrelated");
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 1);
+        fs::remove_dir_all(destination).unwrap();
+    }
+    #[test]
+    fn cancellation_interrupts_png_writes_without_write_all_retry() {
+        let path = cancellation_fixture();
+        let file = File::create(&path).unwrap();
+        let cancellation = ImportCancellation::default();
+        let mut writer = CancellableFile {
+            file,
+            cancellation: &cancellation,
+        };
+        writer.write_all(b"before").unwrap();
+        cancellation.cancel();
+        let error = writer.write_all(b"after").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert!(writer.seek(SeekFrom::Start(0)).is_err());
+        drop(writer);
+        assert_eq!(fs::read(&path).unwrap(), b"before");
+        fs::remove_file(path).unwrap();
+    }
     #[test]
     #[ignore = "Requires an explicitly selected local installation and private output directory"]
     fn local_asset_import_opt_in() {

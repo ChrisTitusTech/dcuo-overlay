@@ -47,7 +47,62 @@ pub struct MapEntry {
     pub affine: [f64; 6],
     /// Minimum x, minimum y, maximum x, maximum y.
     pub world_bounds: [f64; 4],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calibration: Option<Calibration>,
 }
+/// Versioned per-entry evidence. Counts describe fitting landmarks and separate
+/// holdout landmarks; maximum error must be measured on the holdout set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Calibration {
+    pub version: u32,
+    /// Exact executable SHA-256 for the memory observation profile.
+    pub profile: String,
+    pub confidence: LocationConfidence,
+    pub landmark_count: u32,
+    pub independent_landmark_count: u32,
+    pub max_error_pixels: Option<f64>,
+    pub accuracy_budget_pixels: Option<f64>,
+}
+impl Calibration {
+    fn validate(&self, width: u32, height: u32) -> Result<(), String> {
+        if self.version != 1
+            || self.profile.len() != 64
+            || !self.profile.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || self.landmark_count > 128
+            || self.independent_landmark_count > 128
+        {
+            return Err("Invalid calibration version, profile, or landmark count".into());
+        }
+        let image_diagonal = (width as f64).hypot(height as f64);
+        if self
+            .max_error_pixels
+            .is_some_and(|error| !error.is_finite() || error < 0.0 || error > image_diagonal)
+            || self.accuracy_budget_pixels.is_some_and(|budget| {
+                !budget.is_finite() || budget <= 0.0 || budget >= image_diagonal
+            })
+        {
+            return Err("Invalid calibration accuracy evidence or budget".into());
+        }
+        if self.max_error_pixels.is_some() && self.independent_landmark_count == 0 {
+            return Err("Measured calibration error requires independent landmarks".into());
+        }
+        if self.confidence == LocationConfidence::Validated {
+            let (Some(error), Some(budget)) = (self.max_error_pixels, self.accuracy_budget_pixels)
+            else {
+                return Err("Validated calibration requires measured independent error and an accuracy budget".into());
+            };
+            if self.landmark_count < 3 || self.independent_landmark_count == 0 || error > budget {
+                return Err(
+                    "Validated calibration lacks landmark evidence or exceeds its accuracy budget"
+                        .into(),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
@@ -135,7 +190,37 @@ impl MapEntry {
         if !self.world_bounds.iter().all(|v| v.is_finite()) || x0 >= x1 || y0 >= y1 {
             return Err("Invalid world bounds".into());
         }
+        if let Some(calibration) = &self.calibration {
+            calibration.validate(self.width, self.height)?;
+        }
         Ok(())
+    }
+    /// Observation confidence is capped by this entry's calibration evidence.
+    /// Legacy schema-1 entries remain usable only as experimental maps.
+    pub fn effective_confidence(
+        &self,
+        requested: LocationConfidence,
+        profile: Option<&str>,
+    ) -> LocationConfidence {
+        if requested == LocationConfidence::Unavailable || self.validate().is_err() {
+            return LocationConfidence::Unavailable;
+        }
+        let evidence = match &self.calibration {
+            None => LocationConfidence::Experimental,
+            Some(calibration) if profile == Some(calibration.profile.as_str()) => {
+                calibration.confidence
+            }
+            Some(_) => return LocationConfidence::Unavailable,
+        };
+        if evidence == LocationConfidence::Unavailable {
+            LocationConfidence::Unavailable
+        } else if evidence == LocationConfidence::Validated
+            && requested == LocationConfidence::Validated
+        {
+            LocationConfidence::Validated
+        } else {
+            LocationConfidence::Experimental
+        }
     }
     pub fn project(&self, p: Point) -> Point {
         project(self.affine, p)
@@ -286,7 +371,8 @@ pub struct LocationSample {
     pub observed_at: Instant,
     pub valid: bool,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LocationConfidence {
     Unavailable,
     Experimental,
@@ -294,11 +380,12 @@ pub enum LocationConfidence {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MarkerGate {
+pub struct MarkerGate<'a> {
     pub session_generation: u64,
     pub zone_generation: u64,
     pub paused: bool,
     pub confidence: LocationConfidence,
+    pub profile: Option<&'a str>,
 }
 pub fn marker_position(
     entry: &MapEntry,
@@ -307,7 +394,8 @@ pub fn marker_position(
     now: Instant,
 ) -> Option<Point> {
     if entry.validate().is_err()
-        || gate.confidence == LocationConfidence::Unavailable
+        || entry.effective_confidence(gate.confidence, gate.profile)
+            == LocationConfidence::Unavailable
         || gate.paused
         || !sample.valid
         || sample.context != entry.context
@@ -356,6 +444,153 @@ mod tests {
             credit: "Test".into(),
             affine: [1., 0., 0., 0., 1., 0.],
             world_bounds: [0., 0., 100., 100.],
+            calibration: None,
+        }
+    }
+    fn calibration(confidence: LocationConfidence) -> Calibration {
+        Calibration {
+            version: 1,
+            profile: "a".repeat(64),
+            confidence,
+            landmark_count: 3,
+            independent_landmark_count: 2,
+            max_error_pixels: Some(2.0),
+            accuracy_budget_pixels: Some(5.0),
+        }
+    }
+    #[test]
+    fn legacy_entry_deserializes_and_cannot_claim_validated_confidence() {
+        let json = serde_json::to_value(entry()).unwrap();
+        assert!(json.get("calibration").is_none());
+        let legacy: MapEntry = serde_json::from_value(json).unwrap();
+        assert!(legacy.calibration.is_none());
+        assert_eq!(
+            legacy.effective_confidence(LocationConfidence::Validated, Some(&"a".repeat(64))),
+            LocationConfidence::Experimental
+        );
+        assert_eq!(
+            legacy.effective_confidence(LocationConfidence::Unavailable, None),
+            LocationConfidence::Unavailable
+        );
+    }
+    #[test]
+    fn confidence_is_capped_by_both_entry_evidence_and_observation() {
+        let profile = "a".repeat(64);
+        let mut map = entry();
+        for evidence in [
+            LocationConfidence::Unavailable,
+            LocationConfidence::Experimental,
+            LocationConfidence::Validated,
+        ] {
+            map.calibration = Some(calibration(evidence));
+            for observation in [
+                LocationConfidence::Unavailable,
+                LocationConfidence::Experimental,
+                LocationConfidence::Validated,
+            ] {
+                let expected = if evidence == LocationConfidence::Unavailable
+                    || observation == LocationConfidence::Unavailable
+                {
+                    LocationConfidence::Unavailable
+                } else if evidence == LocationConfidence::Validated
+                    && observation == LocationConfidence::Validated
+                {
+                    LocationConfidence::Validated
+                } else {
+                    LocationConfidence::Experimental
+                };
+                assert_eq!(
+                    map.effective_confidence(observation, Some(&profile)),
+                    expected
+                );
+            }
+        }
+        map.calibration = Some(Calibration {
+            version: 1,
+            profile: profile.clone(),
+            confidence: LocationConfidence::Experimental,
+            landmark_count: 0,
+            independent_landmark_count: 0,
+            max_error_pixels: None,
+            accuracy_budget_pixels: None,
+        });
+        assert!(map.validate().is_ok());
+        assert_eq!(
+            map.effective_confidence(LocationConfidence::Validated, Some(&profile)),
+            LocationConfidence::Experimental
+        );
+    }
+    #[test]
+    fn exact_profile_mismatch_or_missing_profile_hides_marker() {
+        let now = Instant::now();
+        let mut map = entry();
+        map.calibration = Some(calibration(LocationConfidence::Validated));
+        let sample = LocationSample {
+            point: Point { x: 20.0, y: 30.0 },
+            context: map.context.clone(),
+            session_generation: 1,
+            zone_generation: 2,
+            observed_at: now,
+            valid: true,
+        };
+        let profile = "a".repeat(64);
+        let other_profile = "b".repeat(64);
+        let gate = MarkerGate {
+            session_generation: 1,
+            zone_generation: 2,
+            paused: false,
+            confidence: LocationConfidence::Validated,
+            profile: Some(&profile),
+        };
+        assert!(marker_position(&map, &sample, gate, now).is_some());
+        for profile in [
+            None,
+            Some(other_profile.as_str()),
+            Some(profile[..63].as_ref()),
+        ] {
+            assert_eq!(
+                map.effective_confidence(LocationConfidence::Validated, profile),
+                LocationConfidence::Unavailable
+            );
+            assert!(marker_position(&map, &sample, MarkerGate { profile, ..gate }, now).is_none());
+        }
+    }
+    #[test]
+    fn validated_calibration_requires_bounded_independent_accuracy_evidence() {
+        let good = calibration(LocationConfidence::Validated);
+        assert!(good.validate(100, 100).is_ok());
+        for case in 0..13 {
+            let mut bad = good.clone();
+            match case {
+                0 => bad.version = 2,
+                1 => bad.profile = "not-a-sha".into(),
+                2 => bad.landmark_count = 2,
+                3 => bad.independent_landmark_count = 0,
+                4 => bad.max_error_pixels = None,
+                5 => bad.accuracy_budget_pixels = None,
+                6 => bad.max_error_pixels = Some(f64::NAN),
+                7 => bad.max_error_pixels = Some(f64::INFINITY),
+                8 => bad.max_error_pixels = Some(-1.0),
+                9 => bad.accuracy_budget_pixels = Some(0.0),
+                10 => bad.max_error_pixels = Some(6.0),
+                11 => bad.landmark_count = 129,
+                _ => bad.independent_landmark_count = 129,
+            }
+            assert!(
+                bad.validate(100, 100).is_err(),
+                "invalid evidence case {case}"
+            );
+            let mut map = entry();
+            map.calibration = Some(bad);
+            assert_eq!(
+                map.effective_confidence(LocationConfidence::Validated, Some(&good.profile)),
+                LocationConfidence::Unavailable
+            );
+        }
+        for budget in [-1.0, f64::NAN, f64::INFINITY, 1_000_000.0] {
+            let mut bad = good.clone();
+            bad.accuracy_budget_pixels = Some(budget);
+            assert!(bad.validate(100, 100).is_err());
         }
     }
     #[test]
@@ -419,6 +654,7 @@ mod tests {
             zone_generation: 2,
             paused: false,
             confidence: LocationConfidence::Validated,
+            profile: None,
         };
         assert_eq!(
             marker_position(&map, &sample, gate, now),
@@ -481,6 +717,21 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("test.png"), b"synthetic").unwrap();
         let map = entry();
+        let legacy = Catalog {
+            schema_version: 1,
+            entries: vec![map.clone()],
+        };
+        std::fs::write(
+            root.join("legacy.json"),
+            serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let loaded = load_catalog(&root.join("legacy.json")).unwrap();
+        assert!(loaded.entries[0].calibration.is_none());
+        assert_eq!(
+            loaded.entries[0].effective_confidence(LocationConfidence::Validated, None),
+            LocationConfidence::Experimental
+        );
         assert_eq!(load_asset(&map, &root).unwrap(), b"synthetic");
         let mut bad = map.clone();
         bad.sha256 = "0".repeat(64);

@@ -1,7 +1,14 @@
 //! Local map browsing with one bounded, joined asset worker.
+use crate::map_import::ImportCancellation;
 use crate::maps::{self, Catalog, LocationSample, MapEntry, MarkerGate};
 use eframe::egui;
-use std::{io::Cursor, path::PathBuf, sync::mpsc, thread, time::Instant};
+use std::{
+    io::Cursor,
+    path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
+    time::Instant,
+};
 
 enum Request {
     Catalog(u64, PathBuf),
@@ -26,6 +33,7 @@ pub struct MapView {
     tx: Option<mpsc::SyncSender<Request>>,
     rx: Option<mpsc::Receiver<Reply>>,
     worker: Option<thread::JoinHandle<()>>,
+    cancellation: ImportCancellation,
     status: String,
     zoom: f32,
     pan: egui::Vec2,
@@ -43,10 +51,21 @@ impl Default for MapView {
 }
 impl MapView {
     pub fn new(catalog_path: String) -> Self {
+        Self::new_with_importer(catalog_path, crate::map_import::import_maps_cancellable)
+    }
+    fn new_with_importer<F>(catalog_path: String, importer: F) -> Self
+    where
+        F: Fn(&Path, &Path, &ImportCancellation) -> Result<PathBuf, String> + Send + 'static,
+    {
+        let cancellation = ImportCancellation::default();
+        let worker_cancellation = cancellation.clone();
         let (tx, requests) = mpsc::sync_channel(1);
         let (replies, rx) = mpsc::sync_channel(1);
         let worker = thread::spawn(move || {
             while let Ok(request) = requests.recv() {
+                if worker_cancellation.is_cancelled() {
+                    break;
+                }
                 let (generation, result) = match request {
                     Request::Catalog(g, path) => (
                         g,
@@ -60,11 +79,14 @@ impl MapView {
                     Request::Asset(g, dir, entry) => (g, decode(&dir, &entry).map(Loaded::Image)),
                     Request::Import(g, source, destination) => (
                         g,
-                        crate::map_import::import_maps(&source, &destination)
+                        importer(&source, &destination, &worker_cancellation)
                             .map(Loaded::Imported)
                             .map_err(|_| "Installed map import failed. Check the local CookedPC directory and writable data directory; unsupported or corrupt game packages are rejected.".into()),
                     ),
                 };
+                if worker_cancellation.is_cancelled() {
+                    break;
+                }
                 if replies.send((generation, result)).is_err() {
                     break;
                 }
@@ -81,6 +103,7 @@ impl MapView {
             tx: Some(tx),
             rx: Some(rx),
             worker: Some(worker),
+            cancellation,
             status: "Load a local map catalog to browse maps.".into(),
             zoom: 1.0,
             pan: egui::Vec2::ZERO,
@@ -91,6 +114,30 @@ impl MapView {
             busy: false,
             browse_other_maps: false,
         }
+    }
+    /// Export only fixed labels, enum values, numeric schema versions, and flags.
+    /// Never export paths, map labels, catalog strings, error text, or coordinates.
+    pub fn sanitized_diagnostics(&self, profile: Option<&str>) -> String {
+        let entry = self
+            .catalog
+            .as_ref()
+            .and_then(|c| c.entries.get(self.selected));
+        let calibration = entry.and_then(|e| e.calibration.as_ref());
+        let confidence = entry
+            .map(|e| e.effective_confidence(maps::LocationConfidence::Validated, profile))
+            .unwrap_or(maps::LocationConfidence::Unavailable);
+        let compatible = calibration.map(|c| profile == Some(c.profile.as_str()));
+        format!(
+            "Map catalog present: {}; schema: {}; selected calibration present: {}; version: {}; effective confidence: {:?}; profile compatible: {:?}; loader busy: {}; texture loaded: {}",
+            self.catalog.is_some(),
+            self.catalog.as_ref().map_or(0, |c| c.schema_version),
+            calibration.is_some(),
+            calibration.map_or(0, |c| c.version),
+            confidence,
+            compatible,
+            self.busy,
+            self.texture.is_some()
+        )
     }
     pub fn load(&mut self) {
         self.busy = true;
@@ -263,7 +310,10 @@ impl MapView {
             })
         });
         ui.label(if marker.is_some() {
-            if gate.is_some_and(|g| g.confidence == maps::LocationConfidence::Experimental) {
+            if entry.zip(gate).is_some_and(|(entry, g)| {
+                entry.effective_confidence(g.confidence, g.profile)
+                    == maps::LocationConfidence::Experimental
+            }) {
                 "Experimental live position - calibration under validation"
             } else {
                 "Validated live location"
@@ -355,6 +405,7 @@ impl MapView {
 }
 impl Drop for MapView {
     fn drop(&mut self) {
+        self.cancellation.cancel();
         self.pending.take();
         self.tx.take();
         self.rx.take();
@@ -451,6 +502,7 @@ mod tests {
             credit: "Synthetic".into(),
             affine: [1., 0., 0., 0., 1., 0.],
             world_bounds: [0., 0., 10., 10.],
+            calibration: None,
         }
     }
     #[test]
@@ -473,6 +525,7 @@ mod tests {
             zone_generation: 9,
             paused: false,
             confidence: maps::LocationConfidence::Experimental,
+            profile: Some(crate::native::PROFILE_ID),
         };
         assert_eq!(
             current_map_index(&catalog, Some(&sample), Some(gate), now),
@@ -541,6 +594,72 @@ mod tests {
                 .unwrap_err()
                 .contains("texture limit")
         );
+    }
+    #[test]
+    fn diagnostics_exclude_catalog_strings_paths_errors_and_coordinates() {
+        let mut view = MapView::default();
+        let mut entry = test_entry("secret-map-label");
+        entry.provenance = "private game evidence".into();
+        entry.calibration = Some(maps::Calibration {
+            version: 1,
+            profile: crate::native::PROFILE_ID.into(),
+            confidence: maps::LocationConfidence::Experimental,
+            landmark_count: 0,
+            independent_landmark_count: 0,
+            max_error_pixels: None,
+            accuracy_budget_pixels: None,
+        });
+        view.catalog = Some(Catalog {
+            schema_version: 1,
+            entries: vec![entry],
+        });
+        view.catalog_path = "/private/map-path".into();
+        view.status = "private error with coordinates 1234,5678".into();
+        let diagnostic = view.sanitized_diagnostics(Some(crate::native::PROFILE_ID));
+        assert!(diagnostic.contains("effective confidence: Experimental"));
+        assert!(diagnostic.contains("profile compatible: Some(true)"));
+        for private in [
+            "secret-map-label",
+            "private",
+            "1234",
+            "5678",
+            crate::native::PROFILE_ID,
+        ] {
+            assert!(!diagnostic.contains(private));
+        }
+        let incompatible = view.sanitized_diagnostics(Some("different-profile"));
+        assert!(incompatible.contains("effective confidence: Unavailable"));
+        assert!(incompatible.contains("profile compatible: Some(false)"));
+    }
+    #[test]
+    fn shutdown_cancels_in_progress_import_before_joining() {
+        let (started, start) = mpsc::channel();
+        let (close, closing) = mpsc::channel();
+        let (done, completion) = mpsc::channel();
+        thread::spawn(move || {
+            let view = MapView::new_with_importer(String::new(), move |_, _, cancellation| {
+                started.send(()).unwrap();
+                while !cancellation.is_cancelled() {
+                    thread::park_timeout(std::time::Duration::from_millis(5));
+                }
+                Err("Map import cancelled".into())
+            });
+            view.tx
+                .as_ref()
+                .unwrap()
+                .send(Request::Import(1, PathBuf::new(), PathBuf::new()))
+                .unwrap();
+            closing.recv().unwrap();
+            drop(view);
+            done.send(()).unwrap();
+        });
+        start
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        close.send(()).unwrap();
+        completion
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
     }
     #[test]
     fn shutdown_joins_when_result_channel_is_full() {
