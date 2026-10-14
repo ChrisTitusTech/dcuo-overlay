@@ -1,8 +1,8 @@
-//! Single background worker shared by all application tabs.
+//! One session reader shared by all tabs, with a separate bounded API worker.
 use crate::{
     api::{self, CharacterReference},
     discovery::{NameSearch, Progress},
-    memory, process,
+    memory, native, process,
 };
 use std::{
     sync::{
@@ -42,6 +42,9 @@ pub struct View {
     pub api: Option<CharacterReference>,
     pub api_status: String,
     pub api_fetched: Option<Instant>,
+    pub native: Option<native::Sample>,
+    pub native_status: String,
+    pub location_generation: u64,
 }
 
 impl Default for View {
@@ -58,6 +61,9 @@ impl Default for View {
             api: None,
             api_status: "No reference requested".into(),
             api_fetched: None,
+            native: None,
+            native_status: "Experimental physics reader not connected".into(),
+            location_generation: 0,
         }
     }
 }
@@ -67,6 +73,7 @@ enum Operation {
     Connect(i32, Option<u64>),
     Clear,
     ResetSearch,
+    Resume,
     Lookup {
         base: String,
         name: String,
@@ -87,6 +94,7 @@ enum Update {
     Scan(Result<Progress, String>),
     Done,
     Lost,
+    Native(Result<native::Sample, String>),
 }
 struct Event {
     generation: u64,
@@ -96,14 +104,17 @@ struct Event {
 pub struct Controller {
     view: View,
     sender: SyncSender<Command>,
+    api_sender: SyncSender<Command>,
     receiver: Receiver<Event>,
     generation: Arc<AtomicU64>,
     stopping: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
+    api_worker: Option<JoinHandle<()>>,
     pending: usize,
     api_request: u64,
     api_pending: bool,
+    last_native_owner: Option<native::Sample>,
 }
 
 impl Default for Controller {
@@ -115,25 +126,35 @@ impl Default for Controller {
 impl Controller {
     pub fn new() -> Self {
         let (sender, commands) = mpsc::sync_channel(8);
-        // At most eight queued commands, one active command and one lost event.
+        let (api_sender, api_commands) = mpsc::sync_channel(2);
+        // Eight queued reader commands and two API requests, with one active
+        // operation per worker. Events and autonomous samples remain bounded.
         let (events, receiver) = mpsc::sync_channel(16);
         let generation = Arc::new(AtomicU64::new(0));
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_generation = generation.clone();
         let worker_stop = stopping.clone();
+        let api_events = events.clone();
+        let api_generation = generation.clone();
+        let api_stop = stopping.clone();
+        let api_worker =
+            thread::spawn(move || api_loop(api_commands, api_events, api_generation, api_stop));
         let worker =
             thread::spawn(move || worker_loop(commands, events, worker_generation, worker_stop));
         let mut result = Self {
             view: View::default(),
             sender,
+            api_sender,
             receiver,
             generation,
             stopping,
             cancel: Arc::new(AtomicBool::new(false)),
             worker: Some(worker),
+            api_worker: Some(api_worker),
             pending: 0,
             api_request: 0,
             api_pending: false,
+            last_native_owner: None,
         };
         result.refresh_sessions();
         result
@@ -154,6 +175,9 @@ impl Controller {
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.pending = 0;
         self.view.busy = false;
+        self.view.native = None;
+        self.last_native_owner = None;
+        self.view.location_generation = self.view.location_generation.wrapping_add(1);
     }
     fn queue(&mut self, operation: Operation) -> bool {
         let command = Command {
@@ -161,7 +185,12 @@ impl Controller {
             cancel: self.cancel.clone(),
             operation,
         };
-        match self.sender.try_send(command) {
+        let sender = if matches!(command.operation, Operation::Lookup { .. }) {
+            &self.api_sender
+        } else {
+            &self.sender
+        };
+        match sender.try_send(command) {
             Ok(()) => {
                 self.pending += 1;
                 self.view.busy = true;
@@ -189,6 +218,7 @@ impl Controller {
         self.view = View {
             candidates,
             selected_pid: Some(pid),
+            location_generation: self.view.location_generation,
             status: "Checking process, executable and read access...".into(),
             ..View::default()
         };
@@ -201,6 +231,7 @@ impl Controller {
         self.view = View {
             candidates,
             status: "Disconnected; previous session data cleared".into(),
+            location_generation: self.view.location_generation,
             ..View::default()
         };
         self.queue(Operation::Clear);
@@ -211,6 +242,7 @@ impl Controller {
         }
         self.invalidate();
         self.view.paused = true;
+        self.view.native_status = "Experimental physics reads paused; values cleared".into();
         self.view.scan = None;
         self.view.status = "Memory experiments paused; previous occurrences discarded".into();
         self.queue(Operation::ResetSearch);
@@ -219,8 +251,11 @@ impl Controller {
         if !self.view.connected {
             return;
         }
+        self.invalidate();
         self.view.paused = false;
-        self.view.status = "Session attached; no supported live character profile".into();
+        self.view.status = "Session attached; experimental physics reads resuming".into();
+        self.view.native_status = "Waiting for fresh experimental physics sample".into();
+        self.queue(Operation::Resume);
     }
     pub fn lookup_reference(&mut self, base: &str, name: &str, world: &str) {
         self.api_request = self.api_request.wrapping_add(1);
@@ -249,7 +284,7 @@ impl Controller {
             if event.generation != self.epoch() {
                 continue;
             }
-            if !matches!(event.update, Update::Lost) {
+            if !matches!(event.update, Update::Lost | Update::Native(_)) {
                 self.pending = self.pending.saturating_sub(1);
             }
             match event.update {
@@ -285,6 +320,40 @@ impl Controller {
                     self.view.scan = None;
                     self.view.status = format!("Name experiment stopped: {error}");
                 }
+                Update::Native(result) if self.view.connected && !self.view.paused => {
+                    match result {
+                        Ok(sample) if sample.observed_at.elapsed() <= Duration::from_secs(1) => {
+                            if self
+                                .last_native_owner
+                                .as_ref()
+                                .is_some_and(|old| !old.same_owner(&sample))
+                            {
+                                self.view.location_generation =
+                                    self.view.location_generation.wrapping_add(1);
+                                self.view.scan = None;
+                            }
+                            self.last_native_owner = Some(sample.clone());
+                            self.view.native = Some(sample);
+                            self.view.native_status = "Experimental controlled-pawn physics; character identity and map context unproven".into();
+                        }
+                        Ok(_) => {
+                            self.view.native = None;
+                            self.view.native_status =
+                                "Experimental physics sample expired; waiting for fresh data"
+                                    .into();
+                        }
+                        Err(error) => {
+                            if self.view.native.take().is_some() {
+                                self.view.location_generation =
+                                    self.view.location_generation.wrapping_add(1);
+                            }
+                            self.view.scan = None;
+                            self.view.native_status =
+                                format!("Experimental physics unavailable: {error}");
+                        }
+                    }
+                }
+                Update::Native(_) => {}
                 Update::Lost => {
                     self.disconnect();
                     self.view.status =
@@ -295,6 +364,17 @@ impl Controller {
             }
             self.view.busy = self.pending > 0;
         }
+        if self
+            .view
+            .native
+            .as_ref()
+            .is_some_and(|sample| sample.observed_at.elapsed() > Duration::from_secs(1))
+        {
+            self.view.native = None;
+            self.view.location_generation = self.view.location_generation.wrapping_add(1);
+            self.view.native_status =
+                "Experimental physics stale; waiting for the session reader".into();
+        }
     }
 }
 impl Drop for Controller {
@@ -302,6 +382,11 @@ impl Drop for Controller {
         self.cancel.store(true, Ordering::Release);
         self.stopping.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+        // api::lookup has an eight-second global request/body timeout. No HTTP
+        // worker outlives the application, even when an in-flight call is cancelled.
+        if let Some(worker) = self.api_worker.take() {
             let _ = worker.join();
         }
     }
@@ -366,6 +451,50 @@ fn deliver(
     }
 }
 
+fn api_loop(
+    commands: Receiver<Command>,
+    events: SyncSender<Event>,
+    generation: Arc<AtomicU64>,
+    stopping: Arc<AtomicBool>,
+) {
+    while !stopping.load(Ordering::Acquire) {
+        let command = match commands.recv_timeout(Duration::from_millis(50)) {
+            Ok(command) => command,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        let active = || {
+            !command.cancel.load(Ordering::Acquire)
+                && command.generation == generation.load(Ordering::Acquire)
+                && !stopping.load(Ordering::Acquire)
+        };
+        if !active() {
+            continue;
+        }
+        let Operation::Lookup {
+            base,
+            name,
+            world,
+            request,
+        } = command.operation
+        else {
+            continue;
+        };
+        let result = api::lookup(&base, &name, &world);
+        if active() {
+            deliver(
+                &events,
+                Event {
+                    generation: command.generation,
+                    update: Update::Reference(request, result),
+                },
+                &generation,
+                &stopping,
+            );
+        }
+    }
+}
+
 fn worker_loop(
     commands: Receiver<Command>,
     events: SyncSender<Event>,
@@ -376,8 +505,13 @@ fn worker_loop(
     let mut attached_generation = 0;
     let mut search: Option<(String, NameSearch)> = None;
     let mut last_check = Instant::now();
+    let mut reader: Option<native::Reader> = None;
+    let mut paused = false;
+    let mut last_sample = Instant::now();
+    let mut last_owner: Option<native::Sample> = None;
+    let mut native_attach_error: Option<String> = None;
     while !stopping.load(Ordering::Acquire) {
-        let command = match commands.recv_timeout(Duration::from_millis(100)) {
+        let command = match commands.recv_timeout(Duration::from_millis(50)) {
             Ok(command) => Some(command),
             Err(mpsc::RecvTimeoutError::Timeout) => None,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -408,8 +542,23 @@ fn worker_loop(
                 Operation::Connect(pid, expected_start) => {
                     attached = None;
                     search = None;
+                    reader = None;
+                    paused = false;
+                    last_owner = None;
                     match inspect(pid, expected_start) {
                         Ok((candidate, info)) if active() => {
+                            let native_candidate = process::Candidate {
+                                identity: candidate.identity.clone(),
+                                mapping: candidate.mapping.clone(),
+                            };
+                            match native::Reader::attach(native_candidate) {
+                                Ok(mut attached_reader) => {
+                                    attached_reader.set_cancel(command.cancel.clone());
+                                    reader = Some(attached_reader);
+                                    native_attach_error = None;
+                                }
+                                Err(error) => native_attach_error = Some(error),
+                            }
                             attached = Some(candidate);
                             attached_generation = command.generation;
                             Update::Connected(Ok(info))
@@ -419,21 +568,52 @@ fn worker_loop(
                     }
                 }
                 Operation::Clear => {
+                    reader = None;
+                    paused = true;
+                    last_owner = None;
+                    native_attach_error = None;
                     attached = None;
                     search = None;
                     Update::Done
                 }
                 Operation::ResetSearch => {
+                    paused = true;
+                    last_owner = None;
                     search = None;
                     attached_generation = command.generation;
-                    Update::Done
+                    if attached.is_some() {
+                        Update::Done
+                    } else {
+                        Update::Lost
+                    }
                 }
-                Operation::Lookup {
-                    base,
-                    name,
-                    world,
-                    request,
-                } => Update::Reference(request, api::lookup(&base, &name, &world)),
+                Operation::Resume => {
+                    paused = false;
+                    attached_generation = command.generation;
+                    if let Some(reader) = reader.as_mut() {
+                        reader.set_cancel(command.cancel.clone());
+                    } else if let Some(candidate) = attached.as_ref().filter(|c| unchanged(c)) {
+                        let candidate = process::Candidate {
+                            identity: candidate.identity.clone(),
+                            mapping: candidate.mapping.clone(),
+                        };
+                        match native::Reader::attach(candidate) {
+                            Ok(mut new_reader) => {
+                                new_reader.set_cancel(command.cancel.clone());
+                                reader = Some(new_reader);
+                                native_attach_error = None;
+                            }
+                            Err(error) => native_attach_error = Some(error),
+                        }
+                    }
+                    if attached.is_some() {
+                        Update::Done
+                    } else {
+                        Update::Lost
+                    }
+                }
+                // Lookup commands are routed directly to the API worker.
+                Operation::Lookup { .. } => Update::Done,
                 Operation::Scan(name) => {
                     if let Some(candidate) = attached.as_ref().filter(|c| unchanged(c)) {
                         let result = (|| {
@@ -460,6 +640,7 @@ fn worker_loop(
                 if attached.as_ref().is_some_and(|c| !unchanged(c)) {
                     attached = None;
                     search = None;
+                    reader = None;
                     deliver(
                         &events,
                         Event {
@@ -483,12 +664,47 @@ fn worker_loop(
             }
         }
         if attached_generation == generation.load(Ordering::Acquire)
+            && !paused
+            && attached.is_some()
+            && last_sample.elapsed() >= Duration::from_millis(250)
+        {
+            last_sample = Instant::now();
+            let result = if let Some(reader) = reader.as_mut() {
+                reader.sample()
+            } else {
+                Err(native_attach_error
+                    .clone()
+                    .unwrap_or_else(|| "Experimental reader unavailable".into()))
+            };
+            if let Ok(sample) = &result {
+                if last_owner
+                    .as_ref()
+                    .is_some_and(|old| !old.same_owner(sample))
+                {
+                    search = None;
+                }
+                last_owner = Some(sample.clone());
+            } else {
+                search = None;
+            }
+            deliver(
+                &events,
+                Event {
+                    generation: attached_generation,
+                    update: Update::Native(result),
+                },
+                &generation,
+                &stopping,
+            );
+        }
+        if attached_generation == generation.load(Ordering::Acquire)
             && last_check.elapsed() >= Duration::from_secs(1)
         {
             last_check = Instant::now();
             if attached.as_ref().is_some_and(|c| !unchanged(c)) {
                 attached = None;
                 search = None;
+                reader = None;
                 deliver(
                     &events,
                     Event {
@@ -506,6 +722,87 @@ fn worker_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn delayed_http_lookup_does_not_block_session_refresh() {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let (accepted, started) = mpsc::sync_channel(1);
+        let (release, response_gate) = mpsc::sync_channel(1);
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && Instant::now() < deadline =>
+                    {
+                        thread::sleep(Duration::from_millis(5))
+                    }
+                    Err(error) => panic!("Delayed fixture server failed: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut bytes = [0; 1024];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = stream.read(&mut bytes).unwrap();
+                assert!(count > 0 && request.len() < 8192);
+                request.extend_from_slice(&bytes[..count]);
+            }
+            accepted.send(()).unwrap();
+            response_gate.recv_timeout(Duration::from_secs(3)).unwrap();
+            let body = br#"{"character_id":"123","name":"Synthetic","world_id":"2"}"#;
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(headers.as_bytes()).unwrap();
+            stream.write_all(body).unwrap();
+        });
+        let mut controller = Controller::new();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while controller.pending > 0 && Instant::now() < deadline {
+            controller.poll();
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(controller.pending, 0);
+        controller.lookup_reference(&base, "Synthetic", "2");
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(controller.pending, 1);
+        controller.refresh_sessions();
+        assert_eq!(controller.pending, 2);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while controller.pending > 1 && Instant::now() < deadline {
+            controller.poll();
+            thread::sleep(Duration::from_millis(5));
+        }
+        // The HTTP response is still held by the server. Only the local reader
+        // can have completed the additional operation and decremented pending.
+        assert_eq!(controller.pending, 1);
+        assert!(controller.api_pending && controller.view.api.is_none());
+        release.send(()).unwrap();
+        server.join().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while controller.pending > 0 && Instant::now() < deadline {
+            controller.poll();
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(controller.pending, 0);
+        assert!(!controller.api_pending);
+        assert_eq!(controller.view.api.as_ref().unwrap().id, "123");
+        // Controller drop joins both bounded workers.
+    }
     #[test]
     fn full_event_queue_does_not_block_shutdown() {
         let (events, _receiver) = mpsc::sync_channel(1);
@@ -539,18 +836,113 @@ mod tests {
         (
             Controller {
                 view: View::default(),
+                api_sender: sender.clone(),
                 sender,
                 receiver,
                 generation: Arc::new(AtomicU64::new(1)),
                 stopping: Arc::new(AtomicBool::new(false)),
                 cancel: Arc::new(AtomicBool::new(false)),
                 worker: None,
+                api_worker: None,
                 pending: 1,
                 api_request: 2,
                 api_pending: false,
+                last_native_owner: None,
             },
             events,
         )
+    }
+    #[test]
+    fn native_updates_preserve_command_pending_and_reject_late_generation() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.busy = true;
+        events
+            .send(Event {
+                generation: 0,
+                update: Update::Native(Ok(native::Sample::synthetic(1))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.native.is_none());
+        assert_eq!(controller.pending, 1);
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(native::Sample::synthetic(1))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.native.is_some());
+        assert_eq!(controller.pending, 1);
+        assert!(controller.view.busy);
+    }
+    #[test]
+    fn stale_and_failed_samples_remove_values() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        let mut stale = native::Sample::synthetic(1);
+        stale.observed_at = Instant::now() - Duration::from_secs(2);
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(stale)),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.native.is_none());
+        controller.view.native = Some(native::Sample::synthetic(1));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Err("Loading".into())),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.native.is_none());
+        assert_eq!(controller.view.location_generation, 1);
+        assert!(controller.view.native_status.contains("Loading"));
+        assert_eq!(controller.pending, 1);
+    }
+    #[test]
+    fn pawn_owner_change_invalidates_location_context() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        for owner in [1, 2] {
+            events
+                .send(Event {
+                    generation: 1,
+                    update: Update::Native(Ok(native::Sample::synthetic(owner))),
+                })
+                .unwrap();
+            controller.poll();
+        }
+        assert_eq!(controller.view.location_generation, 1);
+        assert!(controller.view.native.is_some());
+        assert_eq!(controller.pending, 1);
+    }
+    #[test]
+    fn pause_clears_native_and_rejects_queued_samples() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.native = Some(native::Sample::synthetic(1));
+        controller.pause();
+        assert!(controller.view.native.is_none());
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(native::Sample::synthetic(1))),
+            })
+            .unwrap();
+        events
+            .send(Event {
+                generation: 2,
+                update: Update::Native(Ok(native::Sample::synthetic(1))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.native.is_none());
+        assert!(controller.view.paused);
     }
     #[test]
     fn old_session_results_cannot_populate_new_session() {
