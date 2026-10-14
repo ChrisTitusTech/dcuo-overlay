@@ -10,7 +10,7 @@ and indoor maps.
 **Status: experimental live map preview.** The managed application displays API
 character references, experimental memory resources/position, and imported maps
 for Gotham and Old Gotham Subway. Gotham marker alignment has one paired in-game
-landmark check. Current-character identity, indoor live accuracy, multi-launch
+landmark check, and the user confirmed movement tracking. Current-character identity, indoor live accuracy, multi-launch
 profiles and full release acceptance remain incomplete. See
 [live map evidence](docs/live-map-preview.md).
 
@@ -34,6 +34,13 @@ the installed CookedPC directory and show explicitly experimental live position
 for the two recognized areas. Unknown areas have no marker. See
 [local import details](docs/local-map-import.md).
 DWM owns placement, tags, borders, and focus; use its controls to choose a monitor.
+
+Optional reconnect recovers only one fresh session with the same executable build;
+manual Disconnect cancels recovery. API references retain their original receipt
+time through a five-minute local cache and honor service cooldowns. Closing the
+application cancels incomplete map imports. Preferences can be reset without
+deleting imported maps. See [local install and rollback](docs/local-install.md)
+and [offline validation and remaining live checks](docs/offline-hardening.md).
 
 See [development instructions](CONTRIBUTING.md) for explicit-PID inspection,
 bounded name-search experiments, X11 checks, and build requirements.

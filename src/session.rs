@@ -23,6 +23,7 @@ pub struct ProcessChoice {
 #[derive(Clone, Debug)]
 pub struct BuildInfo {
     pub pid: i32,
+    pub start_ticks: u64,
     pub sha256: String,
     pub executable_bytes: u64,
     pub machine: u16,
@@ -74,6 +75,7 @@ enum Operation {
     Clear,
     ResetSearch,
     Resume,
+    Recover(BuildInfo),
     Lookup {
         base: String,
         name: String,
@@ -90,7 +92,8 @@ struct Command {
 enum Update {
     Choices(Result<Vec<ProcessChoice>, String>),
     Connected(Result<BuildInfo, String>),
-    Reference(u64, Result<CharacterReference, String>),
+    Recovered(Result<BuildInfo, RecoveryFailure>),
+    Reference(u64, Result<api::LookupResult, String>),
     Scan(Result<Progress, String>),
     Done,
     Lost,
@@ -99,6 +102,33 @@ enum Update {
 struct Event {
     generation: u64,
     update: Update,
+}
+
+#[derive(Debug)]
+enum RecoveryFailure {
+    Retry(String),
+    Blocked(String),
+}
+struct Recovery {
+    expected: BuildInfo,
+    next_attempt: Instant,
+    delay: Duration,
+    in_flight: bool,
+}
+impl Recovery {
+    fn new(expected: BuildInfo, now: Instant) -> Self {
+        Self {
+            expected,
+            next_attempt: now + Duration::from_secs(2),
+            delay: Duration::from_secs(2),
+            in_flight: false,
+        }
+    }
+    fn retry(&mut self, now: Instant) {
+        self.delay = (self.delay * 2).min(Duration::from_secs(10));
+        self.next_attempt = now + self.delay;
+        self.in_flight = false;
+    }
 }
 
 pub struct Controller {
@@ -115,6 +145,8 @@ pub struct Controller {
     api_request: u64,
     api_pending: bool,
     last_native_owner: Option<native::Sample>,
+    auto_reconnect: bool,
+    recovery: Option<Recovery>,
 }
 
 impl Default for Controller {
@@ -155,12 +187,17 @@ impl Controller {
             api_request: 0,
             api_pending: false,
             last_native_owner: None,
+            auto_reconnect: false,
+            recovery: None,
         };
         result.refresh_sessions();
         result
     }
     pub fn view(&self) -> &View {
         &self.view
+    }
+    pub fn is_recovering(&self) -> bool {
+        self.recovery.is_some()
     }
     fn epoch(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
@@ -203,6 +240,38 @@ impl Controller {
             }
         }
     }
+    /// Opt in to recovering only a previously connected, unexpectedly lost session.
+    /// This never selects a session at startup or after manual disconnect.
+    pub fn set_auto_reconnect(&mut self, enabled: bool) {
+        self.auto_reconnect = enabled;
+        if !enabled && self.recovery.is_some() {
+            self.disconnect();
+            self.view.status = "Automatic reconnect disabled; select a session to connect".into();
+        }
+    }
+    fn recover_if_due(&mut self, now: Instant) {
+        let expected = self
+            .recovery
+            .as_ref()
+            .filter(|recovery| {
+                self.auto_reconnect
+                    && !self.view.paused
+                    && !recovery.in_flight
+                    && now >= recovery.next_attempt
+            })
+            .map(|recovery| recovery.expected.clone());
+        if let Some(expected) = expected {
+            if self.queue(Operation::Recover(expected)) {
+                if let Some(recovery) = self.recovery.as_mut() {
+                    recovery.in_flight = true;
+                }
+                self.view.status =
+                    "Checking for one fresh session with the previous executable build...".into();
+            } else if let Some(recovery) = self.recovery.as_mut() {
+                recovery.retry(now);
+            }
+        }
+    }
     pub fn refresh_sessions(&mut self) {
         self.queue(Operation::Refresh);
     }
@@ -213,6 +282,7 @@ impl Controller {
         self.begin_connect(pid, Some(start_ticks));
     }
     fn begin_connect(&mut self, pid: i32, expected_start: Option<u64>) {
+        self.recovery = None;
         self.invalidate();
         let candidates = std::mem::take(&mut self.view.candidates);
         self.view = View {
@@ -226,6 +296,7 @@ impl Controller {
         self.refresh_sessions();
     }
     pub fn disconnect(&mut self) {
+        self.recovery = None;
         self.invalidate();
         let candidates = std::mem::take(&mut self.view.candidates);
         self.view = View {
@@ -301,13 +372,57 @@ impl Controller {
                     self.view.build = None;
                     self.view.status = format!("Cannot attach: {error}");
                 }
+                Update::Recovered(result) => {
+                    if self.auto_reconnect && self.recovery.is_some() {
+                        match result {
+                            Ok(build)
+                                if self.recovery.as_ref().is_some_and(|recovery| {
+                                    same_build(&recovery.expected, &build)
+                                }) =>
+                            {
+                                self.view.connected = true;
+                                self.view.selected_pid = Some(build.pid);
+                                // Replace the exited session before the UI consumes recovery.
+                                // This also handles PID reuse with a new process start time.
+                                self.view.candidates = vec![ProcessChoice {
+                                    pid: build.pid,
+                                    start_ticks: build.start_ticks,
+                                }];
+                                self.view.build = Some(build);
+                                self.view.status = "Reconnected to one fresh session with the previous executable build".into();
+                                self.view.native_status =
+                                    "Waiting for fresh experimental physics sample".into();
+                                self.recovery = None;
+                            }
+                            Ok(_) | Err(RecoveryFailure::Blocked(_)) => {
+                                self.view.status = match result {
+                                    Err(RecoveryFailure::Blocked(error)) => error,
+                                    _ => "Game build changed; select a session explicitly".into(),
+                                };
+                                self.recovery = None;
+                            }
+                            Err(RecoveryFailure::Retry(error)) => {
+                                if let Some(recovery) = self.recovery.as_mut() {
+                                    recovery.retry(Instant::now());
+                                    self.view.status = format!(
+                                        "{error}; retrying in {} seconds",
+                                        recovery.delay.as_secs()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 Update::Reference(request, result) if request == self.api_request => {
                     self.api_pending = false;
                     match result {
-                        Ok(reference) => {
-                            self.view.api = Some(reference);
-                            self.view.api_fetched = Some(Instant::now());
-                            self.view.api_status = "API reference received; upstream freshness unknown; not memory verified".into();
+                        Ok(result) => {
+                            self.view.api = Some(result.reference);
+                            self.view.api_fetched = Some(result.received_at);
+                            self.view.api_status = match result.source {
+                                api::LookupSource::Network => "API reference received; upstream freshness unknown; not memory verified",
+                                api::LookupSource::Cache => "Cached API reference; original receipt time retained; not memory verified",
+                            }.into();
                         }
                         Err(error) => self.view.api_status = error,
                     }
@@ -354,10 +469,19 @@ impl Controller {
                 }
                 Update::Native(_) => {}
                 Update::Lost => {
+                    let expected = if self.auto_reconnect && !self.view.paused {
+                        self.view.build.clone()
+                    } else {
+                        None
+                    };
                     self.disconnect();
-                    self.view.status =
+                    self.recovery = expected.map(|build| Recovery::new(build, Instant::now()));
+                    self.view.status = if self.recovery.is_some() {
+                        "Game session lost; previous data cleared; checking for the same build in 2 seconds".into()
+                    } else {
                         "Game process or executable mapping changed; all session data cleared"
-                            .into();
+                            .into()
+                    };
                 }
                 Update::Reference(_, _) | Update::Done => {}
             }
@@ -374,6 +498,7 @@ impl Controller {
             self.view.native_status =
                 "Experimental physics stale; waiting for the session reader".into();
         }
+        self.recover_if_due(Instant::now());
     }
 }
 impl Drop for Controller {
@@ -389,6 +514,48 @@ impl Drop for Controller {
             let _ = worker.join();
         }
     }
+}
+
+fn same_build(expected: &BuildInfo, current: &BuildInfo) -> bool {
+    expected.sha256 == current.sha256
+        && expected.executable_bytes == current.executable_bytes
+        && expected.machine == current.machine
+        && current.header_access
+}
+fn unique_recovery_candidate(
+    candidates: &[process::Candidate],
+) -> Result<&process::Candidate, RecoveryFailure> {
+    match candidates {
+        [] => Err(RecoveryFailure::Retry(
+            "Waiting for the game to restart".into(),
+        )),
+        [candidate] => Ok(candidate),
+        _ => Err(RecoveryFailure::Blocked(
+            "Several game sessions are available; select one explicitly".into(),
+        )),
+    }
+}
+fn inspect_recovery(
+    expected: &BuildInfo,
+) -> Result<(process::Candidate, BuildInfo), RecoveryFailure> {
+    let candidates = process::discover()
+        .map_err(|_| RecoveryFailure::Retry("Session discovery unavailable".into()))?;
+    let selected = unique_recovery_candidate(&candidates)?;
+    if selected.identity.pid == expected.pid
+        && selected.identity.start_ticks == expected.start_ticks
+    {
+        return Err(RecoveryFailure::Retry(
+            "Waiting for a fresh game process; previous session is still present".into(),
+        ));
+    }
+    let (candidate, build) = inspect(selected.identity.pid, Some(selected.identity.start_ticks))
+        .map_err(RecoveryFailure::Retry)?;
+    if !same_build(expected, &build) {
+        return Err(RecoveryFailure::Blocked(
+            "Game build changed; select a session explicitly".into(),
+        ));
+    }
+    Ok((candidate, build))
 }
 
 fn unchanged(expected: &process::Candidate) -> bool {
@@ -417,10 +584,12 @@ fn inspect(
     if !metadata.matches_dos_header(&header) || !unchanged(&candidate) {
         return Err("Mapped executable changed or header did not match".into());
     }
+    let start_ticks = candidate.identity.start_ticks;
     Ok((
         candidate,
         BuildInfo {
             pid,
+            start_ticks,
             sha256: metadata.sha256,
             executable_bytes: metadata.size,
             machine: metadata.machine,
@@ -456,6 +625,7 @@ fn api_loop(
     generation: Arc<AtomicU64>,
     stopping: Arc<AtomicBool>,
 ) {
+    let mut client = api::ReferenceClient::new();
     while !stopping.load(Ordering::Acquire) {
         let command = match commands.recv_timeout(Duration::from_millis(50)) {
             Ok(command) => command,
@@ -479,7 +649,9 @@ fn api_loop(
         else {
             continue;
         };
-        let result = api::lookup(&base, &name, &world);
+        let result = client
+            .lookup(&base, &name, &world, &command.cancel)
+            .map_err(|error| error.to_string());
         if active() {
             deliver(
                 &events,
@@ -564,6 +736,34 @@ fn worker_loop(
                         }
                         Ok(_) => continue,
                         Err(error) => Update::Connected(Err(error)),
+                    }
+                }
+                Operation::Recover(expected) => {
+                    attached = None;
+                    reader = None;
+                    search = None;
+                    last_owner = None;
+                    paused = false;
+                    match inspect_recovery(&expected) {
+                        Ok((candidate, info)) if active() => {
+                            let native_candidate = process::Candidate {
+                                identity: candidate.identity.clone(),
+                                mapping: candidate.mapping.clone(),
+                            };
+                            match native::Reader::attach(native_candidate) {
+                                Ok(mut attached_reader) => {
+                                    attached_reader.set_cancel(command.cancel.clone());
+                                    reader = Some(attached_reader);
+                                    native_attach_error = None;
+                                }
+                                Err(error) => native_attach_error = Some(error),
+                            }
+                            attached = Some(candidate);
+                            attached_generation = command.generation;
+                            Update::Recovered(Ok(info))
+                        }
+                        Ok(_) => continue,
+                        Err(error) => Update::Recovered(Err(error)),
                     }
                 }
                 Operation::Clear => {
@@ -719,6 +919,220 @@ fn worker_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn synthetic_build() -> BuildInfo {
+        BuildInfo {
+            pid: 42,
+            start_ticks: 900,
+            sha256: "synthetic-build".into(),
+            executable_bytes: 64,
+            machine: 0x8664,
+            header_access: true,
+        }
+    }
+    fn recovery_controller() -> (Controller, SyncSender<Event>, Receiver<Command>) {
+        let (mut controller, events) = offline_controller();
+        let (sender, commands) = mpsc::sync_channel(8);
+        controller.sender = sender;
+        controller.pending = 0;
+        controller.view.connected = true;
+        controller.view.build = Some(synthetic_build());
+        controller.set_auto_reconnect(true);
+        (controller, events, commands)
+    }
+    #[test]
+    fn opt_in_does_not_attach_at_first_launch() {
+        let (mut controller, _) = offline_controller();
+        let (sender, commands) = mpsc::sync_channel(8);
+        controller.sender = sender;
+        controller.set_auto_reconnect(true);
+        controller.recover_if_due(Instant::now() + Duration::from_secs(20));
+        assert!(controller.recovery.is_none());
+        assert!(commands.try_recv().is_err());
+        assert!(!controller.view.connected);
+    }
+    #[test]
+    fn loss_schedules_one_recovery_and_manual_disconnect_cancels_it() {
+        let (mut controller, events, commands) = recovery_controller();
+        controller.view.native = Some(native::Sample::synthetic(1));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Lost,
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.native.is_none());
+        assert!(controller.view.api.is_none());
+        assert!(!controller.view.connected);
+        let due = controller.recovery.as_ref().unwrap().next_attempt;
+        controller.recover_if_due(due - Duration::from_millis(1));
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Clear
+        ));
+        assert!(commands.try_recv().is_err());
+        controller.recover_if_due(due);
+        controller.recover_if_due(due);
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Recover(_)
+        ));
+        assert!(commands.try_recv().is_err());
+        let cancelled_epoch = controller.epoch();
+        controller.disconnect();
+        controller.set_auto_reconnect(true);
+        controller.recover_if_due(due + Duration::from_secs(20));
+        events
+            .send(Event {
+                generation: cancelled_epoch,
+                update: Update::Recovered(Ok(synthetic_build())),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.recovery.is_none());
+        assert!(!controller.view.connected);
+        assert!(controller.view.build.is_none());
+        assert!(
+            commands
+                .try_iter()
+                .all(|command| matches!(command.operation, Operation::Clear))
+        );
+    }
+    #[test]
+    fn paused_or_not_opted_in_session_loss_never_recovers() {
+        for paused in [false, true] {
+            let (mut controller, events, commands) = recovery_controller();
+            controller.view.paused = paused;
+            controller.set_auto_reconnect(paused);
+            events
+                .send(Event {
+                    generation: 1,
+                    update: Update::Lost,
+                })
+                .unwrap();
+            controller.poll();
+            controller.recover_if_due(Instant::now() + Duration::from_secs(20));
+            assert!(controller.recovery.is_none());
+            assert!(
+                commands
+                    .try_iter()
+                    .all(|command| matches!(command.operation, Operation::Clear))
+            );
+        }
+    }
+    #[test]
+    fn recovery_replaces_stale_selector_identity_including_reused_pid() {
+        for pid_delta in [0, 1] {
+            let (mut controller, events, _) = recovery_controller();
+            let expected = synthetic_build();
+            controller.view.candidates = vec![ProcessChoice {
+                pid: expected.pid,
+                start_ticks: expected.start_ticks,
+            }];
+            controller.recovery = Some(Recovery::new(expected.clone(), Instant::now()));
+            let mut recovered = expected;
+            recovered.pid += pid_delta;
+            recovered.start_ticks += 1;
+            events
+                .send(Event {
+                    generation: controller.epoch(),
+                    update: Update::Recovered(Ok(recovered.clone())),
+                })
+                .unwrap();
+            controller.poll();
+            assert!(controller.view.connected);
+            assert_eq!(controller.view.selected_pid, Some(recovered.pid));
+            assert_eq!(controller.view.candidates.len(), 1);
+            assert_eq!(controller.view.candidates[0].pid, recovered.pid);
+            assert_eq!(
+                controller.view.candidates[0].start_ticks,
+                recovered.start_ticks
+            );
+        }
+    }
+
+    #[test]
+    fn recovery_requires_unique_candidate_and_exact_build() {
+        let candidate = |pid| process::Candidate {
+            identity: process::Identity {
+                pid,
+                start_ticks: 901,
+            },
+            mapping: process::parse_maps("10000-11000 r--p 0 08:01 42 /synthetic/DCGAME.EXE")
+                .unwrap()
+                .remove(0),
+        };
+        assert!(matches!(
+            unique_recovery_candidate(&[]),
+            Err(RecoveryFailure::Retry(_))
+        ));
+        let candidates = [candidate(42)];
+        assert_eq!(
+            unique_recovery_candidate(&candidates).unwrap().identity.pid,
+            42
+        );
+        assert!(matches!(
+            unique_recovery_candidate(&[candidate(42), candidate(43)]),
+            Err(RecoveryFailure::Blocked(_))
+        ));
+        let expected = synthetic_build();
+        let mut fresh = expected.clone();
+        fresh.start_ticks += 1;
+        fresh.pid += 1;
+        assert!(same_build(&expected, &fresh));
+        for field in 0..4 {
+            let mut changed = fresh.clone();
+            match field {
+                0 => changed.sha256.push('x'),
+                1 => changed.executable_bytes += 1,
+                2 => changed.machine = 0x14c,
+                _ => changed.header_access = false,
+            }
+            assert!(!same_build(&expected, &changed));
+        }
+    }
+    #[test]
+    fn recovery_backoff_is_bounded_and_build_changes_block_recovery() {
+        let now = Instant::now();
+        let mut retry = Recovery::new(synthetic_build(), now);
+        assert_eq!(retry.next_attempt, now + Duration::from_secs(2));
+        for delay in [4, 8, 10, 10] {
+            retry.retry(now);
+            assert_eq!(retry.delay, Duration::from_secs(delay));
+            assert_eq!(retry.next_attempt, now + Duration::from_secs(delay));
+        }
+        let (mut controller, events, _) = recovery_controller();
+        controller.recovery = Some(Recovery::new(synthetic_build(), now));
+        controller.view.connected = false;
+        let mut changed = synthetic_build();
+        changed.sha256.push('x');
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Recovered(Ok(changed)),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.recovery.is_none());
+        assert!(!controller.view.connected);
+        assert!(controller.view.status.contains("build changed"));
+    }
+    #[test]
+    fn turning_recovery_off_invalidates_in_flight_results() {
+        let (mut controller, events, _) = recovery_controller();
+        controller.recovery = Some(Recovery::new(synthetic_build(), Instant::now()));
+        let old_epoch = controller.epoch();
+        controller.set_auto_reconnect(false);
+        events
+            .send(Event {
+                generation: old_epoch,
+                update: Update::Recovered(Ok(synthetic_build())),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.recovery.is_none());
+        assert!(!controller.view.connected);
+    }
     #[test]
     fn delayed_http_lookup_does_not_block_session_refresh() {
         use std::{
@@ -845,6 +1259,8 @@ mod tests {
                 api_request: 2,
                 api_pending: false,
                 last_native_owner: None,
+                auto_reconnect: false,
+                recovery: None,
             },
             events,
         )
@@ -976,6 +1392,7 @@ mod tests {
                 generation: 0,
                 update: Update::Connected(Ok(BuildInfo {
                     pid: 42,
+                    start_ticks: 900,
                     sha256: "synthetic".into(),
                     executable_bytes: 64,
                     machine: 0x8664,

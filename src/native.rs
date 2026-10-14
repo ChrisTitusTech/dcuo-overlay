@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-const BUILD: &str = "a5a14396497bd05336e0267d14a1c3442fec5c21b4c28b8d298fa0a6e0105cf3";
+pub const PROFILE_ID: &str = "a5a14396497bd05336e0267d14a1c3442fec5c21b4c28b8d298fa0a6e0105cf3";
 const NAMES_RVA: usize = 0x2146c40;
 const ENGINE_RVA: usize = 0x2130f00;
 
@@ -175,7 +175,7 @@ impl Reader {
     pub fn attach(candidate: process::Candidate) -> Result<Self, String> {
         // Fingerprint before interpreting any build-specific pointers.
         let metadata = process::executable_metadata(&candidate).map_err(|e| e.to_string())?;
-        if metadata.sha256 != BUILD
+        if metadata.sha256 != PROFILE_ID
             || metadata.size != 35_066_880
             || metadata.machine != 0x8664
             || metadata.optional_magic != 0x20b
