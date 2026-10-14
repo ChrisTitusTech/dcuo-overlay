@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DCUO Companion
+Comment=Read-only character information and supported maps
+Exec=dcuo-companion
+Icon=dcuo-companion
+Terminal=false
+Categories=Game;Utility;
+StartupWMClass=DcuoCompanion

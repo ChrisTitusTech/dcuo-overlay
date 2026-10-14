@@ -4,21 +4,22 @@ A native Linux companion application in development, written in Rust for DC Univ
 Online running under Wine or Proton. It displays game information in a normal
 managed window on another monitor, reads game memory, and cross-checks supported
 character fields through [dcuobot-api](https://github.com/DCUOBot/dcuobot-api).
-Its Map tab will show the current character's live location on supported
-open-world and indoor/instance maps.
+Its Map tab previews experimental live position on locally imported open-world
+and indoor maps.
 
-**Status: a runnable verification slice.** The managed window displays real
-process/build information, exact API character-reference values, and bounded
-memory-name search evidence. The user confirmed the displayed character details
-match the game. There are no proven active-character/location profiles or usable
-calibrated maps yet. See [verification evidence](docs/verification-slice.md).
+**Status: experimental live map preview.** The managed application displays API
+character references, experimental memory resources/position, and imported maps
+for Gotham and Old Gotham Subway. Gotham marker alignment has one paired in-game
+landmark check. Current-character identity, indoor live accuracy, multi-launch
+profiles and full release acceptance remain incomplete. See
+[live map evidence](docs/live-map-preview.md).
 
-## Run the prototypes
+## Run the application
 
 Use Linux/X11 and Rust 1.95 or newer (validated with 1.96.0):
 
 ```sh
-cargo run --locked --bin dcuo-window-probe
+cargo run --locked --bin dcuo-companion
 cargo run --locked --no-default-features --bin dcuo-probe -- self-test
 cargo run --locked --no-default-features --bin dcuo-probe -- list
 ```
@@ -28,7 +29,10 @@ and read access. Enter an exact character name/world and choose Look up referenc
 for API data. Scan next bounded step searches the selected process for matching
 name bytes, separately labeled as unverified string evidence. Diagnostics shows
 the actual process/build, application version and backend. Pause, Disconnect,
-Settings, About and Quit are available. Map remains explicitly unsupported.
+Settings, About and Quit are available. Map can privately import artwork from
+the installed CookedPC directory and show explicitly experimental live position
+for the two recognized areas. Unknown areas have no marker. See
+[local import details](docs/local-map-import.md).
 DWM owns placement, tags, borders, and focus; use its controls to choose a monitor.
 
 See [development instructions](CONTRIBUTING.md) for explicit-PID inspection,

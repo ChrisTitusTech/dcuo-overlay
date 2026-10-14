@@ -1,9 +1,10 @@
 # Specification
 
-Status: a runnable verification slice displays process/build evidence, exact API
-character references, and experimental matching memory strings. User comparison
-confirmed the displayed reference details. Proven active-character/location
-profiles and live maps remain unsupported. See [verification evidence](docs/verification-slice.md).
+Status: the managed application displays API references and build-gated
+experimental live resources/position. Local imports provide Gotham and Old Gotham
+Subway maps; the Gotham marker has a paired in-game landmark observation. Profile,
+identity, indoor marker and full phase acceptance remain incomplete. See
+[live map evidence](docs/live-map-preview.md).
 Requirements below remain acceptance targets; no phase is fully complete.
 
 ## Objective

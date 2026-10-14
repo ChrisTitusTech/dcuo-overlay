@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>DCUO Companion compass icon</title>
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#152536"/>
+  <path d="M20 32 48 24 80 36 108 28v68l-28 8-32-12-28 8Z" fill="#29475e" stroke="#6d9aa8" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M48 24v68m32-56v68" stroke="#6d9aa8" stroke-width="3"/>
+  <circle cx="64" cy="64" r="27" fill="#152536" stroke="#bfd9df" stroke-width="3"/>
+  <path d="m64 41 11 23-11-5-11 5Z" fill="#f3b861"/>
+  <path d="m64 87-11-23 11 5 11-5Z" fill="#bfd9df"/>
+  <circle cx="64" cy="64" r="4" fill="#fff"/>
+</svg>

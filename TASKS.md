@@ -2,18 +2,13 @@
 
 ## Current status
 
-Phase 0 implementation is underway. The managed application now displays real
-process/build diagnostics, exact API character references, and bounded experimental
-memory-name observations. The user confirmed the displayed reference details match
-the character sheet. There is no supported active-character/location profile yet.
-The initial desktop target is Fedora/X11 with DWM-Titus. The application is a
-normal managed companion window on another monitor from the game. This replaces
-the earlier overlay design. The full live desktop acceptance matrix is pending.
-The first release includes a complete Character/Map application shell and live
-location on supported open-world and indoor/instance maps. Position readers,
-map identities, assets, floor selection, and calibration are all unproven.
-See [verification evidence](docs/verification-slice.md) and
-[Phase 0 evidence and next experiments](docs/phase-0.md).
+Phase 0 acceptance remains open. The managed companion displays exact API
+references plus build-gated experimental native resources, position and streaming
+area. Local-only map import covers Gotham and Old Gotham Subway. The live Gotham
+marker matches one paired in-game landmark; movement, indoor marker, multi-launch
+profile and full desktop acceptance remain pending. No phase is declared complete.
+See [live map evidence](docs/live-map-preview.md). The first progress PR was merged
+as PR #1; current map work is being validated for the next authorized PR.
 
 ## Planning
 
@@ -28,6 +23,59 @@ See [verification evidence](docs/verification-slice.md) and
 - [ ] Select a project license before application code is distributed.
 
 ## Worker coordination
+
+### Map foundation implementation (2026-10-13)
+
+- `map_foundation`, `gpt-6.1-sol`: owns `src/maps.rs`; implement bounded local map
+  catalog schema, affine fit/project, exact context matching and stale/session
+  marker gating with synthetic tests. Prerequisites: SPEC map contract and shared
+  types agreed below. No live proof or bundled assets. Stop at tested module.
+- `settings_foundation`, `gpt-6.1-sol`: owns `src/settings.rs` and `assets/` desktop
+  entry/icon only; validated XDG settings load/save and sanitized diagnostics
+  helpers with corruption/error tests. No UI wiring or manifests. Stop at module
+  plus installable source assets, no desktop installation.
+- `map_ui`, `gpt-6.1-sol`: owns `src/map_view.rs` and `src/bin/window_probe.rs`;
+  integrates the tested catalog/settings modules, background asset loading, map
+  browsing controls and calibration UI. No live profile claims; synthetic UI
+  checks and clean shutdown required. Follow-up wires experimental native readings
+  and background local-map import, keeping marker approval with the lead. No other
+  files or shared types changed.
+- `native_reader`, `gpt-6.1-sol`: owns `src/native.rs`; implement a fingerprint-
+  gated experimental local-player sampler from lead-observed reflection facts.
+  Validate object/field metadata and double-read ownership around samples; expose
+  experimental position/resources separately from supported map validity. Only
+  synthetic tests, no worker live reads or promotion to a supported profile.
+- Follow-up `native_reader` owns `src/session.rs` for lead-approved experimental
+  sample integration: one background reader, 250 ms bounded cadence, pause/loss
+  invalidation, stale samples and independent status. A follow-up resolves only
+  the two observed area keys from visible streaming audio/designer packages,
+  retaining them as experimental context and rejecting mixed transitions. Preserve exact API source
+  boundaries and test generation/owner changes. No UI/Git/live actions.
+- Follow-up `native_reader` owns `src/session.rs` for a bounded independent API
+  worker so slow reference requests do not interrupt local sampling. Preserve
+  generation checks, command accounting, cancellation and joined shutdown; test
+  responsiveness against a deliberately delayed local synthetic HTTP server.
+- `map_package`, `gpt-6.1-sol`: owns `docs/local-map-import.md` only; inspect
+  installed map-package metadata and public decoder specifications to establish
+  a bounded local-only import route. No live memory, asset copies in Git, game
+  execution, redistribution, shared code edits or nested workers. Report exact
+  package format, dimensions/coordinate metadata, existing tools and limitations.
+  Follow-up adds `src/map_import.rs`: bounded local installed-package import for
+  only the two test areas using independently implemented metadata parsing and
+  LZO/BC1 decode, private output assets and synthetic corruption tests. No game
+  assets in Git; imported calibrations remain experimental until verified.
+- Follow-up `map_ui` owns `src/map_view.rs`: automatic exact-context selection
+  while following, an explicit Browse/current-area mode, larger usable map canvas,
+  and regressions for stale/unavailable context. Experimental markers must never
+  be labeled verified. Lead owns application wiring and live acceptance.
+- Follow-up `native_reader` owns `src/memory.rs` and `src/native.rs`: reduce
+  measured polling overhead with bounded scatter reads, preserving process
+  identity, readable-range, partial-read and sample-generation checks. Synthetic
+  self-process tests only; lead measures real sampling cost. No session/UI edits.
+- Lead owns public module wiring, dependency selection, CI,
+  live discovery, documentation and final validation. No worker live reads,
+  commits or nested workers. Research source offsets failed the current build;
+  no profile is enabled by those candidates.
 
 ### Continued implementation and publication (2026-10-13)
 
@@ -161,10 +209,10 @@ and map capability claims remain unsupported.
 
 ## Phase 1
 
-- [ ] Scaffold Rust modules and install/prove required development tooling.
+- [x] Scaffold Rust modules and install/prove required development tooling.
 - [ ] Implement configuration, diagnostics, observation types, and lifecycle states.
-- [ ] Build shared session controls/status, Character/Map/Diagnostics tabs, and Settings/Help/About/Quit.
-- [ ] Define versioned location/map-catalog schemas and bounded asset handling.
+- [x] Build shared session controls/status, Character/Map/Diagnostics tabs, and Settings/Help/About/Quit.
+- [x] Define versioned location/map-catalog schemas and bounded asset handling.
 - [ ] Implement replay fixtures and error-path tests.
 - [ ] Validate keyboard navigation, all tab states, config recovery, and worker shutdown offline.
 - [ ] Add passing build, formatting, lint, and test CI.
@@ -340,3 +388,38 @@ superseded by the managed companion-window decision recorded in the next entry.
   window is left open for user verification. See docs/verification-slice.md.
 - Current-character profiles, live resources, location, calibrated maps and the
   complete desktop acceptance matrix remain unproven; no phase is declared done.
+
+### 2026-10-13: Experimental live-map slice
+
+- PR #1 merged the character verification slice as `d46416b`. User authorization
+  covers subsequent validated progress PRs and merges, without release publication.
+- Added build-gated read-only local-pawn resources/position, independently scheduled
+  API requests, persistent settings, map catalog/projection and a bounded importer.
+- Two real private imports passed: 600 Gotham tiles and six Old Gotham Subway
+  tiles, with catalog/image checksums and private output permissions. No game
+  artwork, personal observations or memory dumps are staged.
+- Gotham streaming context and one paired in-game marker landmark matched.
+  The real companion displayed the live preview, zoom and Follow on HDMI-0.
+  Indoor marker, movement and multi-launch validation remain pending.
+- See docs/live-map-preview.md for demonstrated behavior and remaining gates.
+  Format, strict all-target lint, 65 workspace tests, 53 non-window tests, build
+  and two nested-X startup/shutdown checks passed. One local-asset test is opt-in
+  and was separately run twice. Independent review is in progress.
+
+- The user confirmed the live Gotham marker follows movement in the correct place.
+
+- Independent Codex review found three actionable defects: name-search progress
+  reset on native errors, bare catalog paths, and timestamps assigned after
+  validation. Fixed all three with relevant regression checks. The supplemental
+  CodeRabbit invocation could not start; it is not a required repository gate.
+- Added bounded scatter reads to reduce polling cost while preserving fresh
+  mapping/PID checks and all-or-nothing partial-read handling. Warm optimized
+  samples in the currently observed unsupported instance took 9-10 ms; a renewed
+  outdoor performance comparison remains pending. Updated local gates pass
+  70 workspace tests and 58 non-window tests, format and strict all-target lint.
+
+- Second independent Codex review found a repaint-timing gap at slow UI settings.
+  Live refresh is now capped at 250 ms and scheduled no later than the current
+  sample expiry; the regression test passes. The optimized companion measured
+  7.8% of one CPU core over ten seconds in the current instance. Pause/Resume
+  restored resources; the unsupported-area marker remained correctly hidden.

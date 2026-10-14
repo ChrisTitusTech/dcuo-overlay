@@ -404,7 +404,9 @@ name = "dcuo-companion"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "image",
  "libc",
+ "lzokay",
  "serde",
  "serde_json",
  "sha2",
@@ -1115,6 +1117,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -1317,6 +1321,15 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "lzokay"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "953d350dc065718bb00b61ea2118274ffe2fdf6488f32f720422bcd1c9d6025f"
+dependencies = [
+ "zerocopy",
+]
 
 [[package]]
 name = "memchr"

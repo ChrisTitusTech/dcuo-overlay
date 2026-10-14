@@ -10,6 +10,9 @@ slice now integrates session/build diagnostics, exact API reference lookup and
 experimental memory-name search. This exercises parts of Phases 1 and 3 while
 Phase 0 live profile/map discovery remains open; it does not certify those phases.
 See [user verification and remaining gates](docs/verification-slice.md).
+The next slice adds experimental native resources/position, a local map importer,
+Gotham live preview, independent API work and persistent application settings.
+See [live map evidence and remaining gates](docs/live-map-preview.md).
 
 ## Development worker execution
 
