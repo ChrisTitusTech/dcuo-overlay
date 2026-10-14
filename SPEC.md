@@ -1,6 +1,9 @@
 # Specification
 
-Status: proposed implementation scope; no runtime capabilities verified.
+Status: Phase 0 implementation underway. Bounded executable-header access and
+initial managed-window behavior are demonstrated on one development machine;
+character/location profiles and live maps remain unsupported. See
+[Phase 0 evidence](docs/phase-0.md). Requirements below remain acceptance targets.
 
 ## Objective
 

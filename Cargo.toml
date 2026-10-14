@@ -1,0 +1,27 @@
+[package]
+name = "dcuo-companion"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Read-only DCUO companion feasibility prototypes for Linux/X11"
+
+[features]
+default = ["window"]
+window = ["dep:eframe", "dep:winit", "dep:x11rb"]
+
+[dependencies]
+libc = "0.2.186"
+sha2 = "0.10.9"
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11"], optional = true }
+winit = { version = "0.30.13", default-features = false, features = ["x11", "rwh_06"], optional = true }
+x11rb = { version = "0.13.2", optional = true }
+
+[[bin]]
+name = "dcuo-probe"
+path = "src/bin/probe.rs"
+
+[[bin]]
+name = "dcuo-window-probe"
+path = "src/bin/window_probe.rs"
+required-features = ["window"]

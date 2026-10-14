@@ -1,6 +1,7 @@
 # Phased roadmap
 
-All implementation phases are pending. Each phase produces a reviewable commit
+Phase 0 is underway; no phase has met all exit criteria. See
+[current evidence and blockers](docs/phase-0.md). Each phase produces a reviewable commit
 and evidence against its exit criteria. Discovery results may narrow supported
 features; record that explicitly rather than marking unproven features complete.
 

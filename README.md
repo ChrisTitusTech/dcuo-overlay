@@ -1,15 +1,34 @@
 # DCUO Companion
 
-A planned native Linux companion application written in Rust for DC Universe
+A native Linux companion application in development, written in Rust for DC Universe
 Online running under Wine or Proton. It displays game information in a normal
 managed window on another monitor, reads game memory, and cross-checks supported
 character fields through [dcuobot-api](https://github.com/DCUOBot/dcuobot-api).
 Its Map tab will show the current character's live location on supported
 open-world and indoor/instance maps.
 
-**Status: planning.** There is no runnable application yet. Memory layouts,
-launcher compatibility, two-monitor desktop behavior, position reads, and map
-assets/calibration still need to be proven.
+**Status: Phase 0 prototypes.** Runnable memory and managed-window experiments
+exist. Bounded executable-header reads and initial DWM window behavior passed on
+the development machine. There are no supported character/location profiles or
+usable calibrated maps yet. See [feasibility evidence](docs/phase-0.md) for limits.
+
+## Run the prototypes
+
+Use Linux/X11 and Rust 1.95 or newer (validated with 1.96.0):
+
+```sh
+cargo run --locked --bin dcuo-window-probe
+cargo run --locked --no-default-features --bin dcuo-probe -- self-test
+cargo run --locked --no-default-features --bin dcuo-probe -- list
+```
+
+The window is a standalone desktop/input experiment. Its Character and Map views
+intentionally show unavailable data; it starts no game reader or API client.
+DWM owns placement, tags, borders, and focus. Use its normal controls to put the
+window on the desired monitor. Quit closes the prototype normally.
+
+See [development instructions](CONTRIBUTING.md) for explicit-PID inspection,
+bounded name-search experiments, X11 checks, and build requirements.
 
 ## First milestone
 

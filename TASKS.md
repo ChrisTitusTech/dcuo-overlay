@@ -2,14 +2,16 @@
 
 ## Current status
 
-Planning foundation prepared. No Rust implementation, memory profile, or live
-compatibility result exists yet. Next implementation work is Phase 0.
+Phase 0 implementation is underway. Runnable Rust memory and window probes exist;
+bounded live executable-header reads and initial managed-window checks passed on
+the development machine. There is no supported character/location profile yet.
 The initial desktop target is Fedora/X11 with DWM-Titus. The application is a
 normal managed companion window on another monitor from the game. This replaces
-the earlier overlay design and remains unverified at runtime.
+the earlier overlay design. The full live desktop acceptance matrix is pending.
 The first release includes a complete Character/Map application shell and live
 location on supported open-world and indoor/instance maps. Position readers,
 map identities, assets, floor selection, and calibration are all unproven.
+See [Phase 0 evidence and next experiments](docs/phase-0.md).
 
 ## Planning
 
@@ -38,13 +40,57 @@ with no owned implementation files or further delegation. It recommended separat
 memory, map, UI, API, and review work after shared contracts are agreed, one live
 operator, and lead-owned integration. The lead incorporated those recommendations.
 A final read-only worker review found no actionable consistency issues in the
-three changed planning documents. No implementation worker has been started.
+three changed planning documents. No implementation worker ran during that review.
 
 ## Phase 0
 
+Implementation assignments (2026-10-13):
+
+- `memory_probe`, `gpt-6.1-sol`: owns `src/process.rs`, `src/memory.rs`, and
+  `src/bin/probe.rs`. Implement bounded process discovery, executable identity,
+  read-only reads, and metadata-only probe output with synthetic tests. Shared
+  contract: independent library modules exposed by lead-owned `src/lib.rs`, no
+  supported character profiles yet. Requires the lead's Cargo scaffold. Stop at
+  a tested probe; no live game reads, scanning, desktop changes, or commits.
+- `window_probe`, `gpt-6.1-sol`: owns `src/bin/window_probe.rs`. Implement a small
+  egui/X11 managed-window feasibility probe using the lead's dependency choices.
+  No dependency on memory observations; show explicit unsupported status, ordinary
+  input and resize controls, and optional bounded smoke-test lifetime. Verify
+  compilation/API behavior, but leave live launching to the lead. Stop at the
+  prototype; no full application, shared-file edits, or commits.
+- `map_feasibility`, `gpt-6.1-sol`: owns `docs/map-feasibility.md`. Research map
+  source/provenance and a bounded outdoor/indoor calibration experiment using
+  public primary sources. No source assumptions imply permission or live support.
+  Requires SPEC.md's location contract; no application interfaces to change.
+  Return source links, unresolved requirements, and proposed experiments. Stop
+  before asset acquisition, game interaction, implementation, or commits.
+
+The lead owns Cargo files, library wiring, integration, live desktop/process
+experiments, documentation/status, final format/lint/test/build gates, and commits.
+The lead also owns `scripts/check_x11.py` for bounded startup/relaunch checks.
+The memory assignment includes `search-name`, a bounded stdin-based exact-byte
+discovery experiment, with synthetic matching tests and no live profile claims.
+
+- Follow-up `map_feasibility` review, still `gpt-6.1-sol`: read-only review of
+  the completed process/memory/CLI implementation and lead smoke checker. Check
+  bounds, identity ambiguity, error handling, sensitive output, and unmet gates.
+  No file ownership, edits, live reads, commits, or further delegation. Return
+  actionable findings for lead resolution before committing.
+
+Assignment results: all three implementation/research workers completed their
+bounded deliverables. The memory worker fixed the live Wine mapping assumption
+and the reviewer's stale-mapping finding, with regression tests. The window worker
+fixed frame filling after lead visual inspection. The lead integrated the probes,
+resolved the all-target lint warning, passed 14 tests plus format/lint/build, and
+ran the live header, bounded search, keyboard, and window checks recorded in
+docs/phase-0.md. The reviewer confirmed its finding resolved. All live profile
+and map capability claims remain unsupported.
+
+- [x] Build bounded process/memory and managed-X11 feasibility prototypes with synthetic tests.
 - [ ] Record running DWM-Titus revision, monitor layout/scaling, companion monitor/tag, and game display mode.
-- [ ] Record launcher, Wine/Proton version, executable build, and architecture.
-- [ ] Identify the correct process and establish a bounded read-only access path.
+- [x] Record launcher, Wine/Proton version, executable build, and architecture.
+- [x] Identify the candidate game process and establish a bounded read-only header-access path.
+- [x] Verify exact pre-map X11 identity, normal type, and override redirect off over two launches.
 - [ ] Demonstrate a known character value across three launches.
 - [ ] Prove player position and map/instance/floor context in an outdoor area and an indoor instance.
 - [ ] Inventory first-release areas/layers and identify usable assets, provenance, and distribution status.
@@ -126,7 +172,7 @@ three changed planning documents. No implementation worker has been started.
 
 ## Evidence log
 
-No implementation validation has run. Add dated entries per phase with commit,
+Implementation validation is recorded below and in docs/phase-0.md. Add dated entries per phase with commit,
 environment, checks, observed results, and unresolved limitations. Do not mark
 tasks complete solely because code was written.
 
@@ -198,3 +244,24 @@ superseded by the managed companion-window decision recorded in the next entry.
   explicit worker model, and retained phases. The worker's final consistency
   review found no actionable concerns. Rust build/lint/test and live acceptance
   checks remain pending because there is no application package or prototype.
+
+### 2026-10-13: First Phase 0 prototypes
+
+- Added a locked Rust package, bounded read-only memory/process primitives,
+  metadata inspection and experimental name-search CLI, a managed X11 window
+  prototype, and a two-launch smoke checker. No profiles or API integration exist.
+- Ordinary user access read and matched the live 64-byte DCGAME.EXE header.
+  Exact-name searches stopped at their time bounds without matches; active
+  character identity, all character fields, and location remain unverified.
+- Two live launches passed the X11 property contract on HDMI-0 while the fullscreen
+  Gamescope host occupied DP-0. Keyboard tab/input and background-focus checks
+  passed. The full DWM/game/compositor/recreation matrix remains pending.
+- Format, strict all-target Clippy, 14 tests, workspace build, optimized memory
+  build, and fixed-header access passed. Independent review's stale-mapping
+  issue was fixed and confirmed. See docs/phase-0.md for commands and limits.
+- Map research found no advertised DCUO map collection in the inspected Census
+  index. Asset permissions, coordinates/context, inventory and calibration remain
+  unresolved for both required map categories; see docs/map-feasibility.md.
+- No game actions, desktop policy changes, publication, or personal-data commits
+  were performed. Phase 0 remains incomplete; continue bounded discovery and the
+  live acceptance matrix before selecting the production backend or profiles.
