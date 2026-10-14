@@ -29,6 +29,24 @@ See [verification evidence](docs/verification-slice.md) and
 
 ## Worker coordination
 
+### Continued implementation and publication (2026-10-13)
+
+The user authorized publishing/merging completed progress and continuing toward a
+working map without routine questions. Existing live acceptance gates remain.
+
+- `location_research`, `gpt-6.1-sol`: read-only Phase 0/2 research of primary
+  sources and public reader structures for controlled-player location/context.
+  Prerequisites: current SPEC and map feasibility evidence. No owned source files
+  or shared-contract changes. Return sources, bounded experiment proposals and
+  limitations; stop before live reads, edits or nested workers.
+- `map_sources`, `gpt-6.1-sol`: read-only Phase 0 map-source/calibration research
+  for Gotham and one instance, including a local asset import route. Same plan
+  prerequisites; no file ownership. Return verified sources, coordinate evidence
+  and limits; stop before asset downloads, live actions, edits or nested workers.
+- The lead owns live discovery, integration and publication. A built-in Codex
+  review covers all progress against the remote main branch before the initial PR.
+
+
 ### Completed verification slice (2026-10-13)
 
 The user requests continuation until actual application/character information can
