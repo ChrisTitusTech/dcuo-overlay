@@ -15,6 +15,25 @@
   game binaries. Prefer synthetic fixtures or minimal sanitized observations.
 - Keep documentation and task status aligned with demonstrated capabilities.
 - Use simple ASCII punctuation and small, coherent commits after relevant checks.
-- Use subagents only when the user or applicable instructions explicitly request them.
 - Respect plan-only milestones and explicit user stop points. Publication and
   release actions require explicit authorization.
+
+## Development workers
+
+- The user requests extra workers where useful. Delegate bounded, independent
+  research, implementation, tests, or review within the currently authorized
+  phase using the assignments in ROADMAP.md. Keep trivial or dependent work serial.
+- Explicitly select `gpt-6.1-sol` for each spawned worker. Do not silently replace
+  that model if unavailable; report the limitation and continue suitable lead work.
+  This does not change the lead agent's model.
+- Use at most three extra workers alongside the lead, subject to any lower runtime
+  limit. The lead owns spawning and scheduling; workers do not spawn more workers.
+- Agree shared interfaces first and assign non-overlapping file ownership, a
+  bounded deliverable, required evidence, and a stop point before each assignment.
+  Workers request shared-contract changes through the lead.
+- The lead owns shared scaffolding/manifests, integration, plan/status updates,
+  Git staging/commits, and final checks. Schedule one operator for live game and
+  desktop experiments; other workers can analyze sanitized evidence offline.
+- Worker completion is input to review, not phase acceptance. Preserve all live
+  evidence gates and the user's stop points. These are development agents, not
+  permission to create duplicate application readers or game sessions.

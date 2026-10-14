@@ -19,8 +19,26 @@ map identities, assets, floor selection, and calibration are all unproven.
 - [x] Specify the managed X11 companion-window contract and two-monitor acceptance checks.
 - [x] Define application shell, current-character workflow, and Map-tab requirements.
 - [x] Include both open-world and indoor/instance maps in first-release scope.
+- [x] Define explicit `gpt-6.1-sol` worker assignments, ownership, and integration gates.
 - [ ] Resolve remaining desktop/launcher details and initial feature priorities.
 - [ ] Select a project license before application code is distributed.
+
+## Worker coordination
+
+Use the phase assignments in ROADMAP.md and worker rules in AGENTS.md. For each
+delegated assignment, add a record here containing phase, worker/model, bounded
+deliverable, prerequisites, owned files, shared interfaces, required checks, and
+stop point. At completion, record changed files, check results, unresolved limits,
+and lead review/integration evidence. Keep implementation tasks pending until their
+exit criteria pass; planning and worker review do not demonstrate live capability.
+
+Completed assignment: `review_worker_plan`, explicitly spawned on `gpt-6.1-sol`,
+reviewed the phase split and coordination risks. Its scope was read-only planning,
+with no owned implementation files or further delegation. It recommended separate
+memory, map, UI, API, and review work after shared contracts are agreed, one live
+operator, and lead-owned integration. The lead incorporated those recommendations.
+A final read-only worker review found no actionable consistency issues in the
+three changed planning documents. No implementation worker has been started.
 
 ## Phase 0
 
@@ -163,3 +181,20 @@ superseded by the managed companion-window decision recorded in the next entry.
   links, and scope/phase consistency across all six documents. The added Census
   reference was reachable. Rust and live game/map checks were not run because
   the repository still has no application; those gates remain pending.
+
+### 2026-10-13: Development worker planning review
+
+- Used a `gpt-6.1-sol` subagent for a read-only review of parallel work and phase
+  dependencies. Added explicit model selection and phase-specific assignments,
+  with up to three extra workers when useful and within runtime limits.
+- Defined file ownership, prerequisites, worker handoff evidence, single-operator
+  live experiments, and lead-owned shared interfaces, integration, and commits.
+  Preserved the managed two-monitor window and both first-release map categories.
+- Reviewed the official subagent model-selection guidance linked in ROADMAP.md.
+  No global settings, application code, game state, or desktop configuration changed.
+  Phase 0 remains the next implementation step; all live feasibility gates remain
+  pending.
+- Documentation checks passed for whitespace, ASCII, code fences, local links,
+  explicit worker model, and retained phases. The worker's final consistency
+  review found no actionable concerns. Rust build/lint/test and live acceptance
+  checks remain pending because there is no application package or prototype.

@@ -4,6 +4,52 @@ All implementation phases are pending. Each phase produces a reviewable commit
 and evidence against its exit criteria. Discovery results may narrow supported
 features; record that explicitly rather than marking unproven features complete.
 
+## Development worker execution
+
+Use extra `gpt-6.1-sol` workers when a phase has independent work that benefits
+from parallel execution or a separate review. Explicitly select that model when
+spawning; report unavailability rather than silently substituting another model.
+Use no more than three extra workers alongside the lead, and respect lower
+runtime limits. This is a ceiling, not a quota: small edits and work waiting on
+the same dependency remain serial. The lead schedules all workers, including
+reusing an existing worker for a follow-up, with no nested delegation.
+
+Before spawning, record the assignment in TASKS.md: authorized phase, deliverable,
+prerequisites, owned files, shared interfaces, required checks, and stop point.
+The lead creates shared scaffolding and agrees observation/session/map/API
+contracts before dependent implementation. Workers own disjoint files and request
+changes to shared contracts through the lead. The lead owns shared manifests and
+lockfiles, module wiring, integration, plan/status updates, and Git operations.
+Workers return changed files, check commands/results, and unresolved limitations.
+Concurrent checks must not modify the same generated files or output directories.
+
+| Phase | Suitable worker assignments | Prerequisites and lead-owned work |
+| --- | --- | --- |
+| 0: Feasibility | Managed X11 prototype; bounded reader prototype/offline decoder review; map source, coverage, and calibration research | Coordinate prototype interfaces and files. One operator performs live reads, routes, restarts, and desktop experiments; workers analyze recorded sanitized evidence. Select the backend only after live evidence. |
+| 1: Foundation | Configuration/diagnostics; replay fixtures and error-path tests; application shell/tab presentation | Lead creates the Rust package and shared types first, and owns module wiring and CI. Shell work can use labeled fixtures while discovery continues. |
+| 2: Memory | Character-field decoders; location/context decoders; independent profile and regression review | Establish identity/session contracts first. Live discovery and profile promotion remain coordinated; each field needs its own evidence. |
+| 3: API | Transport/cache/retry; normalization/comparison; independent stale-response and failure-path tests | Agree typed responses, exact identity matching, and session binding first. Lead integrates refresh scheduling and live comparison. Changes in dcuobot-api require their own authorized scope. |
+| 4A/4B: Application | Character presentation; map catalog/projection/view; settings/diagnostics/accessibility | Assign separate modules after session and map contracts stabilize. Lead integrates shared controls, cancellation, session invalidation, and background lifecycle before full live acceptance. |
+| 5: Hardening | Packaging/help; map coverage and asset-permission audit; independent diagnostics/regression review | Lead runs integrated release gates and live smoke tests, records remaining gaps, and handles any explicitly authorized publication. |
+| 6: Optional features | Separately selected analytics or quality-of-life features and replay tests | Confirm feature priorities and event contracts first. Lead owns shared ingestion, deduplication, and session boundaries. |
+
+Choose only the assignments needed for the current phase, and divide tests from
+implementation only when their contracts and files are independent. A worker may
+review a coherent completed change without editing it. The lead inspects all
+results, resolves conflicts, runs relevant integrated checks, and commits only
+accepted changes. Record worker evidence and remaining blockers in TASKS.md;
+a worker's success report does not replace phase exit criteria.
+
+Do not run competing live discovery or acceptance experiments against the same
+game session. Game interaction and desktop/setup changes retain their existing
+authorization requirements. Parallel fixture-based UI/API work cannot establish
+live memory or map feasibility, and no worker may advance past a plan-only stop
+point. Development workers are distinct from runtime application workers: the
+application still shares one session model and must not duplicate readers.
+
+Model selection follows the [OpenAI subagent guidance](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+Use explicit selection for this project; no global model-setting change is needed.
+
 ## Phase 0: Linux and Wine feasibility
 
 Record the target Fedora/X11 machine, running DWM-Titus build, monitor layout and
@@ -18,9 +64,10 @@ stable class/instance/title properties. Prove DWM placement and ordinary window
 interaction, then document an optional monitor/tag rule for repeatable startup.
 Record any required setup change and its rollback before selecting the backend.
 
-Investigate map feasibility in parallel with the bounded identity experiment,
-without building the full map UI. Prove controlled-player position and enough
-zone/instance/floor context to distinguish one open-world area and one indoor
+Investigate map feasibility alongside the bounded identity experiment, with
+parallel offline analysis and a single scheduled live operator as described
+above, without building the full map UI. Prove controlled-player position and
+enough zone/instance/floor context to distinguish one open-world area and one indoor
 instance, including exit/re-entry. Identify usable map assets and calibrate an
 initial transform against independent landmarks. Record the broader first-release
 coverage inventory for both categories, asset provenance, unresolved readers,
