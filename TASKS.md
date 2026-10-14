@@ -5,10 +5,12 @@
 Phase 0 acceptance remains open. The managed companion displays exact API
 references plus build-gated experimental native resources, position and streaming
 area. Local-only map import covers Gotham and Old Gotham Subway. The live Gotham
-marker matches one paired in-game landmark; movement, indoor marker, multi-launch
+marker matches one paired in-game landmark and the user confirmed movement tracking; indoor marker, multi-launch
 profile and full desktop acceptance remain pending. No phase is declared complete.
-See [live map evidence](docs/live-map-preview.md). The first progress PR was merged
-as PR #1; current map work is being validated for the next authorized PR.
+See [live map evidence](docs/live-map-preview.md). PR #1 and PR #2 are merged; map preview progress is on main. The next offline
+slice adds optional restart recovery, API cache/backoff, cancellable imports, per-map
+calibration evidence, preference reset, and user-local install/rollback. See
+[offline hardening evidence](docs/offline-hardening.md).
 
 ## Planning
 
@@ -23,6 +25,48 @@ as PR #1; current map work is being validated for the next authorized PR.
 - [ ] Select a project license before application code is distributed.
 
 ## Worker coordination
+
+### Offline recovery and local packaging (2026-10-14)
+
+- The game has been closed by the user. Do not relaunch or perform live reads
+  until a new game session is available. No live exit transition is claimed: the
+  originally connected window was already closed when the process exit was checked.
+- `native_reader`, `gpt-6.1-sol`, owns `src/session.rs` only: implement opt-in
+  reconnect after unexpected process loss, for the exact previously attached
+  executable fingerprint and one unambiguous fresh candidate. Manual Disconnect
+  cancels recovery, pause never reconnects, generation/cancellation remain intact,
+  and recovery retries are bounded/backed off. Expose a setter; lead wires UI.
+  Use deterministic synthetic event/candidate tests; no game launch, live reads,
+  settings or application edits. Stop at tested session module.
+- `map_package`, `gpt-6.1-sol`, owns `scripts/install_local.py`,
+  `scripts/test_install_local.py`, and `docs/local-install.md`: reversible
+  user-local install/upgrade/uninstall and rollback of this app's binary/desktop/
+  icon, preserving unrelated files and user maps/settings. Use private ownership
+  metadata and hashes; reject symlink/traversal and unknown occupied destinations.
+  Tests use temporary prefixes and synthetic binary/assets. Include optional
+  monitor placement and explicit source/build commands. No actual user installation
+  or Git operations; lead owns target-machine validation.
+- `map_ui`, `gpt-6.1-sol`, performs a read-only offline-readiness audit across
+  SPEC.md, ROADMAP.md, TASKS.md and current code. Identify concrete first-release
+  work still possible without the game, distinguishing required implementation
+  from live validation and deferred optional features. No file edits or nested
+  workers; return prioritized file-level findings and achievable offline gates.
+- Follow-up `map_ui` owns `src/api.rs` for a bounded reference client with typed
+  sanitized failures, exact-key cache and original receipt timestamps, rate-limit
+  cooldowns honoring Retry-After, and capped transient retries within an eight-
+  second request budget. Synthetic local HTTP/clock tests only. Lead adds the
+  httpdate dependency and wires the client into the existing API worker.
+- Follow-up `native_reader` owns `src/maps.rs` for structured per-entry calibration
+  version/profile/confidence/error evidence and effective marker-confidence
+  gating. Preserve schema-1 compatibility as experimental-only; incompatible
+  profiles cannot place markers. Lead adapts importer/UI/tests to the agreed
+  types. No live profiles are promoted and no assets are rewritten by workers.
+- Follow-up `map_package` owns `src/map_import.rs` and `src/map_view.rs`: add
+  cooperative cancellation to background imports/catalog work and shutdown, clean
+  incomplete outputs, and synthetic cancellation tests. Coordinate calibration
+  constructor changes with the lead; no game launch or private asset commits.
+- Lead owns UI settings, documentation/status, CI integration and Git. All checks
+  and independent review precede the next authorized PR/merge; no release upload.
 
 ### Map foundation implementation (2026-10-13)
 
@@ -423,3 +467,19 @@ superseded by the managed companion-window decision recorded in the next entry.
   sample expiry; the regression test passes. The optimized companion measured
   7.8% of one CPU core over ten seconds in the current instance. Pause/Resume
   restored resources; the unsupported-area marker remained correctly hidden.
+
+- User explicitly set the stopping point: continue unattended until all useful
+  work possible without a running game is exhausted. Do not relaunch the game;
+  stop at the remaining live-only checks and report them precisely.
+
+## Offline hardening integration evidence (2026-10-14)
+
+All three follow-up workers completed their recorded ownership scopes. The lead
+integrated persistent API receipt/source state, opt-in reconnect settings, reset,
+calibration profile gating and sanitized diagnostics. Installer commit `00df5fb`
+passed all 12 isolated tests. Workspace, minimum-toolchain and actual offline
+window/import/install measurements are recorded in
+[offline hardening](docs/offline-hardening.md). Independent review found a stale
+process selector after recovery; the lead fixed it with PID-reuse regression
+coverage. Full phase checkboxes remain pending live acceptance. No game was
+launched, no live snapshots/assets were committed, and no release was published.

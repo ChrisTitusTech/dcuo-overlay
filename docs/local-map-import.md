@@ -183,3 +183,20 @@ catalog files use mode 600. Existing unrelated destination files are preserved.
 A failed import removes only its own new output directory. Returned catalogs
 explicitly label the zoom/padded-grid projection unverified until live landmark
 acceptance. The files remain local-only and outside repository/release assets.
+
+## Calibration records and cancellation
+
+New imported catalog entries carry calibration schema version 1, the exact native
+profile SHA-256, experimental confidence and zero independently validated
+landmarks. A legacy entry without this record remains experimental. Observation
+confidence cannot promote an entry beyond its own evidence, and mismatched
+profiles cannot place markers. Validated records require at least three fitting
+landmarks, a separate check landmark, and finite measured error within a declared
+accuracy budget. The current imports do not meet that validation requirement.
+
+Closing the app cancels import between bounded package/tile operations and during
+PNG writes. Incomplete output directories are removed; only a complete catalog is
+published. Existing imported versions remain intact. To roll back a map catalog,
+select its previous local catalog path in Settings and load it in Map. Paths,
+artwork, coordinates and arbitrary catalog text are excluded from copied map
+diagnostics.
