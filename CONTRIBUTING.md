@@ -27,6 +27,11 @@ cargo build --workspace
 These commands are planned gates and do not run against the current docs-only
 repository. Add feature-specific checks as needed. UI and memory changes also
 need the applicable live acceptance evidence from ROADMAP.md.
+Location/map work also needs controlled outdoor and indoor/instance routes,
+independent calibration landmarks, floor/zone transition checks, and documented
+asset provenance. Synthetic markers and images are useful fixtures, not proof
+of live map coverage. UI changes need visual checks of every affected tab's
+loading, empty, stale, and error states with sanitized data.
 
 Report failed or skipped gates and their blockers. Do not use synthetic fixtures
 as proof that live memory layouts or managed companion-window behavior work.

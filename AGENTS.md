@@ -9,6 +9,8 @@
 - Reject unsupported game builds and ambiguous profiles rather than guessing.
 - Track validity and API comparison per field. Never label all memory verified
   because character identity matched.
+- Bind map location to the current session and proven zone/layout/floor context;
+  show a live marker only with valid coordinates and a matching calibrated map.
 - Do not commit secrets, personal game snapshots, full memory dumps, or proprietary
   game binaries. Prefer synthetic fixtures or minimal sanitized observations.
 - Keep documentation and task status aligned with demonstrated capabilities.

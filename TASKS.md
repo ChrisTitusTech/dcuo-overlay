@@ -7,6 +7,9 @@ compatibility result exists yet. Next implementation work is Phase 0.
 The initial desktop target is Fedora/X11 with DWM-Titus. The application is a
 normal managed companion window on another monitor from the game. This replaces
 the earlier overlay design and remains unverified at runtime.
+The first release includes a complete Character/Map application shell and live
+location on supported open-world and indoor/instance maps. Position readers,
+map identities, assets, floor selection, and calibration are all unproven.
 
 ## Planning
 
@@ -14,6 +17,8 @@ the earlier overlay design and remains unverified at runtime.
 - [x] Review DCUO-Assistant for feature inspiration.
 - [x] Document scope, source limitations, architecture, and phased acceptance criteria.
 - [x] Specify the managed X11 companion-window contract and two-monitor acceptance checks.
+- [x] Define application shell, current-character workflow, and Map-tab requirements.
+- [x] Include both open-world and indoor/instance maps in first-release scope.
 - [ ] Resolve remaining desktop/launcher details and initial feature priorities.
 - [ ] Select a project license before application code is distributed.
 
@@ -23,6 +28,9 @@ the earlier overlay design and remains unverified at runtime.
 - [ ] Record launcher, Wine/Proton version, executable build, and architecture.
 - [ ] Identify the correct process and establish a bounded read-only access path.
 - [ ] Demonstrate a known character value across three launches.
+- [ ] Prove player position and map/instance/floor context in an outdoor area and an indoor instance.
+- [ ] Inventory first-release areas/layers and identify usable assets, provenance, and distribution status.
+- [ ] Calibrate prototype maps against independent landmarks and set accuracy/latency budgets.
 - [ ] Prove `override_redirect=false`, normal window type, and DWM management across recreation.
 - [ ] Verify stable X11 identities and monitor/tag placement, including relaunch.
 - [ ] Prove ordinary input, resizing/tiling, focus cycling, and no focus theft from updates.
@@ -35,15 +43,21 @@ the earlier overlay design and remains unverified at runtime.
 
 - [ ] Scaffold Rust modules and install/prove required development tooling.
 - [ ] Implement configuration, diagnostics, observation types, and lifecycle states.
+- [ ] Build shared session controls/status, Character/Map/Diagnostics tabs, and Settings/Help/About/Quit.
+- [ ] Define versioned location/map-catalog schemas and bounded asset handling.
 - [ ] Implement replay fixtures and error-path tests.
+- [ ] Validate keyboard navigation, all tab states, config recovery, and worker shutdown offline.
 - [ ] Add passing build, formatting, lint, and test CI.
 
 ## Phase 2
 
 - [ ] Discover and validate identity fields.
 - [ ] Investigate CR, skill points, maximum/current health, and power independently.
+- [ ] Discover player position, zone/instance/layout/floor context, and optional heading independently.
 - [ ] Implement profile fingerprints, bounded decoding, and invalidation.
 - [ ] Validate transitions, partial reads, ambiguous signatures, and PID reuse handling.
+- [ ] Validate location across outdoor/indoor routes, floor changes, teleports, and repeated instance entry.
+- [ ] Reject mixed/late session or zone observations and unsupported location contexts.
 - [ ] Record field-level live evidence and regression fixtures.
 
 ## Phase 3
@@ -52,30 +66,45 @@ the earlier overlay design and remains unverified at runtime.
 - [ ] Implement comparison states, freshness handling, caching, and retry limits.
 - [ ] Evaluate timestamp, identifier, and equipment-slot contract gaps.
 - [ ] Pass mismatch, ambiguity, stale-data, outage, and rate-limit tests.
+- [ ] Verify API failure leaves local Character/Map readings usable and old responses cannot change current identity.
 - [ ] Record live API cross-check evidence.
 
-## Phase 4
+## Phase 4A: Application shell and Character
 
 - [ ] Implement the proven character panel and data-status display.
+- [ ] Finish session selection, connect/disconnect, pause/resume, reconnect, and error recovery.
 - [ ] Add responsive layout, adjustable UI scaling, and saved UI preferences.
+- [ ] Complete icon/theme, settings, diagnostics/export, help/About, and clean close behavior.
+- [ ] Validate no-game/loading/stale/error states, keyboard-only use, and current-character resource bars.
 - [ ] Preserve normal DWM management and repeat Phase 0 checks with the real panel.
-- [ ] Validate full-session use and recovery on the target desktop.
-- [ ] Measure overhead against the agreed Phase 0 budgets.
 
-## Phase 5
+## Phase 4B: Map and integrated acceptance
+
+- [ ] Implement catalog matching, bounded asset cache, calibrated projection, and zone/layout/floor selection.
+- [ ] Implement live marker, update age, zoom/pan, fit, follow/recenter, and labeled map/floor browsing.
+- [ ] Complete declared first-release map coverage across open-world and indoor/instance areas.
+- [ ] Validate marker accuracy at independent landmarks and measured update latency per supported map/layer.
+- [ ] Test stale/paused/mixed samples, zone changes, wrong-floor browsing, and missing/corrupt maps.
+- [ ] Prove Character/Map share one session and tab changes neither duplicate readers nor leak old results.
+- [ ] Validate full-session use and recovery on the target desktop.
+- [ ] Measure overhead with Map visible/hidden and API offline against Phase 0 budgets.
+- [ ] Capture sanitized visual acceptance evidence for all tabs and lifecycle/error states.
+
+## Phase 5: First-release packaging
+
+- [ ] Complete the supported environment matrix, map coverage, and extended-session tests.
+- [ ] Package desktop entry/icon, help/About/credits, XDG storage, and diagnostic export.
+- [ ] Document DWM-Titus monitor/tag setup, display recovery, and configuration rollback.
+- [ ] Document map sources/permissions, local asset installation, supported areas, and calibration versions.
+- [ ] Validate desktop launch/close, install/removal, package/profile/map rollback, and unsupported updates.
+- [ ] Complete release checks; publish only with explicit authorization.
+
+## Phase 6: Later optional features
 
 - [ ] Select initial combat and quality-of-life features.
 - [ ] Prove event sources and replay correctness before presenting analytics.
 - [ ] Implement selected features in small increments with relevant evidence.
 - [ ] Record deferred features and their missing data requirements.
-
-## Phase 6
-
-- [ ] Complete the supported environment matrix and extended-session tests.
-- [ ] Package and document setup, local storage, and diagnostics.
-- [ ] Document DWM-Titus monitor/tag setup, display recovery, and configuration rollback.
-- [ ] Validate installation, removal, rollback, and unsupported-build behavior.
-- [ ] Complete release checks; publish only with explicit authorization.
 
 ## Evidence log
 
@@ -117,3 +146,20 @@ superseded by the managed companion-window decision recorded in the next entry.
   links. Reviewed all six repository documents for consistent scope; obsolete
   requirements remain only as explicitly superseded history or exclusions.
   Rust build/lint/test gates remain inapplicable until a package exists.
+
+### 2026-10-13: Full application and live-map planning review
+
+- Expanded the shell to Character/Map/Diagnostics tabs with shared session
+  controls, settings, lifecycle states, accessibility, help, and desktop packaging.
+- The user selected open-world and indoor/instance maps for the first release.
+  Added independent location discovery, asset provenance, map/floor matching,
+  calibration, coverage, and live acceptance requirements. All remain unproven.
+- Inspected dcuobot-api at `060908d`: CharacterResponse and CensusCharacter have
+  no live position/zone/floor fields. The official DCUO Census collection index
+  was also reviewed; it does not establish a live-location or map-asset source.
+- Moved first-release packaging ahead of optional combat analytics. Updated the
+  plan only; no application, map assets, memory reads, or desktop changes were made.
+- Documentation validation passed for whitespace, ASCII, code fences, relative
+  links, and scope/phase consistency across all six documents. The added Census
+  reference was reachable. Rust and live game/map checks were not run because
+  the repository still has no application; those gates remain pending.

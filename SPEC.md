@@ -16,6 +16,10 @@ fields that have equivalent API representations.
 - Read character identity and incrementally proven live fields.
 - Cross-check identity and comparable profile fields against the API.
 - Display an interactive, resizable DWM-managed X11 window on another monitor.
+- Provide a complete application shell with Character, Map, and Diagnostics tabs,
+  connection controls, settings, help, and desktop integration.
+- Display the current character's position on a 2D Map tab, covering open-world
+  and indoor/instance maps in the first release, with explicit per-map support.
 - Handle loading, character switching, game exit, restart, and API outages.
 
 Memory access is read-only. Injection, game-memory writes, gameplay automation,
@@ -34,7 +38,8 @@ workspace crates only when boundaries or testing needs justify it.
 | API client | Typed character/reference responses, caching, retries, rate limiting |
 | Validation | Per-field comparison, freshness, identity binding, provenance |
 | State and events | Timestamped observations, lifecycle transitions, replay fixtures |
-| Companion UI | Panels, normal window input, scaling, visible unavailable/stale states |
+| Map catalog and projection | Zone/instance/floor matching, map assets, calibrated coordinates, coverage |
+| Companion UI | Application shell, tabs, normal input, scaling, unavailable/stale states |
 | Local storage | Configuration, selected history, schema versioning |
 
 Initial technology candidates are process_vm_readv for reads and egui for UI.
@@ -89,6 +94,151 @@ the revised scope. The primary acceptance setup is two monitors: game on one,
 managed companion on the other. Validate windowed and fullscreen gameplay,
 ordinary window management, focus changes, and display reconnection in Phase 0.
 
+## Application shell and current-character workflow
+
+The first usable milestone is a complete companion application with the following
+surfaces. All tabs share one selected game session and one observation model;
+switching tabs must not start duplicate readers or change the current character.
+
+| Surface | Required behavior |
+| --- | --- |
+| Persistent header | Current character/world when known, selected game session, connection state, and Refresh sessions / Connect / Disconnect controls |
+| Character tab (default) | Character identity, live resource values, proven stats, and per-field source/freshness/comparison states |
+| Map tab | Current area and floor, 2D map, live position marker, zoom/pan, follow, recenter, and clear location/support status |
+| Diagnostics tab | Build/profile compatibility, read health, last successful sample, API state, map/calibration version, actionable errors, and sanitized diagnostic export |
+| Settings | API URL/world fallback, UI scale/theme, bounded polling preferences, reconnect preference, map asset location, and validated reset-to-defaults |
+| Help / About / Quit | Setup and troubleshooting guidance, version/license/asset credits, and orderly shutdown |
+| Persistent status bar | Separate memory and API status, last update age, loading/paused/stale indication, and a link to details |
+
+Connection and lifecycle requirements:
+
+- Launch into a usable shell even when the game, API, or map assets are absent.
+  Discover candidate sessions; never attach to an arbitrary process when several
+  match. Display enough identity to select one without dumping process memory.
+  Selecting a process observes its active character; it does not change the game.
+- Show explicit states for no game, session selection, checking build/access,
+  connected/waiting for character, reading, loading/character switch, paused,
+  access denied, unsupported build, read failure, and disconnected. Pair errors
+  with Retry, session selection, or relevant help. API outages have independent
+  status and must not disable otherwise valid local observations.
+- Support pausing/resuming reads and disconnecting from the UI. Paused values
+  must be labeled as such and must not keep a live map marker. On game restart,
+  revalidate process identity and profile before reconnecting; do not reuse a PID
+  or resolved addresses blindly. Disconnect cancels automatic reconnect until
+  the user connects again.
+- Clear old character values, portrait, comparisons, location, and marker on a
+  session/character change. Reject delayed reader/API/asset results from the old
+  session or zone generation. Loading and missing values never become zero.
+
+The Character tab prioritizes name, world, power, movement, alignment, CR, skill
+points, and current/maximum health and power as each field is proven. Resource
+bars require compatible current and maximum values from the same character;
+missing, stale, or invalid inputs cannot produce a live percentage. Show memory
+readings separately from cached API values and comparison results. API identity
+or an optional API portrait cannot establish which character is currently active
+in memory. A portrait uses a placeholder when unavailable and is not a live game
+render. Equipment, artifacts, and allies may appear as clearly sourced API
+details; memory verification remains field-specific and is not implied.
+
+Application polish is part of acceptance: consistent theme/spacing, readable
+labels, visible keyboard focus, tab and keyboard navigation, status text as well
+as color, scrollable/responsive layouts, and usable controls at tested UI scales.
+Keep technical addresses and detailed errors in Diagnostics. Loading, empty,
+partial, stale, and failure states must be designed for every tab. Save validated
+UI preferences through the standard XDG locations and recover from malformed
+configuration without crashing. Closing the window or choosing Quit stops
+workers and saves preferences; the application must not keep reading invisibly.
+Diagnostic export includes bounded error/compatibility metadata, with secrets,
+character identifiers, precise locations, and raw memory contents excluded by
+default. Preview the sanitized report before the user saves or shares it.
+Provide an application icon, desktop launcher, setup help, and version/About
+information as part of packaging. Normal DWM borders and controls remain in use.
+
+## Map tab and live-location contract
+
+First-release map scope includes both open-world and indoor/instance maps, as
+requested. Maintain a coverage inventory identifying each supported area,
+variant, floor/layer, asset, and calibration. Define the launch inventory during
+Phase 0; support for both categories is required, while universal coverage must
+not be implied. A single outdoor demonstration does not complete the map feature.
+Unproven areas remain visibly unsupported and instances cannot silently be moved
+to a later feature phase.
+
+### Location observations
+
+- Discover the selected player's position, area/zone identifier, and any
+  instance/layout/floor context needed to choose the correct map through bounded,
+  read-only memory profiles. Prove that the coordinates belong to the controlled
+  character rather than the camera, a target, or another entity. Record heading
+  only if separately proven; otherwise use a directionless marker.
+- Distinguish server/world identity from area/zone and instance identity. Do not
+  assume Census world IDs identify maps, or assume axis order, units, origin,
+  vertical axis, or global versus instance-local coordinates. Validate each on
+  the actual game build using movement, landmarks, and area transitions.
+- Bind the location sample to process/session, current character, zone generation,
+  build/profile, timestamp, and validity. Recheck identity/zone around related
+  reads and reject mixed snapshots. Reject non-finite/out-of-bounds coordinates,
+  stale samples, ambiguous maps, and unsupported layouts; teleports and loading
+  transitions need revalidation rather than a fabricated path between points.
+- The inspected dcuobot-api character models expose no live position, zone, or
+  floor fields. Treat these as memory observations without API corroboration;
+  API availability must not gate a verified local marker. Do not assume another
+  game's Census map endpoints apply to DCUO.
+
+### Map assets, matching, and calibration
+
+- Maintain a versioned map catalog separate from executable memory profiles.
+  Each entry records proven zone/variant/layout matching keys, map dimensions,
+  coordinate bounds, projection, floor/layer rules, asset version/checksum,
+  provenance, and redistribution permission or local-only status. Bundle only
+  assets with established permission; support documented local asset import
+  where needed. Public visibility of an image does not establish permission to
+  redistribute it. Do not commit proprietary game assets or personal snapshots.
+- Calibrate the horizontal world coordinates into map-image coordinates, including
+  origin, scale, rotation, and axis inversion as needed. Use enough independent
+  landmarks to determine the transform (at least three non-collinear points for
+  an affine transform), then validate at separate landmarks not used in the fit.
+  Apply the same pan/zoom/resize transform to map and marker. Set accuracy and
+  latency budgets from Phase 0 measurements before acceptance testing.
+- Handle indoor maps by verified area/instance/layout and floor/layer, including
+  overlapping floors and reused coordinates where present. Height alone is not
+  proof of a floor unless validated for that map. Re-entering an instance must
+  revalidate its mapping. Variable or ambiguous layouts are unsupported until a
+  matching layout and transform are proven; never reuse a similar-looking map.
+- Validate catalog entries and bound file size, image dimensions, texture memory,
+  and asset loading. Missing/corrupt images or transforms produce a recoverable
+  Map-tab error while Character and Diagnostics remain usable. Load assets off
+  the UI thread and keep a bounded cache; no network image fetch per sample.
+
+### Map interaction and failure behavior
+
+- Automatically select the supported current area and floor, display their names,
+  and draw a clearly visible player marker with last-update age. Include zoom
+  buttons/wheel, drag-to-pan, Fit map, Follow player, and Recenter. Panning pauses
+  follow until explicitly resumed. Keep controls accessible through the keyboard.
+- Provide a floor/layer selector for multi-level maps and a supported-map browser.
+  Clearly label manual browsing and offer Return to current location. A manually
+  selected map/floor does not override location validity: show a live marker only
+  when it matches the proven current context. Do not plot on an assumed floor.
+- Remove the live marker immediately on character/session/zone transition and on
+  invalidation, stale reads, or pause; reappear only after matching data and map
+  are valid. An old map can remain for labeled browsing, never as a live location.
+  Show distinct messages for waiting for location, loading, position unavailable,
+  missing map asset, unsupported area/layout/floor, and calibration failure.
+- Keep character observation running when another tab is selected. Reduce hidden
+  map rendering work, keep the UI responsive, and resume from the latest valid
+  sample. Never place an invalid marker at the origin or clamp it onto a map edge.
+  Clicking the map changes only the companion view, never the game or movement.
+
+Acceptance requires controlled routes and separate landmark checks in open-world
+and indoor/instance maps, floor changes, instance exit/re-entry, character switch,
+death/respawn, teleport/loading, and game restart. Synthetic fixtures must also
+cover axis inversion, map transforms after zoom/resize, ambiguous floors, corrupt
+assets, unsupported areas, stale data, and late results from the previous zone.
+Record coverage and error/latency measurements per supported map. Map discovery,
+assets, and calibration are still unproven; a decorative map or synthetic marker
+does not satisfy the live-location milestone.
+
 ## Observation contract
 
 Each field observation records its value, source, observation time, session
@@ -127,7 +277,7 @@ proven. Do not assume client object IDs equal Census IDs without evidence.
 | Power, movement, alignment | Explicit normalization through reference data |
 | CR, skill points, equipment | Compare with freshness caveats and controlled changes |
 | Maximum health/power, core stats | Compare only under documented comparable conditions |
-| Current health/power, cooldowns, combat events | Not verifiable through the inspected API |
+| Current health/power, cooldowns, combat events, live position/zone/floor | Not verifiable through the inspected API |
 
 The inspected API caches character lookups for five minutes and applies a
 60-request/minute per-client limit. Upstream freshness can be unknown. Refresh
@@ -150,6 +300,8 @@ in that repository with its own validation.
 - Handle partial reads and torn snapshots; external reads are not atomic.
 - Prevent PID reuse from binding old addresses to a different process.
 - Test character switches, zone changes, death/respawn, and process restart.
+- Prove player position and map-selection context independently of character
+  identity; invalidate location on zone/instance/floor transitions as required.
 - Preserve small sanitized fixtures; do not publish full process dumps.
 
 Access failures must report the actual permission problem. Do not automatically
@@ -172,9 +324,13 @@ ticks as confirmed ability casts. Manual timers must remain labeled manual.
 - Exact DWM-Titus revision, game display mode, and chosen companion monitor/tag
   on the initial Fedora/X11 target.
 - Launcher, Wine/Proton version, game build, architecture, and install location.
-- First-release feature priorities beyond the character panel.
+- Exact first-release map inventory across open-world and indoor/instance areas,
+  asset sources, and independently proven map/floor selection and calibration.
+- Priorities for optional character details beyond the core identity/live fields.
 - Memory-access arrangement if normal process permissions deny reads.
 - UI/backend choice following the feasibility experiment.
+- Minimum usable window size, tested UI scales, field staleness thresholds, and
+  measured memory/rendering/map accuracy and latency budgets.
 - Distribution format and project license before shipping application code.
 
 ## References
@@ -187,3 +343,4 @@ ticks as confirmed ability casts. Manual timers must remain labeled manual.
 - [DWM-Titus configuration and window rules](https://dwm.christitus.com/configuration.html).
 - [winit X11 window attributes](https://docs.rs/winit/0.30.13/winit/platform/x11/trait.WindowAttributesExtX11.html).
 - [Xlib window attributes](https://www.x.org/releases/X11R7.5/doc/libX11/libX11.html).
+- [DCUO Census collection index](https://census.daybreakgames.com/get/dcuo:v1/).
