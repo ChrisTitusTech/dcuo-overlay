@@ -84,6 +84,48 @@ pub fn read_exact(identity: &Identity, address: usize, len: usize) -> Result<Vec
     finish(result, len, matches)?;
     Ok(bytes)
 }
+/// Larger read path exclusively for bounded discovery. Callers periodically
+/// revalidate the exact mapping; PID identity is checked around every read.
+pub(crate) fn read_discovery(
+    identity: &Identity,
+    mapping: &Mapping,
+    address: usize,
+    len: usize,
+) -> Result<Vec<u8>, ReadError> {
+    if len == 0 || len > 65536 || address == 0 {
+        return Err(ReadError::InvalidRequest);
+    }
+    let end = address.checked_add(len).ok_or(ReadError::InvalidRequest)?;
+    if !mapping.readable || address < mapping.start || end > mapping.end {
+        return Err(ReadError::UnreadableRange);
+    }
+    if process::identity(identity.pid).ok().as_ref() != Some(identity) {
+        return Err(ReadError::IdentityChanged);
+    }
+    let mut bytes = vec![0; len];
+    let local = libc::iovec {
+        iov_base: bytes.as_mut_ptr().cast(),
+        iov_len: len,
+    };
+    let remote = libc::iovec {
+        iov_base: address as *mut libc::c_void,
+        iov_len: len,
+    };
+    // SAFETY: one valid local allocated buffer and bounded remote range. The
+    // kernel reads foreign memory; this code never dereferences remote pointers.
+    let count = unsafe { libc::process_vm_readv(identity.pid, &local, 1, &remote, 1, 0) };
+    let result = if count < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(count as usize)
+    };
+    finish(
+        result,
+        len,
+        process::identity(identity.pid).ok().as_ref() == Some(identity),
+    )?;
+    Ok(bytes)
+}
 pub fn self_test() -> Result<(), ReadError> {
     let fixture = [0x51u8, 0xa2, 0x13, 0x74];
     let identity = process::identity(std::process::id() as i32).map_err(ReadError::Metadata)?;
@@ -148,6 +190,24 @@ mod tests {
     #[test]
     fn synthetic_self_read() {
         self_test().unwrap();
+    }
+    #[test]
+    fn discovery_bounds_checked_before_remote_access() {
+        let identity = Identity {
+            pid: -1,
+            start_ticks: 0,
+        };
+        let m = map();
+        for (address, len) in [(10, 0), (10, 65537), (usize::MAX, 2)] {
+            assert!(matches!(
+                read_discovery(&identity, &m, address, len),
+                Err(ReadError::InvalidRequest)
+            ));
+        }
+        assert!(matches!(
+            read_discovery(&identity, &m, 99, 2),
+            Err(ReadError::UnreadableRange)
+        ));
     }
     #[test]
     fn reused_pid_rejected() {

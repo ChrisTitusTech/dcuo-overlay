@@ -3,6 +3,10 @@
 Date: 2026-10-13. Phase 0 remains in progress. These are feasibility prototypes,
 not a working current-character or live-map application.
 
+This records the initial prototype commit `db7dee1`. The newer
+[verification slice](verification-slice.md) supersedes the UI/API and search
+limitations below where explicitly demonstrated; live profile/map gates remain.
+
 ## Environment observed
 
 | Item | Observation |

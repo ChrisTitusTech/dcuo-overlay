@@ -7,10 +7,11 @@ character fields through [dcuobot-api](https://github.com/DCUOBot/dcuobot-api).
 Its Map tab will show the current character's live location on supported
 open-world and indoor/instance maps.
 
-**Status: Phase 0 prototypes.** Runnable memory and managed-window experiments
-exist. Bounded executable-header reads and initial DWM window behavior passed on
-the development machine. There are no supported character/location profiles or
-usable calibrated maps yet. See [feasibility evidence](docs/phase-0.md) for limits.
+**Status: a runnable verification slice.** The managed window displays real
+process/build information, exact API character-reference values, and bounded
+memory-name search evidence. The user confirmed the displayed character details
+match the game. There are no proven active-character/location profiles or usable
+calibrated maps yet. See [verification evidence](docs/verification-slice.md).
 
 ## Run the prototypes
 
@@ -22,10 +23,13 @@ cargo run --locked --no-default-features --bin dcuo-probe -- self-test
 cargo run --locked --no-default-features --bin dcuo-probe -- list
 ```
 
-The window is a standalone desktop/input experiment. Its Character and Map views
-intentionally show unavailable data; it starts no game reader or API client.
-DWM owns placement, tags, borders, and focus. Use its normal controls to put the
-window on the desired monitor. Quit closes the prototype normally.
+In the window, refresh/select the game process and Connect to inspect its build
+and read access. Enter an exact character name/world and choose Look up reference
+for API data. Scan next bounded step searches the selected process for matching
+name bytes, separately labeled as unverified string evidence. Diagnostics shows
+the actual process/build, application version and backend. Pause, Disconnect,
+Settings, About and Quit are available. Map remains explicitly unsupported.
+DWM owns placement, tags, borders, and focus; use its controls to choose a monitor.
 
 See [development instructions](CONTRIBUTING.md) for explicit-PID inspection,
 bounded name-search experiments, X11 checks, and build requirements.

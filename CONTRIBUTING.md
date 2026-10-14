@@ -1,6 +1,6 @@
 # Contributing
 
-This repository contains runnable Phase 0 feasibility prototypes.
+This repository contains runnable feasibility and character-reference verification code.
 Continue the Phase 0 experiments in ROADMAP.md. Read SPEC.md and TASKS.md before
 implementation and record any scope changes explicitly.
 
@@ -76,22 +76,49 @@ For a bounded discovery experiment:
 ```sh
 cargo build --locked --release --no-default-features --bin dcuo-probe
 target/release/dcuo-probe search-name --pid PID
+target/release/dcuo-probe search-name --pid PID --batches 32
 ```
 
 Enter the known character name on stdin, then EOF (Enter followed by Ctrl-D in a
 terminal). Do not put personal references in committed scripts or fixtures. The
-probe checks UTF-8 and UTF-16LE occurrences in readable/writable mappings, with
-4 KiB reads, a 64 MiB total remote-read cap, a 16-match cap, and a soft five-second
-scan deadline checked between reads. Executable fingerprinting happens before
-that deadline. Output contains counts and a stop reason, not the reference,
-addresses, or raw data. A hit can be a cached string, and a bounded miss is
-inconclusive. Read errors end the scan and process identity changes invalidate
-its result. No search result enables a memory profile or changes the UI.
+probe checks UTF-8 and UTF-16LE occurrences in private anonymous/heap writable
+mappings, excluding device/shared mappings. Discovery reads are at most 64 KiB,
+with a 64 MiB and soft one-second budget per batch, 2 GiB lifetime scan scope,
+and 16 unique candidates. The original ordinary read API remains capped at 4 KiB.
+The cursor and chunk overlap persist across batches (one by default, maximum
+128 explicitly requested). Fingerprinting precedes the per-batch deadline.
+Mapping revalidation happens at batch boundaries and every MiB; changed scope,
+identity, cancellation or read failure invalidates the experiment.
+Output contains counts and stop reasons, not names, addresses or raw data.
+A hit can be a cached string, and a bounded miss is inconclusive.
+
+The window exposes one bounded step at a time and displays decoded matching bytes
+as unverified evidence. It never promotes a match to a supported character profile.
+For an explicit startup session/reference:
+
+```sh
+target/debug/dcuo-window-probe --pid PID --reference-stdin --world 2
+```
+
+Enter the reference on stdin and finish with EOF as above. The window inspects
+that PID, fetches the exact API reference, and runs one bounded name-search batch.
+Without these arguments, use the normal process/character controls. Startup PID
+selection explicitly identifies the current process; interactive selection also
+binds its recorded start time so PID reuse cannot silently choose a replacement.
+
+The default API base is `https://dcuo.bot/api`; `--api-base` and Settings can change
+it. Requests identify the companion, encode query values, reject mismatched
+name/world responses, refuse redirects, cap decoded data at 1 MiB, and time out
+after eight seconds. API data is a reference with unknown upstream freshness,
+not proof of active-character identity or live resources. UI settings currently
+last only for the run. One bounded background worker serves all tabs; generation
+checks reject old results, and Quit cancels work and joins the worker.
 
 Keep local captures under ignored `captures/` and other private evidence under
 `local-data/`. Do not commit personal screenshots, raw dumps, or game binaries.
 See [Phase 0 evidence](docs/phase-0.md) and [map research](docs/map-feasibility.md)
 for the next bounded experiments and unfulfilled live gates.
+Current interactive evidence is in [the verification record](docs/verification-slice.md).
 
 ## Changes and publication
 

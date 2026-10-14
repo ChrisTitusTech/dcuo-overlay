@@ -2,16 +2,18 @@
 
 ## Current status
 
-Phase 0 implementation is underway. Runnable Rust memory and window probes exist;
-bounded live executable-header reads and initial managed-window checks passed on
-the development machine. There is no supported character/location profile yet.
+Phase 0 implementation is underway. The managed application now displays real
+process/build diagnostics, exact API character references, and bounded experimental
+memory-name observations. The user confirmed the displayed reference details match
+the character sheet. There is no supported active-character/location profile yet.
 The initial desktop target is Fedora/X11 with DWM-Titus. The application is a
 normal managed companion window on another monitor from the game. This replaces
 the earlier overlay design. The full live desktop acceptance matrix is pending.
 The first release includes a complete Character/Map application shell and live
 location on supported open-world and indoor/instance maps. Position readers,
 map identities, assets, floor selection, and calibration are all unproven.
-See [Phase 0 evidence and next experiments](docs/phase-0.md).
+See [verification evidence](docs/verification-slice.md) and
+[Phase 0 evidence and next experiments](docs/phase-0.md).
 
 ## Planning
 
@@ -26,6 +28,42 @@ See [Phase 0 evidence and next experiments](docs/phase-0.md).
 - [ ] Select a project license before application code is distributed.
 
 ## Worker coordination
+
+### Completed verification slice (2026-10-13)
+
+The user requests continuation until actual application/character information can
+be checked. Integrate process/build/access diagnostics and explicitly sourced API
+reference fields with a bounded, resumable memory-name experiment. This does not
+promote a name-string occurrence to current-character identity, nor bypass live
+profile/map gates. Independent shell/API work proceeds while discovery continues.
+
+- `discovery_v2`, `gpt-6.1-sol`: owns `src/discovery.rs`, `src/memory.rs`, and
+  `src/bin/probe.rs`; efficient bounded reads and resumable name search, synthetic
+  boundary/cancellation tests. Uses existing process identity/fingerprint types.
+  No live reads, personal fixtures, shared manifests, commits, or nested workers.
+- `reference_client`, `gpt-6.1-sol`: owns `src/api.rs`; typed bounded dcuobot-api
+  reference lookup with exact name/world matching, optional field handling, and
+  synthetic response tests. Reads API source but does not modify it. No personal
+  response fixtures, shared manifests, commits, or nested workers.
+- `verification_ui`, `gpt-6.1-sol`: owns `src/bin/window_probe.rs`; usable session
+  controls, real diagnostics, clearly separated memory evidence/API reference,
+  application About/settings and honest Map state, against the lead's controller
+  interface. No live launch, shared manifests, commits, or nested workers.
+
+The lead owns `src/session.rs`, shared API contracts, Cargo/lib wiring, live tests,
+sanitized documentation, integration checks, and commits. Workers stop at their
+bounded components; the lead integrates and validates the user-verifiable slice.
+Follow-up `reference_client` review is read-only across session/discovery/UI
+integration: check cancellation, stale results, queue bounds, source labeling,
+and shutdown. No file ownership or live actions; report issues to the lead.
+
+Assignment results: all three workers completed the owned files above. The lead
+integrated the controller and UI, passed 34 tests plus format/lint/build, and
+verified the populated Character and Diagnostics tabs on the live desktop. The
+reviewer identified pause/lookup status and process-selection identity issues;
+the lead fixed both with regression tests and the reviewer confirmed resolution.
+The user confirmed the displayed API character details match the game. Supported
+active-character memory fields and all location/map gates remain pending.
 
 Use the phase assignments in ROADMAP.md and worker rules in AGENTS.md. For each
 delegated assignment, add a record here containing phase, worker/model, bounded
@@ -265,3 +303,22 @@ superseded by the managed companion-window decision recorded in the next entry.
 - No game actions, desktop policy changes, publication, or personal-data commits
   were performed. Phase 0 remains incomplete; continue bounded discovery and the
   live acceptance matrix before selecting the production backend or profiles.
+
+### 2026-10-13: User-verifiable character and diagnostics slice
+
+- Integrated the exact API reference client, bounded resumable name discovery,
+  single session worker, process controls, and populated application tabs.
+- Live read-only discovery found 16 unique UTF-16 name occurrences after
+  14,446,592 bytes, stopping at the candidate cap. This does not establish
+  active-character ownership or verify memory-backed stats.
+- The user confirmed the displayed API name, power, combat rating and skill
+  points match the character sheet. The Diagnostics tab shows actual process,
+  executable fingerprint/header evidence and application/backend information.
+- Format, strict all-target Clippy, 34 tests and workspace build passed. The
+  optimized probe completed the bounded live search. Two nested-X startup/exit
+  checks passed, and live window properties retained the managed X11 contract.
+- Independent review findings were fixed, regression-tested and confirmed.
+  Personal observations/captures remain outside committed files. The populated
+  window is left open for user verification. See docs/verification-slice.md.
+- Current-character profiles, live resources, location, calibrated maps and the
+  complete desktop acceptance matrix remain unproven; no phase is declared done.

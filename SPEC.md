@@ -1,9 +1,10 @@
 # Specification
 
-Status: Phase 0 implementation underway. Bounded executable-header access and
-initial managed-window behavior are demonstrated on one development machine;
-character/location profiles and live maps remain unsupported. See
-[Phase 0 evidence](docs/phase-0.md). Requirements below remain acceptance targets.
+Status: a runnable verification slice displays process/build evidence, exact API
+character references, and experimental matching memory strings. User comparison
+confirmed the displayed reference details. Proven active-character/location
+profiles and live maps remain unsupported. See [verification evidence](docs/verification-slice.md).
+Requirements below remain acceptance targets; no phase is fully complete.
 
 ## Objective
 

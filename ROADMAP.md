@@ -5,6 +5,12 @@ Phase 0 is underway; no phase has met all exit criteria. See
 and evidence against its exit criteria. Discovery results may narrow supported
 features; record that explicitly rather than marking unproven features complete.
 
+The user requested continuation to a verifiable application. A bounded vertical
+slice now integrates session/build diagnostics, exact API reference lookup and
+experimental memory-name search. This exercises parts of Phases 1 and 3 while
+Phase 0 live profile/map discovery remains open; it does not certify those phases.
+See [user verification and remaining gates](docs/verification-slice.md).
+
 ## Development worker execution
 
 Use extra `gpt-6.1-sol` workers when a phase has independent work that benefits
