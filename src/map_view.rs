@@ -450,7 +450,7 @@ impl MapView {
         ui: &mut egui::Ui,
         sample: Option<&LocationSample>,
         gate: Option<MarkerGate>,
-        ground_spawns: &[(LocationSample, crate::native::GroundSpawnKind)],
+        ground_spawns: &[crate::spawn_cache::CachedSpawn],
     ) {
         self.update_current_context(sample, gate);
         self.poll(ui.ctx());
@@ -584,14 +584,12 @@ impl MapView {
             .catalog
             .as_ref()
             .and_then(|c| c.entries.get(self.selected));
-        let marker = entry.filter(|_| self.texture.is_some()).and_then(|entry| {
-            sample.and_then(|sample| {
-                gate.and_then(|gate| maps::marker_position(entry, sample, gate, now))
-            })
-        });
+        let marker = entry
+            .filter(|_| self.texture.is_some())
+            .and_then(|entry| projected_marker(entry, sample, gate, now));
         let ground_spawn_markers = entry
             .filter(|_| self.texture.is_some())
-            .map(|entry| projected_ground_spawns(entry, ground_spawns, gate, now))
+            .map(|entry| projected_ground_spawns(entry, ground_spawns, gate))
             .unwrap_or_default();
         let marker_status = if marker.is_some() {
             if entry.zip(gate).is_some_and(|(entry, g)| {
@@ -635,13 +633,13 @@ impl MapView {
         });
         ui.add(
             egui::Label::new(
-                egui::RichText::new("Diamonds: Ground spawns / Orange: Exobytes (experimental)")
+                egui::RichText::new("Diamonds: Cached spawn locations / Orange: Exobytes")
                     .small()
                     .color(egui::Color32::from_rgb(180, 185, 195)),
             )
             .truncate(),
         )
-        .on_hover_text("Exposed ground spawns (experimental): loaded recognized spawn actors only; unloaded spawns and collected state are not established.");
+        .on_hover_text("Last-seen locations persist during scanning and are removed after two complete scans miss them. Collection availability is unknown.");
         // ScrollArea has unbounded content height; use its visible clipping bounds.
         // Leave room for source credits and the collapsed calibration footer.
         let visible_height = (ui.clip_rect().bottom() - ui.cursor().top() - 90.0).max(160.0);
@@ -674,7 +672,7 @@ impl MapView {
                 egui::Color32::WHITE,
             );
             for (index, point) in ground_spawn_markers {
-                let color = ground_spawn_color(ground_spawns[index].1);
+                let color = ground_spawn_color(ground_spawns[index].kind);
                 let center = target.min + egui::vec2(point.x as f32, point.y as f32) * scale;
                 let diamond = vec![
                     center + egui::vec2(0., -12.),
@@ -693,11 +691,9 @@ impl MapView {
                     ui.id().with(("exposed-ground-spawn", index)),
                     egui::Sense::hover(),
                 )
-                .on_hover_text(if ground_spawns[index].1 == crate::native::GroundSpawnKind::Exobyte {
-                    "Exobyte spawn (experimental): exposed live object; collection availability is not established."
-                } else {
-                    "Exposed ground spawn (experimental): loaded recognized actor; collection availability is not established."
-                });
+                .on_hover_text(format!("{} location last seen {}s ago. Removed after two complete scans miss it; availability is unknown.",
+                    if ground_spawns[index].kind == crate::native::GroundSpawnKind::Exobyte { "Exobyte" } else { "Ground spawn" },
+                    now.saturating_duration_since(ground_spawns[index].last_seen).as_secs()));
             }
             if let Some(point) = marker {
                 painter.circle_filled(
@@ -748,15 +744,24 @@ fn projected_marker(
 
 fn projected_ground_spawns(
     entry: &MapEntry,
-    samples: &[(LocationSample, crate::native::GroundSpawnKind)],
+    samples: &[crate::spawn_cache::CachedSpawn],
     gate: Option<MarkerGate>,
-    now: Instant,
 ) -> Vec<(usize, maps::Point)> {
+    let Some(gate) = gate else {
+        return Vec::new();
+    };
     samples
         .iter()
         .enumerate()
-        .filter_map(|(index, (sample, _))| {
-            projected_marker(entry, Some(sample), gate, now).map(|point| (index, point))
+        .filter_map(|(index, sample)| {
+            maps::recorded_marker_position(
+                entry,
+                sample.point,
+                &sample.context,
+                gate.confidence,
+                gate.profile,
+            )
+            .map(|point| (index, point))
         })
         .collect()
 }
@@ -1308,46 +1313,60 @@ mod tests {
         assert!(projected_marker(&incompatible, Some(&sample), Some(gate), now).is_none());
     }
     #[test]
-    fn ground_spawn_projection_filters_each_sample_without_hiding_valid_peers() {
+    fn cached_spawn_projection_retains_old_points_but_checks_map_and_profile() {
         let entry = test_entry("AREA1");
         let (sample, gate) = auto_sample("AREA1");
-        let now = sample.observed_at;
-        let mut samples = vec![(sample.clone(), crate::native::GroundSpawnKind::Blue); 6];
-        samples[0].0.point = maps::Point { x: 2., y: 3. };
-        samples[1].0.observed_at = now - std::time::Duration::from_secs(2);
-        samples[2].0.context.zone = "AREA2".into();
-        samples[3].0.session_generation += 1;
-        samples[4].0.valid = false;
-        samples[5].0.point = maps::Point { x: 4., y: 5. };
+        let mut samples = vec![
+            crate::spawn_cache::CachedSpawn {
+                point: maps::Point { x: 2., y: 3. },
+                context: sample.context.clone(),
+                kind: crate::native::GroundSpawnKind::Blue,
+                last_seen: sample.observed_at - std::time::Duration::from_secs(120),
+            };
+            4
+        ];
+        samples[1].context.zone = "AREA2".into();
+        samples[2].point.x = f64::NAN;
+        samples[3].point.x = 11.;
         assert_eq!(
-            projected_ground_spawns(&entry, &samples, Some(gate), now),
-            vec![
-                (0, entry.project(samples[0].0.point)),
-                (5, entry.project(samples[5].0.point))
-            ]
+            projected_ground_spawns(&entry, &samples, Some(gate)),
+            vec![(0, entry.project(samples[0].point))]
         );
-        assert!(projected_ground_spawns(&entry, &samples, None, now).is_empty());
-        assert!(
+        assert_eq!(
             projected_ground_spawns(
                 &entry,
                 &samples,
                 Some(MarkerGate {
                     paused: true,
+                    session_generation: 42,
                     ..gate
-                }),
-                now
-            )
-            .is_empty()
+                })
+            ),
+            vec![(0, entry.project(samples[0].point))]
         );
+        assert!(projected_ground_spawns(&entry, &samples, None).is_empty());
         assert!(
             projected_ground_spawns(
                 &entry,
                 &samples,
-                Some(gate),
-                now + std::time::Duration::from_secs(2)
+                Some(MarkerGate {
+                    confidence: maps::LocationConfidence::Unavailable,
+                    ..gate
+                })
             )
             .is_empty()
         );
+        let mut incompatible = entry;
+        incompatible.calibration = Some(maps::Calibration {
+            version: 1,
+            profile: "different-profile".into(),
+            confidence: maps::LocationConfidence::Experimental,
+            landmark_count: 0,
+            independent_landmark_count: 0,
+            max_error_pixels: None,
+            accuracy_budget_pixels: None,
+        });
+        assert!(projected_ground_spawns(&incompatible, &samples, Some(gate)).is_empty());
     }
     fn png(width: u32, height: u32) -> Vec<u8> {
         let image = image::RgbaImage::from_pixel(width, height, image::Rgba([20, 30, 40, 255]));

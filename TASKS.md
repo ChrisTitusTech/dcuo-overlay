@@ -708,3 +708,55 @@ definition name under any package other than the observed package.
 
 Independent Codex review found no actionable regressions; its repeated workspace
 tests, format, strict Clippy and diff checks passed. Authorized PR/CI/merge follow.
+
+## Cached spawn locations
+
+User reports markers disappear while scanning and requests cached locations.
+- spawn_cache worker, gpt-6.1-sol: owns new src/spawn_cache.rs and application.rs,
+  bounded session/area cache and application integration, synthetic lifecycle tests.
+- Lead: native stable ownership comparison, maps/map_view cached projection and
+  labels, module wiring, live verification, review, commits and authorized PR/merge.
+No worker live reads or Git; no nested workers. Cache is in-memory, last-seen only.
+
+User refinement: remove a cached location only after two consecutive complete
+scans fail to detect it. Partial/interrupted scans do not count; a new detection
+resets the miss count. Native worker owns completed-scan evidence in native.rs;
+cache worker owns expiry tests and integration.
+
+Cache implementation evidence: completed-scan snapshots are bounded and only
+published after sample validation. Failed chunks retry without losing prior scan
+progress; same-area streaming changes preserve traversal. The private live probe
+completed four certified scans despite concurrent client allocations/name-table
+changes. No game inputs were sent. Snapshots use shared ownership to avoid
+repeated large copies in the session queue.
+
+137 workspace and 100 headless tests passed, plus format, strict Clippy on Rust
+1.96/1.95 and workspace/release builds. New tests cover retained partial/missing
+observations, exactly two distinct missed scans, reappearance, repeated snapshots,
+unknown-area gaps, paused/disabled views, session/context resets, cache bounds,
+scan rollback/publication, and cached projection with unchanged live-player gates.
+The local application is upgraded; live presentation and independent review follow.
+
+Independent review found that a sweep completed after the sample-start timestamp
+could be skipped indefinitely when each sample completes a whole scan. Fixed the
+gate to compare completion with the current time and added the exact timestamp
+ordering regression. Updated validation passes 138 workspace and 101 headless
+tests, strict lint on both toolchains and builds. The installed window retains
+the managed X11 contract and has the final build. The running client now reports
+an ambiguous area; live cached-marker presentation/removal cannot be confirmed
+in that state. Synthetic cache/projection tests cover it; the four completed live
+reader scans above validate actual scan completion. No new user acceptance claimed.
+
+The client subsequently resolved MLOC136. The installed map retained seven
+cached markers during an actual missing-sample/name-table-change event and Pause.
+Toggling the layer off/on while paused restored all seven without scanning; the
+map-region pixel difference before/after the toggle cycle was exactly zero.
+Reads were resumed. This resolves the earlier live-presentation limitation.
+
+A second review found bounds could allow skipped actors to certify absence.
+Both discovery bounds now mark the pass uncertain; a regression proves later
+observations cannot make that limited pass authoritative. Updated tests: 139
+workspace and 102 headless, with format, both strict lints and builds passing.
+
+Final independent Codex review covered staged, unstaged and untracked files and
+found no actionable regressions. Lead live evidence is recorded above.

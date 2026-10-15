@@ -48,12 +48,18 @@ pub struct Collectible {
 }
 
 #[derive(Clone, Debug)]
+pub struct GroundSpawnSweep {
+    pub completed_at: Instant,
+    pub spawns: Vec<Collectible>,
+}
+#[derive(Clone, Debug)]
 pub struct Sample {
     pub position: [f32; 3],
     /// Legacy nearby recognized spawn, with no collection-status claim.
     pub collectible: Option<Collectible>,
     pub ground_spawns: Vec<Collectible>,
     pub ground_spawns_status: String,
+    pub ground_spawn_sweep: Option<Arc<GroundSpawnSweep>>,
     pub health: f32,
     pub max_health: f32,
     pub power: f32,
@@ -74,6 +80,7 @@ impl Sample {
             collectible: None,
             ground_spawns: Vec::new(),
             ground_spawns_status: "Ground spawns off".into(),
+            ground_spawn_sweep: None,
             health: 50.0,
             max_health: 100.0,
             power: 20.0,
@@ -92,6 +99,17 @@ impl Sample {
             },
         }
     }
+    /// Stable identity for historical spawn locations; streaming membership is not identity.
+    pub fn same_spawn_context(&self, other: &Self) -> bool {
+        self.owner.objects == other.owner.objects
+            && self.owner.classes == other.owner.classes
+            && self.owner.world_pointer == other.owner.world_pointer
+            && self.area_key == other.area_key
+            && match (&self.owner.area, &other.owner.area) {
+                (Some(current), Some(previous)) => current.world == previous.world,
+                _ => true,
+            }
+    }
     pub fn same_owner(&self, other: &Self) -> bool {
         self.owner == other.owner
     }
@@ -104,6 +122,17 @@ struct Ownership {
     package: String,
     area: Option<AreaContext>,
     world_pointer: u64,
+}
+
+impl Ownership {
+    fn same_spawn_identity(&self, other: &Self) -> bool {
+        self.objects == other.objects
+            && self.classes == other.classes
+            && self.world_pointer == other.world_pointer
+            && self.area.as_ref().and_then(|a| a.key.as_ref())
+                == other.area.as_ref().and_then(|a| a.key.as_ref())
+            && self.area.as_ref().map(|a| a.world) == other.area.as_ref().map(|a| a.world)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,7 +197,7 @@ fn supported_area(packages: &[String]) -> Option<String> {
 
 type CollectibleSchemas = HashMap<[(usize, u32); 3], Vec<(usize, u32)>>;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct GroundScan {
     owner: Option<Ownership>,
     table: usize,
@@ -178,6 +207,83 @@ struct GroundScan {
     candidates: Vec<(usize, u32)>,
     refresh_cursor: usize,
     class_names: HashMap<usize, bool>,
+    sweep: SweepAccumulator,
+    pending_sweep: Option<GroundSpawnSweep>,
+    published_sweep: Option<Arc<GroundSpawnSweep>>,
+}
+impl GroundScan {
+    fn accept_pending_sweep(&mut self) {
+        if let Some(sweep) = self.pending_sweep.take() {
+            self.published_sweep = Some(Arc::new(sweep));
+        }
+    }
+    fn bind_owner(&mut self, owner: &Ownership, table: usize) {
+        if !self
+            .owner
+            .as_ref()
+            .is_some_and(|o| o.same_spawn_identity(owner))
+            || self.table != table
+        {
+            *self = Self {
+                table,
+                ..Default::default()
+            };
+        }
+        self.owner = Some(owner.clone());
+    }
+    fn restore_for_owner(&mut self, saved: Self, owner: &Ownership) {
+        *self = if saved
+            .owner
+            .as_ref()
+            .is_some_and(|o| o.same_spawn_identity(owner))
+        {
+            saved
+        } else {
+            Self::default()
+        };
+        if self.owner.is_some() {
+            self.owner = Some(owner.clone());
+        }
+    }
+}
+#[derive(Clone, Default)]
+struct SweepAccumulator {
+    seen: HashMap<(usize, u32), Collectible>,
+    uncertain: bool,
+}
+impl SweepAccumulator {
+    fn check_bound(&mut self, count: usize, limit: usize, error: &str) -> Result<(), String> {
+        if count >= limit {
+            self.uncertain = true;
+            Err(error.into())
+        } else {
+            Ok(())
+        }
+    }
+    fn observe(&mut self, identity: (usize, u32), spawn: Collectible) {
+        if self.seen.len() >= 256 && !self.seen.contains_key(&identity) {
+            self.uncertain = true;
+        } else {
+            self.seen.insert(identity, spawn);
+        }
+    }
+    fn finish(&mut self, completed_at: Instant) -> Option<GroundSpawnSweep> {
+        let finished = std::mem::take(self);
+        (!finished.uncertain).then(|| GroundSpawnSweep {
+            completed_at,
+            spawns: finished.seen.into_values().collect(),
+        })
+    }
+}
+fn known_spawn_absence(error: &str) -> bool {
+    matches!(
+        error,
+        "Unsupported ground spawn definition"
+            | "Unsupported nearby collectible definition"
+            | "Unsupported exobyte definition package"
+            | "Nearby collectible hidden or deleted"
+            | "Nearby collectible belongs to a different world"
+    )
 }
 fn rotated_indices(start: usize, count: usize) -> impl Iterator<Item = usize> {
     (0..count).map(move |offset| (start % count.max(1) + offset) % count.max(1))
@@ -792,7 +898,11 @@ impl Reader {
 
         let actor_before = self.read(actor, 0x3c0)?;
         let actor_class = pointer(u64_at(&actor_before, 0x4c)?)?;
-        let definition = pointer(u64_at(&actor_before, 0x3b8)?)?;
+        let definition_value = u64_at(&actor_before, 0x3b8)?;
+        if definition_value == 0 {
+            return Err("Unsupported ground spawn definition".into());
+        }
+        let definition = pointer(definition_value)?;
         let definition_before = self.read(definition, 0x54)?;
         let definition_class = pointer(u64_at(&definition_before, 0x4c)?)?;
         let classes = [owner.classes[2], actor_class, definition_class];
@@ -903,13 +1013,7 @@ impl Reader {
             self.ground_scan = GroundScan::default();
             return Err("Object table outside bounds".into());
         }
-        if self.ground_scan.owner.as_ref() != Some(owner) || self.ground_scan.table != base {
-            self.ground_scan = GroundScan {
-                owner: Some(owner.clone()),
-                table: base,
-                ..Default::default()
-            };
-        }
+        self.ground_scan.bind_owner(owner, base);
         if self.ground_scan.count != count {
             self.ground_scan.completed = false;
             self.ground_scan.count = count;
@@ -958,10 +1062,18 @@ impl Reader {
                 continue;
             }
             match self.collectible_actor(owner, player, address, false) {
-                Ok(spawn) => result.push(spawn),
-                Err(_) => {
+                Ok(spawn) => {
+                    self.ground_scan
+                        .sweep
+                        .observe((address, index), spawn.clone());
+                    result.push(spawn);
+                }
+                Err(error) => {
                     if self.optional_interrupted() {
                         break;
+                    }
+                    if !known_spawn_absence(&error) {
+                        self.ground_scan.sweep.uncertain = true;
                     }
                     self.ground_scan
                         .candidates
@@ -989,6 +1101,8 @@ impl Reader {
                     });
                     if readable {
                         actors.push((address, index as u32));
+                    } else {
+                        self.ground_scan.sweep.uncertain = true;
                     }
                 }
             }
@@ -1006,6 +1120,9 @@ impl Reader {
                             if self.optional_interrupted() {
                                 self.ground_scan.cursor = next_scan_cursor(batch[0].1, true);
                                 return Err("Optional scan budget reached".into());
+                            }
+                            if header.is_err() {
+                                self.ground_scan.sweep.uncertain = true;
                             }
                             headers.push(header.ok());
                         }
@@ -1028,6 +1145,7 @@ impl Reader {
                         continue;
                     }
                     let Ok(class) = pointer(u64_at(&bytes, 0x4c)?) else {
+                        self.ground_scan.sweep.uncertain = true;
                         continue;
                     };
                     let supported = if let Some(value) = self.ground_scan.class_names.get(&class) {
@@ -1039,36 +1157,42 @@ impl Reader {
                             return Err("Optional scan budget reached".into());
                         }
                         let Ok(name) = name else {
+                            self.ground_scan.sweep.uncertain = true;
                             continue;
                         };
                         let value = name == "DCServerPhysicsObject";
-                        if self.ground_scan.class_names.len() >= 4096 {
-                            return Err("Class cache bound reached".into());
-                        }
+                        self.ground_scan.sweep.check_bound(
+                            self.ground_scan.class_names.len(),
+                            4096,
+                            "Class cache bound reached",
+                        )?;
                         self.ground_scan.class_names.insert(class, value);
                         value
                     };
                     if !supported {
                         continue;
                     }
-                    if self.ground_scan.candidates.len() >= 256 {
-                        return Err("Ground spawn candidate bound reached".into());
-                    }
-                    if !self.ground_scan.candidates.contains(&(address, index)) {
-                        // Admission requires the full reflected live actor and recognized definition.
-                        if self
-                            .collectible_actor(owner, player, address, false)
-                            .is_ok()
-                        {
-                            self.ground_scan.candidates.push((address, index));
+                    self.ground_scan.sweep.check_bound(
+                        self.ground_scan.candidates.len(),
+                        256,
+                        "Ground spawn candidate bound reached",
+                    )?;
+                    // Every eligible actor contributes to this pass, including cached candidates.
+                    match self.collectible_actor(owner, player, address, false) {
+                        Ok(spawn) => {
+                            self.ground_scan.sweep.observe((address, index), spawn);
+                            if !self.ground_scan.candidates.contains(&(address, index)) {
+                                self.ground_scan.candidates.push((address, index));
+                            }
                         }
-                        if self
-                            .collectible_deadline
-                            .get()
-                            .is_some_and(|d| Instant::now() >= d)
-                        {
-                            self.ground_scan.cursor = next_scan_cursor(index, true);
-                            return Err("Optional scan budget reached".into());
+                        Err(error) => {
+                            if self.optional_interrupted() {
+                                self.ground_scan.cursor = next_scan_cursor(index, true);
+                                return Err("Optional scan budget reached".into());
+                            }
+                            if !known_spawn_absence(&error) {
+                                self.ground_scan.sweep.uncertain = true;
+                            }
                         }
                     }
                 }
@@ -1076,6 +1200,7 @@ impl Reader {
             self.ground_scan.cursor = end;
             if end == count {
                 self.ground_scan.completed = true;
+                self.ground_scan.pending_sweep = self.ground_scan.sweep.finish(Instant::now());
                 self.ground_scan.cursor = 0;
                 self.ground_scan.class_names.clear();
             }
@@ -1087,6 +1212,7 @@ impl Reader {
             // Unrelated object allocation must not restart a complete world scan.
             self.ground_scan.class_names.clear();
             self.ground_scan.completed = false;
+            self.ground_scan.pending_sweep = None;
             return Err("Object table changed during scan".into());
         }
         let status = if self.ground_scan.completed {
@@ -1111,6 +1237,14 @@ impl Reader {
         Ok((result, status))
     }
     pub fn sample(&mut self) -> Result<Sample, String> {
+        let saved = self.ground_scan.clone();
+        let result = self.sample_inner();
+        if result.is_err() {
+            self.ground_scan = saved;
+        }
+        result
+    }
+    fn sample_inner(&mut self) -> Result<Sample, String> {
         self.scope_start.set(Instant::now());
         self.scope_reads.set(0);
         self.scope_bytes.set(0);
@@ -1168,7 +1302,11 @@ impl Reader {
         let (ground_spawns, ground_spawns_status) = if self.ground_spawns_enabled {
             self.collectible_deadline
                 .set(Some(Instant::now() + std::time::Duration::from_millis(100)));
+            let saved = self.ground_scan.clone();
             let result = self.ground_spawns(&before, position);
+            if result.is_err() {
+                self.ground_scan.restore_for_owner(saved, &before);
+            }
             self.collectible_deadline.set(None);
             result
                 .unwrap_or_else(|error| (Vec::new(), format!("Ground spawns unavailable: {error}")))
@@ -1186,7 +1324,11 @@ impl Reader {
             self.ground_scan = GroundScan::default();
             return Err("Controlled object changed during sample; discarded".into());
         }
+        self.ground_scan.accept_pending_sweep();
         Ok(Sample {
+            ground_spawn_sweep: (self.ground_scan.owner.as_ref() == Some(&before))
+                .then(|| self.ground_scan.published_sweep.clone())
+                .flatten(),
             position,
             collectible,
             ground_spawns,
@@ -1206,6 +1348,155 @@ impl Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn completed_sweep_unions_resumed_chunks_and_rejects_uncertain_absence() {
+        let mut pass = SweepAccumulator::default();
+        let spawn = |x| Collectible {
+            position: [x, 2.0, 3.0],
+            kind: GroundSpawnKind::Blue,
+        };
+        pass.observe((0x10000, 1), spawn(1.0));
+        // Interruption does not finish or clear accumulated observations.
+        pass.observe((0x20000, 2), spawn(2.0));
+        pass.observe((0x10000, 1), spawn(4.0));
+        let timestamp = Instant::now();
+        let sweep = pass.finish(timestamp).unwrap();
+        assert_eq!(sweep.completed_at, timestamp);
+        assert_eq!(sweep.spawns.len(), 2);
+        assert!(sweep.spawns.iter().any(|s| s.position[0] == 4.0));
+        assert!(pass.seen.is_empty());
+        pass.observe((0x30000, 3), spawn(3.0));
+        pass.uncertain = true;
+        assert!(pass.finish(Instant::now()).is_none());
+        assert!(pass.finish(Instant::now()).unwrap().spawns.is_empty());
+        assert!(known_spawn_absence("Nearby collectible hidden or deleted"));
+        assert!(!known_spawn_absence(
+            "Experimental read outside readable mapping"
+        ));
+    }
+    #[test]
+    fn discovery_bounds_cannot_certify_missing_spawns() {
+        for limit in [256, 4096] {
+            let mut pass = SweepAccumulator::default();
+            pass.observe(
+                (0x10000, 1),
+                Collectible {
+                    position: [1., 2., 3.],
+                    kind: GroundSpawnKind::Blue,
+                },
+            );
+            assert!(pass.check_bound(limit - 1, limit, "bound").is_ok());
+            assert!(pass.check_bound(limit, limit, "bound").is_err());
+            // Later chunks cannot turn a skipped actor into a certified absence.
+            pass.observe(
+                (0x20000, 2),
+                Collectible {
+                    position: [4., 5., 6.],
+                    kind: GroundSpawnKind::Gold,
+                },
+            );
+            assert!(pass.finish(Instant::now()).is_none());
+        }
+    }
+    #[test]
+    fn completed_sweep_publishes_only_after_valid_sample_and_repeats_same_timestamp() {
+        let mut scan = GroundScan::default();
+        let first = Instant::now();
+        scan.pending_sweep = Some(GroundSpawnSweep {
+            completed_at: first,
+            spawns: Vec::new(),
+        });
+        assert!(scan.published_sweep.is_none());
+        scan.accept_pending_sweep();
+        assert_eq!(scan.published_sweep.as_ref().unwrap().completed_at, first);
+        scan.accept_pending_sweep();
+        assert_eq!(scan.published_sweep.as_ref().unwrap().completed_at, first);
+        scan.pending_sweep = Some(GroundSpawnSweep {
+            completed_at: first + std::time::Duration::from_secs(1),
+            spawns: Vec::new(),
+        });
+        let saved = GroundScan {
+            published_sweep: scan.published_sweep.clone(),
+            ..Default::default()
+        };
+        scan = saved;
+        scan.accept_pending_sweep();
+        assert_eq!(scan.published_sweep.as_ref().unwrap().completed_at, first);
+        assert!(!scan.sweep.uncertain);
+    }
+    #[test]
+    fn streaming_membership_does_not_restart_scan_but_zone_or_player_changes_do() {
+        let mut owner = Sample::synthetic(1).owner;
+        owner.area = Some(AreaContext {
+            world: (0x50000, 7),
+            array: (0x60000, 1, 2),
+            members: vec![0x70000],
+            signals: Vec::new(),
+            key: Some("TEST01".into()),
+        });
+        let mut scan = GroundScan::default();
+        scan.bind_owner(&owner, 0x80000);
+        scan.cursor = 500;
+        let mut changed = owner.clone();
+        changed.area.as_mut().unwrap().members.push(0x90000);
+        changed.area.as_mut().unwrap().array.1 += 1;
+        scan.bind_owner(&changed, 0x80000);
+        assert_eq!(scan.cursor, 500);
+        assert_eq!(scan.owner, Some(changed.clone()));
+        changed.area.as_mut().unwrap().key = Some("TEST02".into());
+        scan.bind_owner(&changed, 0x80000);
+        assert_eq!(scan.cursor, 0);
+        scan.cursor = 42;
+        changed.objects[3].1 += 1;
+        scan.bind_owner(&changed, 0x80000);
+        assert_eq!(scan.cursor, 0);
+    }
+    #[test]
+    fn failed_chunk_rolls_back_progress_without_poisoning_completed_pass() {
+        let owner = Sample::synthetic(1).owner;
+        let mut scan = GroundScan {
+            owner: Some(owner.clone()),
+            cursor: 100,
+            ..Default::default()
+        };
+        scan.sweep.observe(
+            (0x10000, 1),
+            Collectible {
+                position: [1.0, 2.0, 3.0],
+                kind: GroundSpawnKind::Blue,
+            },
+        );
+        let saved = scan.clone();
+        scan.cursor = 200;
+        scan.sweep.uncertain = true;
+        scan.pending_sweep = Some(GroundSpawnSweep {
+            completed_at: Instant::now(),
+            spawns: Vec::new(),
+        });
+        scan.restore_for_owner(saved.clone(), &owner);
+        assert_eq!(scan.cursor, 100);
+        assert!(scan.pending_sweep.is_none());
+        assert_eq!(scan.sweep.finish(Instant::now()).unwrap().spawns.len(), 1);
+        scan.restore_for_owner(saved, &Sample::synthetic(2).owner);
+        assert!(scan.owner.is_none());
+        assert!(scan.published_sweep.is_none());
+        assert_eq!(scan.cursor, 0);
+    }
+    #[test]
+    fn sweep_bound_cannot_certify_missing_objects() {
+        let mut pass = SweepAccumulator::default();
+        for index in 0..257 {
+            pass.observe(
+                (0x10000 + index as usize, index),
+                Collectible {
+                    position: [index as f32, 0.0, 0.0],
+                    kind: GroundSpawnKind::Blue,
+                },
+            );
+        }
+        assert_eq!(pass.seen.len(), 256);
+        assert!(pass.finish(Instant::now()).is_none());
+    }
     #[test]
     fn refresh_rotation_services_every_candidate_under_a_small_budget() {
         let mut cursor = 0;
@@ -1620,6 +1911,26 @@ mod tests {
         }
         assert!(pointer(0x10000).is_ok());
         assert!(add(usize::MAX, 1).is_err());
+    }
+    #[test]
+    fn cached_spawn_context_ignores_streaming_but_rejects_reused_world() {
+        let mut original = Sample::synthetic(1);
+        original.area_key = Some("MGOT101".into());
+        original.owner.area = Some(AreaContext {
+            world: (0x40000, 1),
+            array: (0x50000, 1, 1),
+            members: vec![0x60000],
+            signals: vec![],
+            key: Some("MGOT101".into()),
+        });
+        let mut streamed = original.clone();
+        streamed.owner.area.as_mut().unwrap().members.push(0x70000);
+        assert!(original.same_spawn_context(&streamed));
+        streamed.owner.area.as_mut().unwrap().world.1 += 1;
+        assert!(!original.same_spawn_context(&streamed));
+        let mut unknown = original.clone();
+        unknown.owner.area = None;
+        assert!(original.same_spawn_context(&unknown));
     }
     #[test]
     fn ownership_includes_object_generation_and_package() {

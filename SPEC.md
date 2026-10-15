@@ -372,8 +372,9 @@ all collectibles, collection availability, floors, or persistent spawn coverage.
 The Map tab provides a persisted Ground spawns toggle, off by default. When on,
 bounded background enumeration discovers recognized live ground spawn actors
 exposed in the current world, beyond the nearby interaction candidate. Each
-marker requires current lifetime, world, identity and position validation and
-the same map/context/freshness gates as the player. Turning off disables this
+new observation requires current lifetime, world, identity and position validation.
+Last-seen locations use the cached-spawn lifetime below and retain map/context/
+profile bounds; the player continues to require fresh observations. Turning off disables this
 optional discovery and hides markers immediately. Discovery reports progress and
 limits; never equate loaded objects with every spawn in an entire zone. Recognized
 marker definitions include the installed magnifying-glass color variants and
@@ -383,3 +384,18 @@ No collected-state inference, game interaction or persistent location database.
 The ground spawn layer also recognizes the observed exobyte definition/package
 pair and distinguishes it with an orange diamond. Generic effect names from
 other packages remain excluded. The same live actor and freshness gates apply.
+
+## Cached spawn locations
+
+At user request, retain validated ground spawn locations in a bounded in-memory
+cache for the current process/character/world/area. Partial scans, streaming
+changes and missing samples must not erase last-seen locations. Cached markers
+are explicitly historical, not currently available or fresh actor observations.
+A confirmed area, character or session change clears the cache. Toggle off hides
+it and stops discovery; toggling on in the same context restores cached markers.
+Do not persist locations to disk. Keep player freshness rules unchanged.
+
+User refinement: remove a cached location only after two consecutive complete
+scans fail to detect it. Partial/interrupted scans do not count; a new detection
+resets the miss count. Native worker owns completed-scan evidence in native.rs;
+cache worker owns expiry tests and integration.

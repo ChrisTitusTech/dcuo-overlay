@@ -19,3 +19,5 @@ pub mod map_import;
 
 #[cfg(feature = "window")]
 pub mod application;
+
+pub mod spawn_cache;
