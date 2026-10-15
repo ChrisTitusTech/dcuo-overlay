@@ -15,7 +15,8 @@ remain unverified. API references retain their independent source labels.
   explicitly experimental, with age and unavailable states.
 - Area selection uses visible loaded audio and designer streaming packages.
   Persistent parent-world names are not treated as the current indoor area.
-  Only Gotham (`MGOT101`) and Old Gotham Subway (`MPYR0224`) are recognized.
+  A unique bounded area key with matching designer evidence is required; the
+  former two-area allowlist is removed.
 - Map artwork is imported from the user's installed client into private local
   files. No proprietary images or package data are bundled or committed. The
   bounded importer verifies package structures, tile grids, decompression sizes,
@@ -23,11 +24,13 @@ remain unverified. API references retain their independent source labels.
 - The Map tab provides local browsing, live experimental markers, zoom, pan,
   fit and follow/recenter. Context, age, session changes and pause state gate the
   marker. UI repaint timing respects sample expiry even with slow idle refresh
-  preferences. Unknown areas have no marker. These are overview layers; separate floors
-  and other instances are not yet supported.
+  preferences. Current area automatically loads installed main overviews as the
+  area changes, even while another tab is open. All 313 installed overviews pass
+  import checks. Missing maps and ambiguous context have no marker. Separate
+  floors and universal live alignment remain unvalidated.
 - Settings, theme, scale, UI refresh interval and map catalog persist in XDG
   configuration. Corrupt preferences recover to defaults with an explanation.
-  Automatic reconnect is not implemented and its control is disabled.
+  Optional reconnect is restricted to a unique session of the same exact build.
 - API calls use a separate bounded worker, so a delayed reference request cannot
   stall local sampling. Shutdown joins the workers; HTTP has an eight-second
   bound. Sanitized diagnostics exclude names, positions, process IDs and URLs.
@@ -98,3 +101,41 @@ Choose the game session and Connect. In Map, expand the installed-map importer,
 confirm the local CookedPC directory, and import. Imported images remain private
 local data. The marker is labeled experimental; a matching API name does not
 promote it or any other memory field to verified.
+
+## Restarted session and indoor acceptance (2026-10-14)
+
+After the user relaunched the game, the exact supported executable build passed
+read-only attachment and fresh controlled-pawn sampling. The current visible
+streaming context was MHDT0107 with matching audio/designer signals. Its installed
+map is a single-tile indoor floor plan. The companion selected that entry, showed
+a fresh experimental marker within the floor plan, and the user explicitly
+confirmed: "Yes, the map and marker match" in response to the movement check.
+
+The expanded private catalog also includes MPYR0242's six-tile main overview.
+Its live alignment, auxiliary layouts and floor handling remain unvalidated.
+The catalog retains experimental calibration confidence for both new entries;
+qualitative user confirmation does not replace independent landmark/error budgets.
+No game inputs, memory writes, personal snapshots or proprietary assets were
+committed. Screenshots and imported artwork remain private.
+
+
+## Automatic loading acceptance (2026-10-14)
+
+With saved catalog/source cleared, the new release connected to the existing
+supported game process, detected its CookedPC installation, and imported MADV155
+in the background while Character was selected. Opening Map showed its 2048 x
+2304 overview and a fresh experimental marker. This area was outside the former
+four-map set and required no manual import or code change. Its precise alignment
+has not been independently measured. The earlier MHDT0107 confirmation remains
+qualitative evidence for that indoor map, not all instances.
+
+All 313 installed main overviews passed corrected import/cache validation.
+Synthetic tests cover rapid area changes, cancellation, stale/late results,
+manual browsing, source changes, retry and large-grid downsampling. Real loading
+transitions, auxiliary floor selection and quantitative calibration across every
+instance remain live acceptance work. Private screenshots were inspected locally
+and are intentionally excluded from publication.
+
+The installed release was also checked through companion Pause -> Browse ->
+Current area -> Resume. Browse restored the overview while paused without a
+marker; resuming restored fresh live tracking. No game input was involved.

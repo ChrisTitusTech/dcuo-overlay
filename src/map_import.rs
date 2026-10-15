@@ -1,7 +1,8 @@
-//! Bounded local-only decoder for the two investigated DCUO map packages.
+//! Bounded local-only decoder for the four investigated DCUO map packages.
 //! Package bounds are candidate projection inputs, not accepted calibration.
 use crate::maps::{Catalog, Category, Context, MapEntry};
 use image::{ImageFormat, Rgba, RgbaImage};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -106,6 +107,7 @@ pub struct MapMetadata {
     /// Tile keys are row_column, despite the legacy totalX/totalY field names.
     pub rows: u32,
     pub columns: u32,
+    pub auxiliary: Vec<String>,
 }
 #[derive(Clone)]
 struct Tile {
@@ -549,7 +551,7 @@ fn metadata(pkg: &Package) -> Result<MapMetadata, String> {
     }
     let min = vector(&values, "Min")?;
     let max = vector(&values, "Max")?;
-    let m = MapMetadata {
+    let mut m = MapMetadata {
         min,
         max,
         tile_size: integer(&values, "textureSize")?,
@@ -562,6 +564,7 @@ fn metadata(pkg: &Package) -> Result<MapMetadata, String> {
         },
         rows: integer(&values, "totalXTiles")?,
         columns: integer(&values, "totalYTiles")?,
+        auxiliary: Vec::new(),
     };
     if m.min[0] >= m.max[0]
         || m.min[1] >= m.max[1]
@@ -571,8 +574,8 @@ fn metadata(pkg: &Package) -> Result<MapMetadata, String> {
         || m.tile_size != 256
         || m.rows == 0
         || m.columns == 0
-        || m.rows > 32
-        || m.columns > 32
+        || m.rows > 64
+        || m.columns > 64
     {
         return Err("Unsupported map bounds or grid".into());
     }
@@ -598,7 +601,16 @@ fn metadata(pkg: &Package) -> Result<MapMetadata, String> {
         let mut nested = Reader::new(p.data);
         let n = nested.count(64)?;
         for _ in 0..n {
-            properties(&mut nested, &pkg.names)?;
+            let submap = properties(&mut nested, &pkg.names)?;
+            let p = property(&submap, "MapName", "StrProperty")?;
+            let mut name = Reader::new(p.data);
+            let value = name.string()?;
+            if name.pos != name.bytes.len() {
+                return Err("Invalid or duplicate submap name".into());
+            }
+            if !m.auxiliary.contains(&value) {
+                m.auxiliary.push(value);
+            }
         }
         if nested.pos != nested.bytes.len() {
             return Err("Invalid submap array tail".into());
@@ -658,9 +670,24 @@ fn tiles(pkg: &Package) -> Result<Vec<Tile>, String> {
     }
     Ok(out)
 }
+fn validate_grid(area: &str, metadata: &MapMetadata) -> Result<(), String> {
+    let expected = match area {
+        "MGOT101" => (24, 25),
+        "MPYR0224" | "MPYR0242" => (2, 3),
+        "MHDT0107" => (1, 1),
+        _ => return Err("Unsupported local map area".into()),
+    };
+    if (metadata.rows, metadata.columns) != expected {
+        return Err("Unsupported area grid revision".into());
+    }
+    Ok(())
+}
+fn valid_area(area: &str) -> bool {
+    crate::native::valid_area_key(area)
+}
 fn package_path(area: &str) -> Result<PathBuf, String> {
-    if !matches!(area, "MGOT101" | "MPYR0224") {
-        return Err("Unsupported local map area".into());
+    if !valid_area(area) {
+        return Err("Invalid local map area code".into());
     }
     Ok(PathBuf::from(format!("UI/MAPS/{area}/DUIMAP{area}.UPK")))
 }
@@ -764,7 +791,7 @@ fn decode_bc1(bytes: &[u8], width: u32, height: u32) -> Result<RgbaImage, String
     }
     Ok(out)
 }
-fn tile_image(root: &Path, tile: &Tile, mappings: &HashMap<u32, u32>) -> Result<RgbaImage, String> {
+fn tile_chunk(root: &Path, tile: &Tile, mappings: &HashMap<u32, u32>) -> Result<Vec<u8>, String> {
     let packed = *mappings
         .get(&texture_hash(&tile.key))
         .ok_or("Missing map texture remap")?;
@@ -789,23 +816,30 @@ fn tile_image(root: &Path, tile: &Tile, mappings: &HashMap<u32, u32>) -> Result<
         .map_err(|e| e.to_string())?;
     let mut bytes = vec![0; tile.disk];
     file.read_exact(&mut bytes).map_err(|e| e.to_string())?;
+    Ok(bytes)
+}
+fn tile_image(root: &Path, tile: &Tile, mappings: &HashMap<u32, u32>) -> Result<RgbaImage, String> {
+    let bytes = tile_chunk(root, tile, mappings)?;
     let data = decode_chunk(&bytes, tile.count, TILE_LIMIT)?;
     decode_bc1(&data, tile.width, tile.height)
 }
+fn tile_stem(key: &str) -> Option<&str> {
+    let split = key.len().checked_sub(8)?;
+    key.get(split..)?
+        .eq_ignore_ascii_case(".THETILE")
+        .then(|| &key[..split])
+}
 fn tile_position(key: &str, area: &str, m: &MapMetadata) -> Result<Option<(u32, u32)>, String> {
+    let key = tile_stem(key).ok_or("Unsupported map texture object suffix")?;
     let prefix = format!("DUIMAP{area}");
-    if area == "MGOT101"
-        && ["AI", "BL", "CT", "DD", "EE", "OB", "OG", "RP", "TCY"]
-            .iter()
-            .any(|name| key == format!("{prefix}_{name}.THETILE"))
+    if m.auxiliary
+        .iter()
+        .any(|name| key == format!("{prefix}_{name}"))
     {
         return Ok(None);
     }
-    for level in 0..=3 {
-        if let Some(suffix) = key
-            .strip_prefix(&format!("{prefix}LOD{level}_"))
-            .and_then(|s| s.strip_suffix(".THETILE"))
-        {
+    for level in 0..=8 {
+        if let Some(suffix) = key.strip_prefix(&format!("{prefix}LOD{level}_")) {
             let (row, column) = suffix.split_once('_').ok_or("Invalid LOD tile key")?;
             let row: u32 = row.parse().map_err(|_| "Invalid LOD row")?;
             let column: u32 = column.parse().map_err(|_| "Invalid LOD column")?;
@@ -817,7 +851,6 @@ fn tile_position(key: &str, area: &str, m: &MapMetadata) -> Result<Option<(u32, 
     }
     let suffix = key
         .strip_prefix(&format!("{prefix}_"))
-        .and_then(|s| s.strip_suffix(".THETILE"))
         .ok_or("Unexpected map texture key")?;
     let (row, column) = suffix.split_once('_').ok_or("Invalid tile index key")?;
     let row: u32 = row.parse().map_err(|_| "Invalid tile row")?;
@@ -826,6 +859,23 @@ fn tile_position(key: &str, area: &str, m: &MapMetadata) -> Result<Option<(u32, 
         return Err("Tile index exceeds map grid".into());
     }
     Ok(Some((row, column)))
+}
+fn output_scale(m: &MapMetadata) -> Result<u32, String> {
+    let mut scale = 1u32;
+    while m
+        .columns
+        .checked_mul(m.tile_size / scale)
+        .is_none_or(|v| v > 4096)
+        || m.rows
+            .checked_mul(m.tile_size / scale)
+            .is_none_or(|v| v > 4096)
+    {
+        scale = scale.checked_mul(2).ok_or("Map scale overflow")?;
+        if scale > m.tile_size {
+            return Err("Map grid cannot fit bounded output".into());
+        }
+    }
+    Ok(scale)
 }
 fn assemble(
     root: &Path,
@@ -836,7 +886,7 @@ fn assemble(
     cancellation: &ImportCancellation,
 ) -> Result<RgbaImage, String> {
     cancellation.checkpoint()?;
-    let scale = if area == "MGOT101" { 2 } else { 1 };
+    let scale = output_scale(m)?;
     let size = m.tile_size / scale;
     let width = m.columns.checked_mul(size).ok_or("Map width overflow")?;
     let height = m.rows.checked_mul(size).ok_or("Map height overflow")?;
@@ -863,7 +913,7 @@ fn assemble(
             }
             let image = tile_image(root, tile, mappings)?;
             cancellation.checkpoint()?;
-            let image = if scale == 2 {
+            let image = if scale > 1 {
                 image::imageops::resize(&image, size, size, image::imageops::FilterType::Triangle)
             } else {
                 image
@@ -877,8 +927,8 @@ fn assemble(
         }
     }
     cancellation.checkpoint()?;
-    if positions.len() != (m.rows * m.columns) as usize {
-        return Err("Incomplete map tile grid".into());
+    if positions.is_empty() {
+        return Err("Map has no main tiles".into());
     }
     Ok(out)
 }
@@ -926,6 +976,298 @@ fn new_output(root: &Path) -> Result<PathBuf, String> {
 }
 /// Creates a fresh private import directory; never overwrites an existing catalog.
 /// Projection remains explicitly unverified until the lead records live landmarks.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CacheReceipt {
+    version: u32,
+    area: String,
+    fingerprint: String,
+    catalog_sha: String,
+}
+fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+fn main_grid(area: &str, m: &MapMetadata, all: &[Tile]) -> Result<(), String> {
+    let mut positions = HashSet::new();
+    for tile in all {
+        if let Some(position) = tile_position(&tile.key, area, m)? {
+            if tile.width != m.tile_size || tile.height != m.tile_size || tile.format != 5 {
+                return Err("Unsupported main tile encoding".into());
+            }
+            if !positions.insert(position) {
+                return Err("Duplicate main tile position".into());
+            }
+        }
+    }
+    if positions.is_empty() {
+        return Err("Map has no main tiles".into());
+    }
+    Ok(())
+}
+fn map_entry(
+    area: &str,
+    m: &MapMetadata,
+    width: u32,
+    height: u32,
+    asset_sha: String,
+    source_sha: &str,
+) -> Result<MapEntry, String> {
+    let (label, category) = match area {
+        "MGOT101" => ("Gotham".into(), Category::OpenWorld),
+        "MPYR0224" => ("Old Gotham Subway".into(), Category::Instance),
+        "MHDT0107" | "MPYR0242" => (format!("Local area {area}"), Category::Instance),
+        _ => (format!("Local area {area}"), Category::Unclassified),
+    };
+    let scale = output_scale(m)? as f64;
+    let factor = 1.0 / (m.zoom_value * scale);
+    let entry = MapEntry {
+        id: format!("local-{area}"),
+        label,
+        category,
+        context: Context {
+            zone: area.into(),
+            layout: "main".into(),
+            floor: "overview".into(),
+        },
+        width,
+        height,
+        asset: format!("{area}.png"),
+        sha256: asset_sha,
+        provenance: format!(
+            "Local-only installed client import v2; package SHA256 {source_sha}; tiled overview projection UNVERIFIED"
+        ),
+        credit: "DC Universe Online / Daybreak Games / DC; private local assets".into(),
+        affine: [
+            0.,
+            factor,
+            -m.min[1] * factor,
+            -factor,
+            0.,
+            height as f64 + m.min[0] * factor,
+        ],
+        world_bounds: [m.min[0], m.min[1], m.max[0], m.max[1]],
+        calibration: Some(crate::maps::Calibration {
+            version: 1,
+            profile: crate::native::PROFILE_ID.into(),
+            confidence: crate::maps::LocationConfidence::Experimental,
+            landmark_count: 0,
+            independent_landmark_count: 0,
+            max_error_pixels: None,
+            accuracy_budget_pixels: None,
+        }),
+    };
+    entry.validate()?;
+    Ok(entry)
+}
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    file.write_all(bytes).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())
+}
+fn cache_state(destination: &Path, area: &str) -> Result<Option<CacheReceipt>, String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let slot = destination.join(area);
+    match fs::symlink_metadata(&slot) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+        Ok(m)
+            if !m.is_dir()
+                || m.file_type().is_symlink()
+                || m.uid() != fs::metadata(destination).map_err(|e| e.to_string())?.uid()
+                || m.permissions().mode() & 0o777 != 0o700 =>
+        {
+            return Err("Area cache directory is not private and owned".into());
+        }
+        _ => {}
+    }
+    let expected = [
+        format!("{area}.png"),
+        "catalog.json".into(),
+        "receipt.json".into(),
+    ];
+    let mut found = HashSet::new();
+    for item in fs::read_dir(&slot).map_err(|e| e.to_string())? {
+        let item = item.map_err(|e| e.to_string())?;
+        let name = item
+            .file_name()
+            .into_string()
+            .map_err(|_| "Unrecognized area cache file")?;
+        if !expected.contains(&name) || !item.file_type().map_err(|e| e.to_string())?.is_file() {
+            return Err("Area cache contains unowned or symlink files".into());
+        }
+        let file_metadata = item.metadata().map_err(|e| e.to_string())?;
+        if file_metadata.uid() != fs::metadata(destination).map_err(|e| e.to_string())?.uid()
+            || file_metadata.permissions().mode() & 0o777 != 0o600
+        {
+            return Err("Area cache file is not private and owned".into());
+        }
+        found.insert(name);
+    }
+    if found.len() != expected.len() {
+        return Err("Area cache is incomplete".into());
+    }
+    let receipt: CacheReceipt =
+        serde_json::from_slice(&read_confined(&slot, Path::new("receipt.json"), 64 * 1024)?)
+            .map_err(|_| "Invalid area cache receipt")?;
+    if receipt.version != 2
+        || receipt.area != area
+        || [receipt.fingerprint.as_str(), receipt.catalog_sha.as_str()]
+            .iter()
+            .any(|s| s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return Err("Unrecognized area cache receipt".into());
+    }
+    let catalog_bytes = read_confined(&slot, Path::new("catalog.json"), 64 * 1024)?;
+    if digest(&catalog_bytes) != receipt.catalog_sha {
+        return Err("Area cache catalog was modified".into());
+    }
+    let catalog = crate::maps::load_catalog(&slot.join("catalog.json"))?;
+    if catalog.entries.len() != 1
+        || catalog.entries[0].context.zone != area
+        || catalog.entries[0].asset != format!("{area}.png")
+    {
+        return Err("Area cache identity mismatch".into());
+    }
+    let entry = &catalog.entries[0];
+    let bytes = crate::maps::load_asset(entry, &slot)?;
+    let dimensions = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_dimensions()
+        .map_err(|e| e.to_string())?;
+    if dimensions != (entry.width, entry.height) {
+        return Err("Cached image dimensions differ".into());
+    }
+    Ok(Some(receipt))
+}
+/// Imports one exact installed area into a validated reusable private cache.
+/// Unknown or ambiguous schemas fail without replacing an existing cache.
+pub fn import_area_cancellable(
+    source: &Path,
+    destination: &Path,
+    area: &str,
+    cancellation: &ImportCancellation,
+) -> Result<PathBuf, String> {
+    cancellation.checkpoint()?;
+    let relative = package_path(area)?;
+    let root = source.canonicalize().map_err(|e| e.to_string())?;
+    let raw = read_confined(&root, &relative, PACKAGE_LIMIT)?;
+    let source_sha = digest(&raw);
+    let pkg = Package::parse(&raw)?;
+    drop(raw);
+    let m = metadata(&pkg)?;
+    let all = tiles(&pkg)?;
+    main_grid(area, &m, &all)?;
+    output_scale(&m)?;
+    let remap_raw = read_confined(
+        &root,
+        Path::new("TEXTUREFILECACHE/UI_REMAP.BIN"),
+        REMAP_LIMIT,
+    )?;
+    let mappings = remap(&remap_raw)?;
+    let mut hash = Sha256::new();
+    hash.update(b"dcuo-area-cache-v3");
+    hash.update(area);
+    hash.update(crate::native::PROFILE_ID);
+    hash.update(&source_sha);
+    hash.update(&remap_raw);
+    drop(remap_raw);
+    for tile in &all {
+        cancellation.checkpoint()?;
+        if tile_position(&tile.key, area, &m)?.is_some() {
+            hash.update(&tile.key);
+            hash.update(tile_chunk(&root, tile, &mappings)?);
+        }
+    }
+    let fingerprint = format!("{hash:x}", hash = hash.finalize());
+    // Reuse the existing destination path only after validating its ownership,
+    // source fingerprint, catalog, PNG checksum, and decoded dimensions.
+    let staging = new_output(destination)?;
+    let mut output = ImportOutput {
+        path: staging,
+        published: false,
+    };
+    cancellation.checkpoint()?;
+    let existing = cache_state(destination, area)?;
+    let slot = destination.join(area);
+    if existing
+        .as_ref()
+        .is_some_and(|r| r.fingerprint == fingerprint)
+    {
+        return Ok(slot.join("catalog.json"));
+    }
+    let image = assemble(&root, area, &m, &all, &mappings, cancellation)?;
+    let filename = format!("{area}.png");
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(output.path.join(&filename))
+        .map_err(|e| e.to_string())?;
+    let mut writer = CancellableFile { file, cancellation };
+    image
+        .write_to(&mut writer, ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    writer.file.sync_all().map_err(|e| e.to_string())?;
+    drop(writer);
+    cancellation.checkpoint()?;
+    let image_bytes = read_confined(&output.path, Path::new(&filename), PACKAGE_LIMIT)?;
+    let entry = map_entry(
+        area,
+        &m,
+        image.width(),
+        image.height(),
+        digest(&image_bytes),
+        &source_sha,
+    )?;
+    let catalog_bytes = serde_json::to_vec_pretty(&Catalog {
+        schema_version: 1,
+        entries: vec![entry],
+    })
+    .map_err(|e| e.to_string())?;
+    write_private(&output.path.join("catalog.json"), &catalog_bytes)?;
+    write_private(
+        &output.path.join("receipt.json"),
+        &serde_json::to_vec(&CacheReceipt {
+            version: 2,
+            area: area.into(),
+            fingerprint,
+            catalog_sha: digest(&catalog_bytes),
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+    let latest = cache_state(destination, area)?;
+    if latest.as_ref().map(|r| &r.fingerprint) != existing.as_ref().map(|r| &r.fingerprint) {
+        return Err("Area cache changed during import".into());
+    }
+    cancellation.checkpoint()?;
+    let backup = output.path.with_extension("previous");
+    if fs::symlink_metadata(&backup).is_ok() {
+        return Err("Area cache backup destination is occupied".into());
+    }
+    if existing.is_some() {
+        fs::rename(&slot, &backup).map_err(|e| e.to_string())?;
+    }
+    if let Err(e) = fs::rename(&output.path, &slot) {
+        if existing.is_some() && fs::rename(&backup, &slot).is_err() {
+            return Err(
+                "Cache publication failed; previous cache preserved in backup directory".into(),
+            );
+        }
+        return Err(e.to_string());
+    }
+    output.published = true;
+    if existing.is_some() {
+        fs::remove_dir_all(backup).map_err(|e| e.to_string())?;
+    }
+    Ok(slot.join("catalog.json"))
+}
 pub fn import_maps(cooked_pc: &Path, destination: &Path) -> Result<PathBuf, String> {
     import_maps_cancellable(cooked_pc, destination, &ImportCancellation::default())
 }
@@ -948,6 +1290,8 @@ pub fn import_maps_cancellable(
         for (area, label, category) in [
             ("MGOT101", "Gotham", Category::OpenWorld),
             ("MPYR0224", "Old Gotham Subway", Category::Instance),
+            ("MHDT0107", "MHDT0107 instance", Category::Instance),
+            ("MPYR0242", "MPYR0242 instance", Category::Instance),
         ] {
             cancellation.checkpoint()?;
             let raw = read_confined(&root, &package_path(area)?, PACKAGE_LIMIT)?;
@@ -957,10 +1301,7 @@ pub fn import_maps_cancellable(
             cancellation.checkpoint()?;
             drop(raw);
             let m = metadata(&pkg)?;
-            let expected_grid = if area == "MGOT101" { (24, 25) } else { (2, 3) };
-            if (m.rows, m.columns) != expected_grid {
-                return Err("Unsupported area grid revision".into());
-            }
+            validate_grid(area, &m)?;
             cancellation.checkpoint()?;
             let image = assemble(&root, area, &m, &tiles(&pkg)?, &mappings, cancellation)?;
             cancellation.checkpoint()?;
@@ -1078,6 +1419,7 @@ mod tests {
             zoom_value: 1.,
             rows: 2,
             columns: 3,
+            auxiliary: Vec::new(),
         };
         assert_eq!(
             assemble(
@@ -1128,22 +1470,116 @@ mod tests {
         fs::remove_file(path).unwrap();
     }
     #[test]
+    #[ignore = "Actual private per-area decode and cache inventory; explicit local paths only"]
+    fn local_all_area_imports_opt_in() {
+        let root = PathBuf::from(std::env::var_os("DCUO_LOCAL_IMPORT_SOURCE").unwrap())
+            .canonicalize()
+            .unwrap();
+        let destination = PathBuf::from(std::env::var_os("DCUO_LOCAL_IMPORT_DEST").unwrap());
+        let mut names: Vec<_> = fs::read_dir(root.join("UI/MAPS"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|a| valid_area(a))
+            .collect();
+        names.sort();
+        let token = ImportCancellation::default();
+        let mut failures = Vec::new();
+        let mut passed = 0;
+        for area in &names {
+            match import_area_cancellable(&root, &destination, area, &token) {
+                Ok(path) => {
+                    let catalog = crate::maps::load_catalog(&path).unwrap();
+                    assert_eq!(catalog.entries.len(), 1);
+                    let entry = &catalog.entries[0];
+                    crate::maps::load_asset(entry, path.parent().unwrap()).unwrap();
+                    passed += 1;
+                    eprintln!("DECODED {area} {}x{}", entry.width, entry.height);
+                }
+                Err(error) => failures.push(format!("{area}: {error}")),
+            }
+        }
+        eprintln!(
+            "ACTUAL total={} passed={passed} failures={} cache={}",
+            names.len(),
+            failures.len(),
+            destination.display()
+        );
+        for failure in &failures {
+            eprintln!("UNSUPPORTED {failure}");
+        }
+        if failures.is_empty() {
+            let first = import_area_cancellable(&root, &destination, "MHDT0107", &token).unwrap();
+            let old = fs::metadata(&first).unwrap().modified().unwrap();
+            let second = import_area_cancellable(&root, &destination, "MHDT0107", &token).unwrap();
+            assert_eq!(first, second);
+            assert_eq!(old, fs::metadata(second).unwrap().modified().unwrap());
+            assert_eq!(fs::read_dir(&destination).unwrap().count(), names.len());
+            eprintln!("CACHE reusable; no duplicate staging directories");
+        }
+        assert!(
+            failures.is_empty(),
+            "Some installed area assets remain unsupported"
+        );
+    }
+    #[test]
+    #[ignore = "Offline inventory of the explicitly selected installed map metadata"]
+    fn local_map_inventory_opt_in() {
+        let source = PathBuf::from(std::env::var_os("DCUO_LOCAL_IMPORT_SOURCE").unwrap());
+        let root = source.canonicalize().unwrap();
+        let mut names: Vec<_> = fs::read_dir(root.join("UI/MAPS"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|s| valid_area(s))
+            .collect();
+        names.sort();
+        let mut passed = 0;
+        let mut failures = Vec::new();
+        for area in &names {
+            let check = (|| -> Result<(MapMetadata, usize), String> {
+                let pkg =
+                    Package::parse(&read_confined(&root, &package_path(area)?, PACKAGE_LIMIT)?)?;
+                let m = metadata(&pkg)?;
+                let tiles = tiles(&pkg)?;
+                main_grid(area, &m, &tiles)?;
+                Ok((m, tiles.len()))
+            })();
+            match check {
+                Ok((m, n)) => {
+                    passed += 1;
+                    eprintln!(
+                        "OK {area} {}x{} tile={} zoom={} entries={n} auxiliary={:?}",
+                        m.rows, m.columns, m.tile_size, m.zoom_value, m.auxiliary
+                    );
+                }
+                Err(e) => failures.push(format!("{area}: {e}")),
+            }
+        }
+        eprintln!(
+            "INVENTORY total={} passed={passed} failures={}",
+            names.len(),
+            failures.len()
+        );
+        for failure in failures {
+            eprintln!("UNSUPPORTED {failure}");
+        }
+    }
+    #[test]
     #[ignore = "Requires an explicitly selected local installation and private output directory"]
     fn local_asset_import_opt_in() {
         let source =
             std::env::var_os("DCUO_LOCAL_IMPORT_SOURCE").expect("Set DCUO_LOCAL_IMPORT_SOURCE");
         let output =
             std::env::var_os("DCUO_LOCAL_IMPORT_DEST").expect("Set DCUO_LOCAL_IMPORT_DEST");
-        for area in ["MGOT101", "MPYR0224"] {
+        for area in ["MGOT101", "MPYR0224", "MHDT0107", "MPYR0242"] {
             let m = load_metadata(Path::new(&source), area).unwrap();
             eprintln!(
-                "{area}: zoom={}, rows={}, columns={}",
-                m.zoom_value, m.rows, m.columns
+                "{area}: zoom={}, rows={}, columns={}, min={:?}, max={:?}",
+                m.zoom_value, m.rows, m.columns, m.min, m.max
             );
         }
         let catalog_path = import_maps(Path::new(&source), Path::new(&output)).unwrap();
         let catalog = crate::maps::load_catalog(&catalog_path).unwrap();
-        assert_eq!(catalog.entries.len(), 2);
+        assert_eq!(catalog.entries.len(), 4);
         for entry in &catalog.entries {
             crate::maps::load_asset(entry, catalog_path.parent().unwrap()).unwrap();
         }
@@ -1204,6 +1640,7 @@ mod tests {
             zoom_value: 1.0,
             rows: 2,
             columns: 3,
+            auxiliary: Vec::new(),
         };
         assert_eq!(
             tile_position("DUIMAPMPYR0224_1_2.THETILE", "MPYR0224", &m).unwrap(),
@@ -1242,6 +1679,239 @@ mod tests {
         assert!(new_output(&base.join("escape/nested")).is_err());
         assert!(new_output(&base.join("../escape")).is_err());
         fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
+    fn new_instances_require_exact_grids_and_explicit_auxiliary_keys() {
+        let mut metadata = MapMetadata {
+            min: [0.; 3],
+            max: [1.; 3],
+            tile_size: 256,
+            zoom_value: 100.,
+            rows: 1,
+            columns: 1,
+            auxiliary: Vec::new(),
+        };
+        assert!(validate_grid("MHDT0107", &metadata).is_ok());
+        assert!(validate_grid("MPYR0242", &metadata).is_err());
+        assert_eq!(
+            tile_position("DUIMAPMHDT0107_0_0.THETILE", "MHDT0107", &metadata).unwrap(),
+            Some((0, 0))
+        );
+        assert!(tile_position("DUIMAPMHDT0107_1_0.THETILE", "MHDT0107", &metadata).is_err());
+        metadata.rows = 2;
+        metadata.columns = 3;
+        assert!(validate_grid("MHDT0107", &metadata).is_err());
+        assert!(validate_grid("MPYR0242", &metadata).is_ok());
+        metadata.auxiliary = vec!["DOCK".into(), "ART".into()];
+        for auxiliary in ["DOCK", "ART"] {
+            assert_eq!(
+                tile_position(
+                    &format!("DUIMAPMPYR0242_{auxiliary}.THETILE"),
+                    "MPYR0242",
+                    &metadata
+                )
+                .unwrap(),
+                None
+            );
+        }
+        assert!(tile_position("DUIMAPMPYR0242_UNKNOWN.THETILE", "MPYR0242", &metadata).is_err());
+        assert!(package_path("MHDT0107").is_ok());
+        assert!(package_path("MPYR0242").is_ok());
+        assert!(package_path("MHDT0108").is_ok());
+        assert!(package_path("MHDT/0108").is_err());
+    }
+    fn synthetic_cache(destination: &Path, area: &str) -> PathBuf {
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(destination)
+            .unwrap();
+        let slot = destination.join(area);
+        fs::DirBuilder::new().mode(0o700).create(&slot).unwrap();
+        let image = RgbaImage::from_pixel(4, 4, Rgba([20, 40, 60, 255]));
+        let mut png = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut png, ImageFormat::Png).unwrap();
+        let bytes = png.into_inner();
+        write_private(&slot.join(format!("{area}.png")), &bytes).unwrap();
+        let metadata = MapMetadata {
+            min: [0.; 3],
+            max: [100.; 3],
+            tile_size: 256,
+            zoom_value: 100.,
+            rows: 1,
+            columns: 1,
+            auxiliary: Vec::new(),
+        };
+        let entry = map_entry(area, &metadata, 4, 4, digest(&bytes), &"b".repeat(64)).unwrap();
+        let catalog = serde_json::to_vec(&Catalog {
+            schema_version: 1,
+            entries: vec![entry],
+        })
+        .unwrap();
+        write_private(&slot.join("catalog.json"), &catalog).unwrap();
+        write_private(
+            &slot.join("receipt.json"),
+            &serde_json::to_vec(&CacheReceipt {
+                version: 2,
+                area: area.into(),
+                fingerprint: "a".repeat(64),
+                catalog_sha: digest(&catalog),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        slot
+    }
+    #[test]
+    fn generic_cache_validates_ownership_checksums_and_does_not_hide_unrelated_files() {
+        let root = cancellation_fixture();
+        let slot = synthetic_cache(&root, "MLOC139_ART_001");
+        assert!(cache_state(&root, "MLOC139_ART_001").unwrap().is_some());
+        fs::write(slot.join("unrelated"), b"keep").unwrap();
+        assert!(cache_state(&root, "MLOC139_ART_001").is_err());
+        assert_eq!(fs::read(slot.join("unrelated")).unwrap(), b"keep");
+        fs::remove_file(slot.join("unrelated")).unwrap();
+        fs::write(slot.join("MLOC139_ART_001.png"), b"corrupt").unwrap();
+        assert!(cache_state(&root, "MLOC139_ART_001").is_err());
+        fs::remove_dir_all(root).unwrap();
+        let root = cancellation_fixture();
+        let slot = synthetic_cache(&root, "MHDT0107");
+        fs::remove_file(slot.join("MHDT0107.png")).unwrap();
+        std::os::unix::fs::symlink("/etc/hosts", slot.join("MHDT0107.png")).unwrap();
+        assert!(cache_state(&root, "MHDT0107").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn generic_area_paths_downsampling_and_cancellation_are_bounded() {
+        for area in [
+            "MLOC139_ART_001",
+            "BVT01",
+            "CITYGAMEPLAYTEST",
+            "GROUNDPLANE",
+        ] {
+            assert!(valid_area(area));
+            assert!(package_path(area).is_ok());
+        }
+        for area in [
+            "../MAP", "MAP/A", "MAP__A", "_MAP", "MAP_", "map", "MÄP", "",
+        ] {
+            assert!(!valid_area(area));
+            assert!(package_path(area).is_err());
+        }
+        let metadata = MapMetadata {
+            min: [0.; 3],
+            max: [100.; 3],
+            tile_size: 256,
+            zoom_value: 100.,
+            rows: 64,
+            columns: 64,
+            auxiliary: vec![String::new()],
+        };
+        assert_eq!(output_scale(&metadata).unwrap(), 4);
+        assert_eq!(
+            tile_position("DUIMAPBVT01_0_0.TheTile", "BVT01", &metadata).unwrap(),
+            Some((0, 0))
+        );
+        assert_eq!(
+            tile_position("DUIMAPBVT01_.THETILE", "BVT01", &metadata).unwrap(),
+            None
+        );
+        assert_eq!(
+            tile_position("DUIMAPBVT01LOD4_0_0.THETILE", "BVT01", &metadata).unwrap(),
+            None
+        );
+        let destination = cancellation_fixture();
+        let token = ImportCancellation::default();
+        token.cancel();
+        assert_eq!(
+            import_area_cancellable(Path::new("absent"), &destination, "MHDT0107", &token)
+                .unwrap_err(),
+            "Map import cancelled"
+        );
+        assert!(!destination.exists());
+        let entry = map_entry(
+            "UNIDENTIFIED",
+            &metadata,
+            4,
+            4,
+            "a".repeat(64),
+            &"b".repeat(64),
+        )
+        .unwrap();
+        assert_eq!(entry.category, Category::Unclassified);
+    }
+    #[test]
+    fn scale_four_resizes_pixels_before_tile_placement() {
+        let root = cancellation_fixture();
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("TEXTUREFILECACHE")).unwrap();
+        let mut bc1 = Vec::new();
+        for _row in 0..64 {
+            for column in 0..64 {
+                let color: u16 = if column < 32 { 0xf800 } else { 0x001f };
+                bc1.extend(color.to_le_bytes());
+                bc1.extend([0u8; 6]);
+            }
+        }
+        // A synthetic LZO literal-only stream, terminated by the standard EOF marker.
+        let mut compressed = vec![0u8];
+        let mut length = bc1.len() - 18;
+        while length > 255 {
+            compressed.push(0);
+            length -= 255;
+        }
+        compressed.push(length as u8);
+        compressed.extend(&bc1);
+        compressed.extend([17, 0, 0]);
+        let mut chunk = Vec::new();
+        for value in [
+            MAGIC,
+            131072,
+            compressed.len() as u32,
+            bc1.len() as u32,
+            compressed.len() as u32,
+            bc1.len() as u32,
+        ] {
+            chunk.extend(value.to_le_bytes());
+        }
+        chunk.extend(compressed);
+        fs::write(root.join("TEXTUREFILECACHE/UI.TFC"), &chunk).unwrap();
+        let key = "DUIMAPTEST_63_0.THETILE".to_string();
+        let mappings = HashMap::from([(texture_hash(&key), 0)]);
+        let tile = Tile {
+            key,
+            width: 256,
+            height: 256,
+            flags: 17,
+            count: 32768,
+            offset: -1,
+            disk: chunk.len(),
+            format: 5,
+            cache: "UI".into(),
+        };
+        let metadata = MapMetadata {
+            min: [0.; 3],
+            max: [100.; 3],
+            tile_size: 256,
+            zoom_value: 100.,
+            rows: 64,
+            columns: 64,
+            auxiliary: Vec::new(),
+        };
+        let image = assemble(
+            &root,
+            "TEST",
+            &metadata,
+            &[tile],
+            &mappings,
+            &ImportCancellation::default(),
+        )
+        .unwrap();
+        assert_eq!(image.dimensions(), (4096, 4096));
+        assert_eq!(image.get_pixel(16, 32).0, [255, 0, 0, 255]);
+        assert_eq!(image.get_pixel(48, 32).0, [0, 0, 255, 255]);
+        assert_eq!(image.get_pixel(64, 32).0, [0, 0, 0, 0]);
+        assert_eq!(image.get_pixel(32, 64).0, [0, 0, 0, 0]);
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn source_path_rejects_traversal_and_escaping_symlink() {

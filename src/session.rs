@@ -28,6 +28,7 @@ pub struct BuildInfo {
     pub executable_bytes: u64,
     pub machine: u16,
     pub header_access: bool,
+    pub map_source: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -572,6 +573,32 @@ fn check_selection(
     }
     Ok(())
 }
+fn map_source_path(executable: &std::path::Path) -> Option<std::path::PathBuf> {
+    if !executable.is_absolute()
+        || executable
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    let matches = |path: &std::path::Path, name: &str| {
+        path.file_name()
+            .and_then(|v| v.to_str())
+            .is_some_and(|v| v.eq_ignore_ascii_case(name))
+    };
+    let arch = executable.parent()?;
+    let binaries = arch.parent()?;
+    let unreal = binaries.parent()?;
+    if !matches(executable, "DCGAME.EXE")
+        || !matches(arch, "WIN64")
+        || !matches(binaries, "BINARIES")
+        || !matches(unreal, "UNREAL3")
+    {
+        return None;
+    }
+    Some(unreal.join("DCGAME/COOKEDPC"))
+}
+
 fn inspect(
     pid: i32,
     expected_start: Option<u64>,
@@ -585,6 +612,12 @@ fn inspect(
         return Err("Mapped executable changed or header did not match".into());
     }
     let start_ticks = candidate.identity.start_ticks;
+    let map_source = candidate
+        .mapping
+        .path
+        .as_deref()
+        .and_then(map_source_path)
+        .filter(|path| path.join("UI/MAPS").is_dir());
     Ok((
         candidate,
         BuildInfo {
@@ -594,6 +627,7 @@ fn inspect(
             executable_bytes: metadata.size,
             machine: metadata.machine,
             header_access: true,
+            map_source,
         },
     ))
 }
@@ -919,6 +953,24 @@ fn worker_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn map_source_comes_only_from_the_expected_game_install_layout() {
+        use std::path::Path;
+        assert_eq!(
+            map_source_path(Path::new(
+                "/games/DC Universe Online/UNREAL3/BINARIES/WIN64/DCGAME.EXE"
+            )),
+            Some(Path::new("/games/DC Universe Online/UNREAL3/DCGAME/COOKEDPC").into())
+        );
+        for path in [
+            "relative/DCGAME.EXE",
+            "/tmp/DCGAME.EXE",
+            "/games/UNREAL3/BINARIES/WIN32/DCGAME.EXE",
+            "/games/../UNREAL3/BINARIES/WIN64/DCGAME.EXE",
+        ] {
+            assert!(map_source_path(Path::new(path)).is_none());
+        }
+    }
     fn synthetic_build() -> BuildInfo {
         BuildInfo {
             pid: 42,
@@ -927,6 +979,7 @@ mod tests {
             executable_bytes: 64,
             machine: 0x8664,
             header_access: true,
+            map_source: None,
         }
     }
     fn recovery_controller() -> (Controller, SyncSender<Event>, Receiver<Command>) {
@@ -1397,6 +1450,7 @@ mod tests {
                     executable_bytes: 64,
                     machine: 0x8664,
                     header_access: true,
+                    map_source: None,
                 })),
             })
             .unwrap();

@@ -17,6 +17,8 @@ pub struct Settings {
     pub ui_scale: f32,
     pub dark_mode: bool,
     pub map_catalog: String,
+    pub map_source: String,
+    pub auto_import_maps: bool,
     pub auto_reconnect: bool,
     pub poll_ms: u64,
 }
@@ -29,6 +31,8 @@ impl Default for Settings {
             ui_scale: 1.0,
             dark_mode: true,
             map_catalog: String::new(),
+            map_source: String::new(),
+            auto_import_maps: true,
             auto_reconnect: false,
             poll_ms: 250,
         }
@@ -69,6 +73,12 @@ impl Settings {
         }
         if self.map_catalog.contains("://") {
             return Err("Map catalog must be a local file path.".into());
+        }
+        if self.map_source.len() > 4096
+            || self.map_source.chars().any(char::is_control)
+            || self.map_source.contains("://")
+        {
+            return Err("Installed map source must be a bounded local directory path.".into());
         }
         Ok(())
     }
@@ -359,6 +369,30 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn automatic_map_preferences_validate_without_overwriting_saved_settings() {
+        let dir = TempDir::new();
+        let settings = Settings {
+            map_source: "/games/UNREAL3/DCGAME/COOKEDPC".into(),
+            ..Default::default()
+        };
+        settings.save_path(&dir.path()).unwrap();
+        assert_eq!(load_path(&dir.path()).0, settings);
+        for source in [
+            "https://example.invalid/maps".into(),
+            "bad\0path".into(),
+            "x".repeat(4097),
+        ] {
+            let invalid = Settings {
+                map_source: source,
+                ..settings.clone()
+            };
+            assert!(invalid.save_path(&dir.path()).is_err());
+            assert_eq!(load_path(&dir.path()).0, settings);
+        }
+        assert!(Settings::default().auto_import_maps);
     }
 
     #[test]

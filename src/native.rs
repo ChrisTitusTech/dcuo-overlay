@@ -82,21 +82,46 @@ fn area_signal(package: &str, number: u32) -> Result<bool, String> {
     }
     Ok(relevant)
 }
+pub(crate) fn valid_area_key(key: &str) -> bool {
+    (1..=32).contains(&key.len())
+        && key.split('_').all(|component| {
+            !component.is_empty()
+                && component
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        })
+}
+fn matching_designer(package: &str, key: &str) -> bool {
+    if package.len() > 128 {
+        return false;
+    }
+    let Some(stem) = package.strip_suffix("_DESIGNERDATA") else {
+        return false;
+    };
+    if stem == key {
+        return true;
+    }
+    stem.strip_prefix(key)
+        .and_then(|suffix| suffix.strip_prefix('_'))
+        .is_some_and(|variant| variant.split('_').all(valid_area_key))
+}
 fn supported_area(packages: &[String]) -> Option<String> {
+    if packages.len() > 2048 {
+        return None;
+    }
     let audio: Vec<_> = packages
         .iter()
         .filter_map(|name| name.strip_suffix("_AUDIO"))
         .collect();
-    if audio.len() != 1 || !matches!(audio[0], "MGOT101" | "MPYR0224") {
+    if audio.len() != 1 || !valid_area_key(audio[0]) {
         return None;
     }
     let key = audio[0];
-    let prefix = format!("{key}_");
     let designers: Vec<_> = packages
         .iter()
         .filter(|name| name.ends_with("_DESIGNERDATA"))
         .collect();
-    if designers.is_empty() || designers.iter().any(|name| !name.starts_with(&prefix)) {
+    if designers.is_empty() || designers.iter().any(|name| !matching_designer(name, key)) {
         return None;
     }
     Some(key.into())
@@ -694,7 +719,7 @@ mod tests {
         assert!(area_signal("MGOT101_BL_DESIGNERDATA", 1).is_err());
     }
     #[test]
-    fn streaming_area_requires_exact_known_audio_and_matching_designer() {
+    fn streaming_area_requires_unique_bounded_audio_key_and_matching_designer() {
         let choose = |names: &[&str]| {
             supported_area(
                 &names
@@ -711,6 +736,24 @@ mod tests {
             choose(&["MPYR0224_AUDIO", "MPYR0224_DESIGNERDATA"]),
             Some("MPYR0224".into())
         );
+        for area in ["MHDT0107", "MPYR0242", "NEWINSTANCE999", "OTHER", "A", "1"] {
+            assert_eq!(
+                choose(&[&format!("{area}_AUDIO"), &format!("{area}_DESIGNERDATA")]),
+                Some(area.into())
+            );
+            assert_eq!(
+                choose(&[&format!("{area}_AUDIO"), "MGOT101_DESIGNERDATA"]),
+                None
+            );
+            assert_eq!(
+                choose(&[
+                    &format!("{area}_AUDIO"),
+                    "MPYR0224_AUDIO",
+                    &format!("{area}_DESIGNERDATA")
+                ]),
+                None
+            );
+        }
         for names in [
             vec![],
             vec!["MGOT101_AUDIO"],
@@ -718,7 +761,6 @@ mod tests {
             vec!["MGOT101_AUDIO", "MPYR0224_DESIGNERDATA"],
             vec!["MGOT101_AUDIO", "MPYR0224_AUDIO", "MGOT101_DESIGNERDATA"],
             vec!["MGOT101_AUDIO", "MGOT101_AUDIO", "MGOT101_DESIGNERDATA"],
-            vec!["OTHER_AUDIO", "OTHER_DESIGNERDATA"],
             vec!["MGOT101_AUDIO_EXTRA", "MGOT101_DESIGNERDATA"],
             vec!["MGOT101_AUDIO", "MGOT101X_DESIGNERDATA"],
             vec![
@@ -728,6 +770,102 @@ mod tests {
             ],
         ] {
             assert_eq!(choose(&names), None);
+        }
+    }
+    #[test]
+    fn malformed_or_ambiguous_unlisted_area_signals_are_rejected() {
+        for key in [
+            "",
+            "lowercase",
+            "MIXed1",
+            "BAD-KEY",
+            "BAD/KEY",
+            "BAD.KEY",
+            "_BADKEY",
+            "BADKEY_",
+            "BAD__KEY",
+            "BAD KEY",
+            "BAD\nKEY",
+            "ÅREA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ] {
+            let packages = vec![format!("{key}_AUDIO"), format!("{key}_DESIGNERDATA")];
+            assert!(supported_area(&packages).is_none(), "malformed key {key:?}");
+        }
+        for designer in [
+            "NEW99X_DESIGNERDATA",
+            "NEW99__DESIGNERDATA",
+            "NEW99_BL__DESIGNERDATA",
+            "NEW99_lower_DESIGNERDATA",
+            "NEW99_../BAD_DESIGNERDATA",
+            "NEW99_ÅREA_DESIGNERDATA",
+        ] {
+            assert!(supported_area(&["NEW99_AUDIO".into(), designer.into()]).is_none());
+        }
+        assert_eq!(
+            supported_area(&["NEW99_AUDIO".into(), "NEW99_BL_CT_DESIGNERDATA".into()]),
+            Some("NEW99".into())
+        );
+        assert!(
+            supported_area(&[
+                "NEW99_AUDIO".into(),
+                "OTHER99_AUDIO".into(),
+                "NEW99_DESIGNERDATA".into()
+            ])
+            .is_none()
+        );
+        assert!(
+            supported_area(&[
+                "NEW99_AUDIO".into(),
+                "NEW99_DESIGNERDATA".into(),
+                "OTHER99_DESIGNERDATA".into()
+            ])
+            .is_none()
+        );
+        assert!(area_signal("NEW99_AUDIO", 1).is_err());
+        assert!(area_signal("NEW99_BL_DESIGNERDATA", 1).is_err());
+        let maximum = "A".repeat(32);
+        assert_eq!(
+            supported_area(&[
+                format!("{maximum}_AUDIO"),
+                format!("{maximum}_DESIGNERDATA")
+            ]),
+            Some(maximum)
+        );
+        assert!(supported_area(&vec!["NEW99_AUDIO".into(); 2049]).is_none());
+    }
+    #[test]
+    fn underscored_area_preserves_full_key_and_exact_designer_boundary() {
+        let key = "MLOC139_ART_001";
+        assert!(valid_area_key(key));
+        for designer in [
+            "MLOC139_ART_001_DESIGNERDATA",
+            "MLOC139_ART_001_BL_DESIGNERDATA",
+        ] {
+            assert_eq!(
+                supported_area(&[format!("{key}_AUDIO"), designer.into()]),
+                Some(key.into())
+            );
+        }
+        for designer in [
+            "MLOC139_DESIGNERDATA",
+            "MLOC139_ART_DESIGNERDATA",
+            "MLOC139_ART_002_DESIGNERDATA",
+            "MLOC139_ART_001X_DESIGNERDATA",
+            "MLOC139_ART_001__DESIGNERDATA",
+            "MLOC139_ART_001_../BAD_DESIGNERDATA",
+        ] {
+            assert!(supported_area(&[format!("{key}_AUDIO"), designer.into()]).is_none());
+        }
+        for invalid in [
+            "_MLOC139",
+            "MLOC139_",
+            "MLOC139__ART",
+            "MLOC139/ART",
+            "MLOC139_.._ART",
+            "MLOC139_art",
+        ] {
+            assert!(!valid_area_key(invalid));
         }
     }
     #[test]

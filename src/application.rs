@@ -254,6 +254,7 @@ struct Probe {
     preference_status: String,
     map: MapView,
     initialized: bool,
+    detected_map_source_for: Option<(i32, u64)>,
 }
 
 impl Probe {
@@ -275,8 +276,13 @@ impl Probe {
             preferences.api_base = options.api_base.clone();
         }
         let mut map = MapView::new(preferences.map_catalog.clone());
+        map.set_auto_import_source(if preferences.auto_import_maps {
+            preferences.map_source.clone()
+        } else {
+            String::new()
+        });
         if !preferences.map_catalog.is_empty() {
-            map.load();
+            map.load_saved_catalog();
         }
         let mut controller = Controller::new();
         controller.set_auto_reconnect(preferences.auto_reconnect);
@@ -304,6 +310,7 @@ impl Probe {
             preference_status: warning.unwrap_or_default(),
             map,
             initialized: false,
+            detected_map_source_for: None,
         }
     }
 }
@@ -314,6 +321,14 @@ impl Probe {
         self.preferences.world = self.world.clone();
         self.preferences.ui_scale = self.scale;
         self.preferences.map_catalog = self.map.catalog_path.clone();
+        if self.preferences.validate().is_ok() {
+            self.map
+                .set_auto_import_source(if self.preferences.auto_import_maps {
+                    self.preferences.map_source.clone()
+                } else {
+                    String::new()
+                });
+        }
         self.preference_status = if self.smoke.is_some() {
             "Smoke mode: preferences are not saved.".into()
         } else {
@@ -333,6 +348,34 @@ impl Drop for Probe {
             }
         }
     }
+}
+
+fn map_observation(view: &crate::session::View) -> (Option<LocationSample>, MarkerGate<'static>) {
+    let sample = view.native.as_ref().and_then(|native| {
+        native.area_key.as_ref().map(|area| LocationSample {
+            point: Point {
+                x: native.position[0] as f64,
+                y: native.position[1] as f64,
+            },
+            context: Context {
+                zone: area.clone(),
+                layout: "main".into(),
+                floor: "overview".into(),
+            },
+            session_generation: view.location_generation,
+            zone_generation: view.location_generation,
+            observed_at: native.observed_at,
+            valid: view.connected && !view.paused,
+        })
+    });
+    let gate = MarkerGate {
+        profile: Some(crate::native::PROFILE_ID),
+        session_generation: view.location_generation,
+        zone_generation: view.location_generation,
+        paused: view.paused,
+        confidence: LocationConfidence::Experimental,
+    };
+    (sample, gate)
 }
 
 fn sanitized_session_diagnostics(view: &crate::session::View) -> String {
@@ -370,8 +413,27 @@ impl eframe::App for Probe {
             });
             self.initialized = true;
         }
-        self.map.poll(ctx);
         self.controller.poll();
+        if let Some(build) = self.controller.view().build.as_ref() {
+            let identity = (build.pid, build.start_ticks);
+            if self.detected_map_source_for != Some(identity) {
+                self.detected_map_source_for = Some(identity);
+                if self.preferences.map_source.is_empty()
+                    && let Some(source) = &build.map_source
+                {
+                    self.preferences.map_source = source.to_string_lossy().into_owned();
+                    self.map
+                        .set_auto_import_source(if self.preferences.auto_import_maps {
+                            self.preferences.map_source.clone()
+                        } else {
+                            String::new()
+                        });
+                }
+            }
+        }
+        let (sample, gate) = map_observation(self.controller.view());
+        self.map.update_current_context(sample.as_ref(), Some(gate));
+        self.map.poll(ctx);
         if self.controller.view().connected
             && self.selected.is_none_or(|selected| {
                 !self
@@ -504,21 +566,8 @@ impl Probe {
                             ui.small("Position and streaming evidence do not establish map calibration, floor or current-character identity. The experimental marker is a preview, not a fully validated profile.");
                         } else { ui.label("No fresh experimental position sample available."); }
                         ui.separator();
-                        let sample = view.native.as_ref().and_then(|n| n.area_key.as_ref().map(|area| LocationSample {
-                            point: Point { x: n.position[0] as f64, y: n.position[1] as f64 },
-                            context: Context { zone: area.clone(), layout: "main".into(), floor: "overview".into() },
-                            session_generation: view.location_generation,
-                            zone_generation: view.location_generation,
-                            observed_at: n.observed_at,
-                            valid: view.connected && !view.paused,
-                        }));
-                        self.map.ui(ui, sample.as_ref(), Some(MarkerGate {
-                            profile: Some(crate::native::PROFILE_ID),
-                            session_generation: view.location_generation,
-                            zone_generation: view.location_generation,
-                            paused: view.paused,
-                            confidence: LocationConfidence::Experimental,
-                        }));
+                        let (sample, gate) = map_observation(view);
+                        self.map.ui(ui, sample.as_ref(), Some(gate));
                     }
                     Tab::Diagnostics => {
                         ui.heading("Process and build evidence");
@@ -554,6 +603,10 @@ impl Probe {
                     if ui.checkbox(&mut self.preferences.dark_mode, "Dark theme").changed() { ui.ctx().set_visuals(if self.preferences.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() }); }
                     ui.label("API base URL"); ui.add(egui::TextEdit::singleline(&mut self.base).desired_width(f32::INFINITY).char_limit(2048));
                     ui.label("Reference world ID"); ui.add(egui::TextEdit::singleline(&mut self.world).char_limit(10));
+                    ui.checkbox(&mut self.preferences.auto_import_maps, "Automatically load the current area's installed map");
+                    ui.label("Installed map source (CookedPC directory)");
+                    ui.add(egui::TextEdit::singleline(&mut self.preferences.map_source).desired_width(f32::INFINITY).char_limit(4096));
+                    ui.small("Detected from the connected game when available. Apply preferences to change automatic loading.");
                     ui.label("Local map catalog"); ui.add(egui::TextEdit::singleline(&mut self.map.catalog_path).desired_width(f32::INFINITY).char_limit(4096));
                     ui.add(egui::Slider::new(&mut self.preferences.poll_ms, 100..=2000).text("Idle UI refresh interval (ms)"));
                     if ui.checkbox(&mut self.preferences.auto_reconnect, "Reconnect after the game restarts").changed() {
@@ -567,6 +620,7 @@ impl Probe {
                         self.world = self.preferences.world.clone();
                         self.scale = self.preferences.ui_scale;
                         self.map = MapView::new(String::new());
+                        self.detected_map_source_for = None;
                         self.controller.set_auto_reconnect(false);
                         ui.ctx().set_zoom_factor(self.scale);
                         ui.ctx().set_visuals(egui::Visuals::dark());

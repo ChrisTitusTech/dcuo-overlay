@@ -3,6 +3,7 @@ use crate::map_import::ImportCancellation;
 use crate::maps::{self, Catalog, LocationSample, MapEntry, MarkerGate};
 use eframe::egui;
 use std::{
+    collections::VecDeque,
     io::Cursor,
     path::{Path, PathBuf},
     sync::mpsc,
@@ -13,15 +14,27 @@ use std::{
 enum Request {
     Catalog(u64, PathBuf),
     Import(u64, PathBuf, PathBuf),
+    ImportArea(u64, PathBuf, PathBuf, String, ImportCancellation),
     Asset(u64, PathBuf, Box<MapEntry>),
 }
 enum Loaded {
     Catalog(Catalog, PathBuf),
     Image(egui::ColorImage),
     Imported(PathBuf),
+    ImportedArea(String, PathBuf),
 }
 type Reply = (u64, Result<Loaded, String>);
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AutoContext {
+    context: maps::Context,
+    session: u64,
+    zone: u64,
+}
+struct AutoMemo {
+    area: String,
+    path: Option<PathBuf>,
+}
 pub struct MapView {
     pub catalog_path: String,
     catalog: Option<Catalog>,
@@ -43,6 +56,11 @@ pub struct MapView {
     cookedpc: String,
     busy: bool,
     browse_other_maps: bool,
+    auto_import: bool,
+    auto_context: Option<AutoContext>,
+    auto_token: Option<ImportCancellation>,
+    auto_inflight: Option<String>,
+    auto_memo: VecDeque<AutoMemo>,
 }
 impl Default for MapView {
     fn default() -> Self {
@@ -77,6 +95,12 @@ impl MapView {
                         }),
                     ),
                     Request::Asset(g, dir, entry) => (g, decode(&dir, &entry).map(Loaded::Image)),
+                    Request::ImportArea(g, source, destination, area, token) => (
+                        g,
+                        crate::map_import::import_area_cancellable(&source, &destination, &area, &token)
+                            .map(|path| Loaded::ImportedArea(area, path))
+                            .map_err(|_| "Current-area map import failed or is unsupported. Check the installation, then use Retry current map.".into()),
+                    ),
                     Request::Import(g, source, destination) => (
                         g,
                         importer(&source, &destination, &worker_cancellation)
@@ -113,7 +137,167 @@ impl MapView {
             cookedpc: std::env::var_os("HOME").map(PathBuf::from).filter(|path| path.is_absolute()).map(|path| path.join(".local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC").to_string_lossy().into_owned()).unwrap_or_default(),
             busy: false,
             browse_other_maps: false,
+            auto_import: true,
+            auto_context: None,
+            auto_token: None,
+            auto_inflight: None,
+            auto_memo: VecDeque::new(),
         }
+    }
+    pub fn set_auto_import_source(&mut self, source: String) {
+        if self.cookedpc != source {
+            self.cancel_auto();
+            self.auto_context = None;
+            self.auto_memo.clear();
+            self.cookedpc = source;
+            self.auto_import = !self.cookedpc.is_empty() && !self.browse_other_maps;
+            // A paused/disconnected view can retain a catalog after its live
+            // context has expired. No source-dependent result may survive.
+            self.catalog = None;
+            self.texture = None;
+            self.generation = self.generation.wrapping_add(1);
+            self.pending = None;
+            self.busy = false;
+        }
+        if self.cookedpc.is_empty() {
+            self.cancel_auto();
+            self.auto_import = false;
+        }
+    }
+    fn cancel_auto(&mut self) {
+        if let Some(token) = self.auto_token.take() {
+            token.cancel();
+        }
+        if self.auto_inflight.take().is_some() {
+            self.generation = self.generation.wrapping_add(1);
+            self.pending = None;
+            self.busy = false;
+        }
+    }
+    fn remember_auto(&mut self, area: String, path: Option<PathBuf>) {
+        self.auto_memo.retain(|memo| memo.area != area);
+        if self.auto_memo.len() == 8 {
+            self.auto_memo.pop_front();
+        }
+        self.auto_memo.push_back(AutoMemo { area, path });
+    }
+    pub fn update_current_context(
+        &mut self,
+        sample: Option<&LocationSample>,
+        gate: Option<MarkerGate>,
+    ) {
+        if !self.auto_import || self.browse_other_maps || self.cookedpc.is_empty() {
+            return;
+        }
+        let next = fresh_auto_context(sample, gate, Instant::now());
+        if self.auto_context != next {
+            self.cancel_auto();
+            self.generation = self.generation.wrapping_add(1);
+            self.pending = None;
+            self.busy = false;
+            self.texture = None;
+            self.auto_context = next;
+        }
+        let Some(current) = self.auto_context.as_ref() else {
+            return;
+        };
+        if self.busy {
+            return;
+        }
+        let area = current.context.zone.clone();
+        if self
+            .auto_memo
+            .iter()
+            .any(|memo| memo.area == area && memo.path.is_none())
+        {
+            self.status = "Current-area map unavailable. Use Retry current map after correcting the installation.".into();
+            return;
+        }
+        // Saved catalogs have not passed this launch's source fingerprint check.
+        // Only imports memoized by this process may take the loaded-map shortcut.
+        let source_checked = self.auto_memo.iter().any(|memo| {
+            memo.area == area
+                && memo
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| path == std::path::Path::new(&self.catalog_path))
+        });
+        if source_checked
+            && let Some(index) = self.catalog.as_ref().and_then(|catalog| {
+                catalog.matching(&current.context).and_then(|matching| {
+                    catalog
+                        .entries
+                        .iter()
+                        .position(|entry| std::ptr::eq(entry, matching))
+                })
+            })
+        {
+            if self.texture.is_none() || self.selected != index {
+                self.selected = index;
+                self.auto_inflight = Some(area);
+                self.asset(true);
+            }
+            return;
+        }
+        if let Some(path) = self
+            .auto_memo
+            .iter()
+            .find(|memo| memo.area == area)
+            .and_then(|memo| memo.path.clone())
+        {
+            self.catalog_path = path.to_string_lossy().into_owned();
+            self.auto_inflight = Some(area);
+            self.load_internal();
+            return;
+        }
+        let source = PathBuf::from(&self.cookedpc);
+        let Some(destination) = import_destination().filter(|_| {
+            source.is_absolute()
+                && !self.cookedpc.contains("://")
+                && !self.cookedpc.chars().any(char::is_control)
+        }) else {
+            self.remember_auto(area, None);
+            self.status =
+                "Configure a local installed-game directory before retrying the current map."
+                    .into();
+            return;
+        };
+        let token = ImportCancellation::default();
+        self.auto_token = Some(token.clone());
+        self.auto_inflight = Some(area.clone());
+        self.generation = self.generation.wrapping_add(1);
+        self.pending = Some(Request::ImportArea(
+            self.generation,
+            source,
+            destination,
+            area,
+            token,
+        ));
+        self.texture = None;
+        self.busy = true;
+        self.status = "Loading current-area map from the local installation...".into();
+    }
+    fn browse(&mut self) {
+        self.cancel_auto();
+        self.browse_other_maps = true;
+        self.auto_import = false;
+        if self.texture.is_none()
+            && self
+                .catalog
+                .as_ref()
+                .is_some_and(|c| c.entries.get(self.selected).is_some())
+        {
+            self.asset(true);
+        }
+    }
+    fn retry_current(&mut self) {
+        if let Some(current) = &self.auto_context {
+            self.auto_memo
+                .retain(|memo| memo.area != current.context.zone);
+        }
+        self.cancel_auto();
+        self.catalog = None;
+        self.texture = None;
     }
     /// Export only fixed labels, enum values, numeric schema versions, and flags.
     /// Never export paths, map labels, catalog strings, error text, or coordinates.
@@ -139,7 +323,15 @@ impl MapView {
             self.texture.is_some()
         )
     }
+    pub fn load_saved_catalog(&mut self) {
+        self.load_internal();
+    }
     pub fn load(&mut self) {
+        self.cancel_auto();
+        self.auto_import = false;
+        self.load_internal();
+    }
+    fn load_internal(&mut self) {
         self.busy = true;
         self.generation = self.generation.wrapping_add(1);
         self.texture = None;
@@ -181,25 +373,53 @@ impl MapView {
             self.busy = false;
             match result {
                 Ok(Loaded::Catalog(catalog, directory)) => {
+                    if self.auto_inflight.is_some()
+                        && self
+                            .auto_context
+                            .as_ref()
+                            .is_some_and(|current| catalog.matching(&current.context).is_none())
+                    {
+                        if let Some(area) = self.auto_inflight.take() {
+                            self.remember_auto(area, None);
+                        }
+                        self.status = "Imported map does not match the current layout/floor. Use Retry current map after checking coverage.".into();
+                        continue;
+                    }
                     self.catalog = Some(catalog);
                     self.directory = directory;
                     self.selected = 0;
-                    self.asset(false);
+                    self.asset(self.auto_import);
                     if self.catalog.as_ref().is_some_and(|c| c.entries.is_empty()) {
                         self.status = "Catalog contains no maps.".into();
                         self.busy = false;
+                        if let Some(area) = self.auto_inflight.take() {
+                            self.remember_auto(area, None);
+                        }
                     }
                 }
                 Ok(Loaded::Image(image)) => {
                     self.texture =
                         Some(ctx.load_texture("local-map", image, egui::TextureOptions::LINEAR));
                     self.status = "Map loaded.".into();
+                    self.auto_inflight = None;
+                    self.auto_token = None;
+                }
+                Ok(Loaded::ImportedArea(area, path)) => {
+                    self.remember_auto(area, Some(path.clone()));
+                    self.catalog_path = path.to_string_lossy().into_owned();
+                    self.load_internal();
                 }
                 Ok(Loaded::Imported(path)) => {
                     self.catalog_path = path.to_string_lossy().into_owned();
                     self.load();
                 }
-                Err(error) => self.status = error,
+                Err(error) => {
+                    if let Some(area) = self.auto_inflight.take() {
+                        self.remember_auto(area, None);
+                    }
+                    self.auto_token = None;
+                    self.status = error;
+                }
             }
         }
         if let Some(request) = self.pending.take()
@@ -221,6 +441,7 @@ impl MapView {
         sample: Option<&LocationSample>,
         gate: Option<MarkerGate>,
     ) {
+        self.update_current_context(sample, gate);
         self.poll(ui.ctx());
         ui.heading("Map browser");
         ui.horizontal(|ui| {
@@ -236,11 +457,13 @@ impl MapView {
                 self.load();
             }
         });
-        ui.collapsing("Import local installed game maps", |ui| {
-            ui.label("Import two installed-game area maps for private local use. Supported area alignment can show an experimental marker; calibration, floor and transition validation remain incomplete.");
+        ui.collapsing("Import starter maps (optional)", |ui| {
+            ui.label("Current area loads installed maps automatically. This optional bulk import creates a four-map starter catalog for browsing. Marker alignment remains experimental; floor validation is incomplete.");
             ui.label("CookedPC directory");
-            ui.add(egui::TextEdit::singleline(&mut self.cookedpc).desired_width(f32::INFINITY).char_limit(4096));
-            if ui.add_enabled(!self.busy, egui::Button::new("Import installed game maps")).clicked() {
+            let mut source = self.cookedpc.clone();
+            if ui.add(egui::TextEdit::singleline(&mut source).desired_width(f32::INFINITY).char_limit(4096)).changed() { self.set_auto_import_source(source); }
+            if ui.add_enabled(!self.busy, egui::Button::new("Import starter catalog")).clicked() {
+                self.cancel_auto(); self.auto_import = false;
                 match import_destination() {
                     Some(destination) if !self.cookedpc.is_empty() && !self.cookedpc.contains("://") && !self.cookedpc.chars().any(char::is_control) => {
                         self.generation = self.generation.wrapping_add(1);
@@ -256,8 +479,30 @@ impl MapView {
             ui.spinner();
         }
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.browse_other_maps, false, "Current area");
-            ui.selectable_value(&mut self.browse_other_maps, true, "Browse other maps");
+            if ui
+                .selectable_label(!self.browse_other_maps && self.auto_import, "Current area")
+                .clicked()
+            {
+                self.browse_other_maps = false;
+                self.auto_import = true;
+                self.update_current_context(sample, gate);
+            }
+            if ui
+                .selectable_label(self.browse_other_maps, "Browse other maps")
+                .clicked()
+            {
+                self.browse();
+            }
+            if ui
+                .add_enabled(
+                    self.auto_import && !self.busy && self.auto_context.is_some(),
+                    egui::Button::new("Retry current map"),
+                )
+                .clicked()
+            {
+                self.retry_current();
+                self.update_current_context(sample, gate);
+            }
         });
         let now = Instant::now();
         let current_index = self
@@ -296,6 +541,24 @@ impl MapView {
                         }
                     });
             });
+        }
+        if self.browse_other_maps {
+            let mut chosen = None;
+            egui::ComboBox::from_id_salt("cached-area-maps")
+                .selected_text("Previously imported areas")
+                .show_ui(ui, |ui| {
+                    for memo in &self.auto_memo {
+                        if let Some(path) = &memo.path
+                            && ui.selectable_label(false, &memo.area).clicked()
+                        {
+                            chosen = Some(path.clone());
+                        }
+                    }
+                });
+            if let Some(path) = chosen {
+                self.catalog_path = path.to_string_lossy().into_owned();
+                self.load();
+            }
         }
         if previous != self.selected {
             self.asset(false);
@@ -405,6 +668,7 @@ impl MapView {
 }
 impl Drop for MapView {
     fn drop(&mut self) {
+        self.cancel_auto();
         self.cancellation.cancel();
         self.pending.take();
         self.tx.take();
@@ -414,6 +678,29 @@ impl Drop for MapView {
         }
     }
 }
+fn fresh_auto_context(
+    sample: Option<&LocationSample>,
+    gate: Option<MarkerGate>,
+    now: Instant,
+) -> Option<AutoContext> {
+    let sample = sample?;
+    let gate = gate?;
+    if !sample.valid
+        || gate.paused
+        || gate.confidence == maps::LocationConfidence::Unavailable
+        || sample.session_generation != gate.session_generation
+        || sample.zone_generation != gate.zone_generation
+        || now.checked_duration_since(sample.observed_at)? > std::time::Duration::from_secs(1)
+    {
+        return None;
+    }
+    Some(AutoContext {
+        context: sample.context.clone(),
+        session: sample.session_generation,
+        zone: sample.zone_generation,
+    })
+}
+
 fn current_map_index(
     catalog: &Catalog,
     sample: Option<&LocationSample>,
@@ -574,6 +861,244 @@ mod tests {
         assert_eq!(
             current_map_index(&catalog, Some(&sample), Some(gate), now),
             None
+        );
+    }
+    fn auto_sample(area: &str) -> (LocationSample, MarkerGate<'static>) {
+        (
+            LocationSample {
+                point: maps::Point { x: 1., y: 1. },
+                context: test_entry(area).context,
+                session_generation: 1,
+                zone_generation: 1,
+                observed_at: Instant::now(),
+                valid: true,
+            },
+            MarkerGate {
+                session_generation: 1,
+                zone_generation: 1,
+                paused: false,
+                confidence: maps::LocationConfidence::Experimental,
+                profile: Some(crate::native::PROFILE_ID),
+            },
+        )
+    }
+    #[test]
+    fn automatic_area_changes_cancel_old_work_and_discard_late_completion() {
+        let mut view = MapView::default();
+        view.set_auto_import_source("/synthetic/absent-install".into());
+        let (a, gate) = auto_sample("AREA1");
+        let (b, _) = auto_sample("AREA2");
+        view.update_current_context(Some(&a), Some(gate));
+        let old_generation = view.generation;
+        let old_token = view.auto_token.clone().unwrap();
+        assert!(
+            matches!(&view.pending, Some(Request::ImportArea(_,_,_,area,_)) if area == "AREA1")
+        );
+        view.update_current_context(Some(&b), Some(gate));
+        assert!(old_token.is_cancelled());
+        assert!(view.generation != old_generation);
+        assert!(
+            matches!(&view.pending, Some(Request::ImportArea(_,_,_,area,_)) if area == "AREA2")
+        );
+        let (sender, replies) = mpsc::sync_channel(1);
+        view.rx = Some(replies);
+        view.tx.take();
+        sender
+            .send((
+                old_generation,
+                Ok(Loaded::ImportedArea(
+                    "AREA1".into(),
+                    PathBuf::from("/private/late/catalog.json"),
+                )),
+            ))
+            .unwrap();
+        view.poll(&egui::Context::default());
+        assert!(view.catalog_path.is_empty());
+        assert!(view.auto_memo.is_empty());
+        let token = view.auto_token.clone().unwrap();
+        view.update_current_context(None, Some(gate));
+        assert!(token.is_cancelled());
+        assert!(view.auto_context.is_none());
+        assert!(view.pending.is_none());
+        assert!(!view.busy);
+    }
+    #[test]
+    fn automatic_failure_is_memoized_until_explicit_retry_and_browsing_does_not_override() {
+        let mut view = MapView::default();
+        view.set_auto_import_source("/synthetic/absent-install".into());
+        let (a, gate) = auto_sample("AREA1");
+        view.update_current_context(Some(&a), Some(gate));
+        let (sender, replies) = mpsc::sync_channel(1);
+        view.rx = Some(replies);
+        view.tx.take();
+        sender
+            .send((view.generation, Err("Synthetic import unavailable".into())))
+            .unwrap();
+        view.pending = None;
+        view.poll(&egui::Context::default());
+        let generation = view.generation;
+        for _ in 0..5 {
+            view.update_current_context(Some(&a), Some(gate));
+        }
+        assert_eq!(view.generation, generation);
+        assert!(view.pending.is_none());
+        assert!(!view.busy);
+        view.retry_current();
+        view.update_current_context(Some(&a), Some(gate));
+        assert!(view.busy);
+        assert!(view.pending.is_some());
+        view.cancel_auto();
+        view.auto_import = false;
+        view.browse_other_maps = true;
+        view.update_current_context(Some(&auto_sample("AREA2").0), Some(gate));
+        assert!(view.pending.is_none());
+        assert!(!view.busy);
+        for index in 0..20 {
+            view.remember_auto(format!("AREA{index}"), None);
+        }
+        assert_eq!(view.auto_memo.len(), 8);
+    }
+    #[test]
+    fn fresh_current_catalog_reloads_texture_after_outage_without_reimport() {
+        let mut view = MapView::default();
+        view.catalog_path = "/synthetic/checked/catalog.json".into();
+        view.remember_auto("AREA1".into(), Some(PathBuf::from(&view.catalog_path)));
+        let (a, gate) = auto_sample("AREA1");
+        view.catalog = Some(Catalog {
+            schema_version: 1,
+            entries: vec![test_entry("AREA1")],
+        });
+        view.update_current_context(Some(&a), Some(gate));
+        assert!(matches!(view.pending, Some(Request::Asset(..))));
+        view.update_current_context(None, Some(gate));
+        assert!(view.pending.is_none());
+        view.update_current_context(Some(&a), Some(gate));
+        assert!(matches!(view.pending, Some(Request::Asset(..))));
+        let generation = view.generation;
+        let mut stale = a;
+        stale.observed_at = Instant::now() - std::time::Duration::from_secs(2);
+        view.update_current_context(Some(&stale), Some(gate));
+        assert!(view.pending.is_none());
+        assert!(view.generation != generation);
+    }
+    #[test]
+    fn empty_source_disables_imports_without_failure_memo_or_retries() {
+        let mut view = MapView::default();
+        let (a, gate) = auto_sample("AREA1");
+        view.set_auto_import_source(String::new());
+        for _ in 0..3 {
+            view.update_current_context(Some(&a), Some(gate));
+        }
+        assert!(!view.busy);
+        assert!(view.pending.is_none());
+        assert!(view.auto_memo.is_empty());
+    }
+    #[test]
+    fn changing_source_invalidates_same_area_assets_and_preserves_explicit_browsing() {
+        let mut view = MapView::default();
+        view.set_auto_import_source("/synthetic/source-a".into());
+        let (a, gate) = auto_sample("AREA1");
+        view.update_current_context(Some(&a), Some(gate));
+        let old_token = view.auto_token.clone().unwrap();
+        view.catalog = Some(Catalog {
+            schema_version: 1,
+            entries: vec![test_entry("AREA1")],
+        });
+        view.texture = Some(egui::Context::default().load_texture(
+            "synthetic",
+            egui::ColorImage::new([1, 1], vec![egui::Color32::WHITE]),
+            egui::TextureOptions::LINEAR,
+        ));
+        view.remember_auto(
+            "AREA1".into(),
+            Some(PathBuf::from("/synthetic/old-catalog")),
+        );
+        view.set_auto_import_source("/synthetic/source-b".into());
+        assert!(old_token.is_cancelled());
+        assert!(view.catalog.is_none());
+        assert!(view.texture.is_none());
+        assert!(view.auto_memo.is_empty());
+        view.update_current_context(Some(&a), Some(gate));
+        assert!(
+            matches!(&view.pending, Some(Request::ImportArea(_, source, _, area, _)) if source == &PathBuf::from("/synthetic/source-b") && area == "AREA1")
+        );
+        view.cancel_auto();
+        view.browse_other_maps = true;
+        view.auto_import = false;
+        view.set_auto_import_source("/synthetic/source-c".into());
+        view.update_current_context(Some(&a), Some(gate));
+        assert!(view.browse_other_maps);
+        assert!(!view.auto_import);
+        assert!(view.pending.is_none());
+    }
+    #[test]
+    fn source_change_after_context_loss_reimports_instead_of_reusing_old_catalog() {
+        let mut view = MapView::default();
+        view.set_auto_import_source("/synthetic/source-a".into());
+        let (sample, gate) = auto_sample("AREA1");
+        view.update_current_context(Some(&sample), Some(gate));
+        view.cancel_auto();
+        view.catalog = Some(Catalog {
+            schema_version: 1,
+            entries: vec![test_entry("AREA1")],
+        });
+        view.update_current_context(None, Some(gate));
+        assert!(view.auto_context.is_none());
+        assert!(view.catalog.is_some());
+        view.set_auto_import_source("/synthetic/source-b".into());
+        assert!(view.catalog.is_none());
+        view.update_current_context(Some(&sample), Some(gate));
+        assert!(matches!(&view.pending,
+            Some(Request::ImportArea(_, source, _, area, _))
+            if source == &PathBuf::from("/synthetic/source-b") && area == "AREA1"));
+    }
+    #[test]
+    fn browse_recovers_selected_asset_after_outage_and_inflight_cancellation() {
+        for inflight in [false, true] {
+            let mut view = MapView::default();
+            view.set_auto_import_source("/synthetic/source".into());
+            let (sample, gate) = auto_sample("AREA1");
+            view.update_current_context(Some(&sample), Some(gate));
+            view.cancel_auto();
+            view.catalog = Some(Catalog {
+                schema_version: 1,
+                entries: vec![test_entry("AREA1")],
+            });
+            view.update_current_context(None, Some(gate));
+            if inflight {
+                view.auto_inflight = Some("AREA1".into());
+                view.asset(true);
+            }
+            let old_generation = view.generation;
+            view.browse();
+            assert!(view.browse_other_maps);
+            assert!(!view.auto_import);
+            assert!(view.busy);
+            assert!(view.generation > old_generation);
+            assert!(
+                matches!(&view.pending, Some(Request::Asset(_, _, entry)) if entry.context.zone == "AREA1")
+            );
+        }
+    }
+    #[test]
+    fn saved_automatic_catalog_must_pass_source_check_once_per_launch() {
+        let mut view = MapView::default();
+        view.set_auto_import_source("/synthetic/source".into());
+        view.catalog_path = "/synthetic/saved/catalog.json".into();
+        view.catalog = Some(Catalog {
+            schema_version: 1,
+            entries: vec![test_entry("AREA1")],
+        });
+        let (sample, gate) = auto_sample("AREA1");
+        view.update_current_context(Some(&sample), Some(gate));
+        assert!(
+            matches!(&view.pending, Some(Request::ImportArea(_, _, _, area, _)) if area == "AREA1")
+        );
+        view.cancel_auto();
+        view.remember_auto("AREA1".into(), Some(PathBuf::from(&view.catalog_path)));
+        view.update_current_context(Some(&sample), Some(gate));
+        assert!(
+            matches!(&view.pending, Some(Request::Asset(_, _, entry)) if entry.context.zone == "AREA1")
         );
     }
     fn png(width: u32, height: u32) -> Vec<u8> {

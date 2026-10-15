@@ -200,3 +200,50 @@ published. Existing imported versions remain intact. To roll back a map catalog,
 select its previous local catalog path in Settings and load it in Map. Paths,
 artwork, coordinates and arbitrary catalog text are excluded from copied map
 diagnostics.
+
+## Additional indoor imports (2026-10-14)
+
+The initial four-map extension established the following live acceptance subset.
+It is now superseded by the automatic importer below; these four maps remain an
+optional starter catalog for manual browsing.
+
+| Area | Output | Live acceptance |
+| --- | --- | --- |
+| MGOT101 / Gotham | 3200 x 3072 | User-confirmed movement; one paired landmark |
+| MPYR0224 / Old Gotham Subway | 768 x 512 | Live alignment remains open |
+| MHDT0107 | 256 x 256 | User confirmed map and marker movement |
+| MPYR0242 | 768 x 512 | Live alignment remains open |
+
+## Automatic installed-area coverage (2026-10-14)
+
+All 313 installed main map packages were individually decoded and imported into
+private single-area catalogs. All passed PNG dimensions, SHA-256 and catalog
+validation; repeating an unchanged import reused the same catalog without
+changing its modification time or leaving staging directories. This demonstrates
+installed overview coverage, not universal live calibration or floor selection.
+
+The native reader accepts a bounded, unique AUDIO area key only with matching
+DESIGNERDATA evidence. Exact executable, pawn ownership, freshness and session
+checks still apply. Ambiguous or stale contexts hide the marker. The application
+detects CookedPC from the connected executable; Settings offers a local override.
+Current area imports in the background when the area changes, including while
+another tab is visible. Old work is cancelled and late results cannot replace the
+new map. Browse and explicit catalog loading preserve manual selection; Current
+area resumes automatic selection. Failed areas wait for Retry current map.
+
+The importer accepts bounded main grids up to 64 x 64 and downsamples in powers
+of two to at most 4096 pixels on either axis. Listed main tiles must decode and
+have unique, valid positions; absent sparse-grid positions stay transparent.
+Declared SubMaps auxiliary textures are excluded from the main overview. In
+particular, MPYR0242's DOCK/ART variants have not been proven to represent floors.
+Area names remain codes where no reliable display name has been established.
+
+Cache entries are private, stable per-area directories containing only the PNG,
+catalog and receipt. Source metadata/remapping/main tile content fingerprints
+control reuse; catalog and image integrity are validated. Saved automatic maps
+are checked against the installed source again on each application launch. Modified, unexpected
+or symlinked cache contents are rejected without overwriting them. Cancellation
+cleans incomplete staging output. Source changes cancel pending work and clear
+in-memory results. A future game update with unsupported formats or an unknown
+executable is rejected; new supported area packages can be imported on demand.
+No game artwork, local paths or character snapshots are committed.

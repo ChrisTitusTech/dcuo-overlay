@@ -8,9 +8,10 @@ Its Map tab previews experimental live position on locally imported open-world
 and indoor maps.
 
 **Status: experimental live map preview.** The managed application displays API
-character references, experimental memory resources/position, and imported maps
-for Gotham and Old Gotham Subway. Gotham marker alignment has one paired in-game
-landmark check, and the user confirmed movement tracking. Current-character identity, indoor live accuracy, multi-launch
+character references, experimental memory resources/position, and automatic maps
+from the local game installation. All 313 installed main overviews pass import
+and cache validation; this is not live calibration of every instance. The user confirmed matching map/marker movement in Gotham and the
+MHDT0107 indoor area. Current-character identity, quantitative indoor accuracy, multi-launch
 profiles and full release acceptance remain incomplete. See
 [live map evidence](docs/live-map-preview.md).
 
@@ -29,9 +30,12 @@ and read access. Enter an exact character name/world and choose Look up referenc
 for API data. Scan next bounded step searches the selected process for matching
 name bytes, separately labeled as unverified string evidence. Diagnostics shows
 the actual process/build, application version and backend. Pause, Disconnect,
-Settings, About and Quit are available. Map can privately import artwork from
-the installed CookedPC directory and show explicitly experimental live position
-for the two recognized areas. Unknown areas have no marker. See
+Settings, About and Quit are available. Current area automatically imports the matching installed map in the background,
+even while another tab is open, and switches when fresh area evidence changes.
+The game installation is detected on connection; Settings allows a CookedPC
+path override and disabling automatic imports. Browse preserves manual selection.
+Missing maps or ambiguous area evidence hide the marker; Retry current map
+retries a failed import. Multi-floor selection is not yet proven. See
 [local import details](docs/local-map-import.md).
 DWM owns placement, tags, borders, and focus; use its controls to choose a monitor.
 
