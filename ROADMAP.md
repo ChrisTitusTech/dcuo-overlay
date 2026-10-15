@@ -16,6 +16,10 @@ See [live map evidence and remaining gates](docs/live-map-preview.md).
 Offline hardening adds bounded API cache/retry, opt-in exact-build reconnect,
 cancellable import, calibration provenance and reversible local packaging.
 [Offline evidence](docs/offline-hardening.md) keeps remaining live gates explicit.
+The resumed live slice adds automatic on-demand imports for installed areas
+(all 313 main overviews decode and cache successfully), including indoor maps. The user confirmed MHDT0107
+map/marker movement; other indoor routes, quantitative accuracy and floors remain
+open. See the updated [live map evidence](docs/live-map-preview.md).
 
 ## Development worker execution
 

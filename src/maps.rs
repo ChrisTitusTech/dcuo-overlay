@@ -30,6 +30,7 @@ pub struct Context {
 pub enum Category {
     OpenWorld,
     Instance,
+    Unclassified,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

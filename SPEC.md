@@ -1,11 +1,12 @@
 # Specification
 
 Status: the managed application displays API references and build-gated
-experimental live resources/position. Local imports provide Gotham and Old Gotham
-Subway maps; the Gotham marker has a paired in-game landmark observation and
-user-confirmed movement tracking. Offline hardening includes exact-build reconnect,
+experimental live resources/position. On-demand local imports cover all 313 installed
+main map overviews, with automatic area switching and private cache reuse. Gotham has a paired landmark observation;
+the user confirmed matching map/marker movement in Gotham and MHDT0107. Offline hardening includes exact-build reconnect,
 bounded API caching/retry, cancellable import and per-entry calibration metadata. Profile,
-identity, indoor marker and full phase acceptance remain incomplete. See
+identity, quantitative indoor accuracy, floor handling and full phase acceptance
+remain incomplete. See
 [live map evidence](docs/live-map-preview.md).
 Requirements below remain acceptance targets; no phase is fully complete.
 
@@ -26,7 +27,9 @@ fields that have equivalent API representations.
 - Provide a complete application shell with Character, Map, and Diagnostics tabs,
   connection controls, settings, help, and desktop integration.
 - Display the current character's position on a 2D Map tab, covering open-world
-  and indoor/instance maps in the first release, with explicit per-map support.
+  and indoor/instance maps in the first release. Automatically load installed
+  main overviews as the area changes; retain explicit per-map calibration and
+  floor-support status rather than claiming universal live alignment.
 - Handle loading, character switching, game exit, restart, and API outages.
 
 Memory access is read-only. Injection, game-memory writes, gameplay automation,
@@ -166,8 +169,11 @@ information as part of packaging. Normal DWM borders and controls remain in use.
 First-release map scope includes both open-world and indoor/instance maps, as
 requested. Maintain a coverage inventory identifying each supported area,
 variant, floor/layer, asset, and calibration. Define the launch inventory during
-Phase 0; support for both categories is required, while universal coverage must
-not be implied. A single outdoor demonstration does not complete the map feature.
+Phase 0. The expanded user requirement is all instances with automatic live
+area updates. Import all supported installed main overviews on demand; record
+missing packages, unsupported formats, unproven layouts/floors and calibration
+gaps explicitly. Universal live accuracy must not be inferred from import
+coverage. A single outdoor demonstration does not complete the map feature.
 Unproven areas remain visibly unsupported and instances cannot silently be moved
 to a later feature phase.
 

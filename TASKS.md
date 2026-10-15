@@ -4,11 +4,13 @@
 
 Phase 0 acceptance remains open. The managed companion displays exact API
 references plus build-gated experimental native resources, position and streaming
-area. Local-only map import covers Gotham and Old Gotham Subway. The live Gotham
-marker matches one paired in-game landmark and the user confirmed movement tracking; indoor marker, multi-launch
-profile and full desktop acceptance remain pending. No phase is declared complete.
-See [live map evidence](docs/live-map-preview.md). PR #1 and PR #2 are merged; map preview progress is on main. The next offline
-slice adds optional restart recovery, API cache/backoff, cancellable imports, per-map
+area. Automatic local-only import covers all 313 installed main map overviews,
+with background loading on fresh area changes and reusable private caching.
+The user confirmed matching map/marker movement in Gotham and MHDT0107.
+Quantitative accuracy, other indoor routes/floors, multi-launch profile and full
+desktop acceptance remain pending. No phase is declared complete.
+See [live map evidence](docs/live-map-preview.md). PR #1 through PR #3 are merged. The completed offline
+slice added optional restart recovery, API cache/backoff, cancellable imports, per-map
 calibration evidence, preference reset, and user-local install/rollback. See
 [offline hardening evidence](docs/offline-hardening.md).
 
@@ -483,3 +485,81 @@ window/import/install measurements are recorded in
 process selector after recovery; the lead fixed it with PID-reuse regression
 coverage. Full phase checkboxes remain pending live acceptance. No game was
 launched, no live snapshots/assets were committed, and no release was published.
+
+## Instance coverage continuation (2026-10-14)
+
+The user relaunched the game and requests instance maps. The lead observed a
+unique loaded audio/designer context for MHDT0107; the prior unsupported instance
+was MPYR0242. Both have locally installed UI map packages. No name/coordinates or
+artwork will be committed. Existing calibration remains experimental.
+
+- `map_package`, gpt-6.1-sol, owns src/map_import.rs only: inspect local metadata
+  and extend bounded import for MHDT0107 and MPYR0242 alongside the original two
+  maps, requiring supported package/grid structure and synthetic regressions.
+  No live reads, application control, Git, or nested workers. Report metadata and
+  constructor changes; lead validates private imports and live alignment.
+- Lead owns native area allowlist, application integration, live read-only
+  validation, documentation, review and authorized publication.
+
+Instance continuation result: the worker extended private import to all four maps,
+including the single-tile MHDT0107 grid and the MPYR0242 main overview. The lead
+verified the restarted build, wired exact streaming contexts and installed the
+expanded private catalog. The user explicitly confirmed that the current indoor
+map and marker match and track movement. This is qualitative acceptance for
+MHDT0107, not validated calibration, all-instance coverage or floor proof.
+Workspace tests: 96 passed (one local-asset opt-in test separately passed), 75
+non-window tests passed; format, strict Clippy and builds passed.
+
+## Automatic installed-instance coverage (expanded user requirement)
+
+The user requires ALL instances with live updates. The four-map extension alone
+is insufficient. The installed UI/MAPS tree has 313 main map packages. Implement
+bounded per-area import on demand and explicit unsupported-format diagnostics;
+do not claim universal live calibration or floor proof from package inventory.
+
+- `map_package`, gpt-6.1-sol, owns src/map_import.rs: inventory all 313 installed
+  main packages offline, report metadata/texture format coverage, generalize a
+  bounded per-area cancellable importer for standard main overviews, and provide
+  safe reusable private output caching. Keep four-map API compatibility. Report
+  concrete unsupported cases and shared API before integration. No live reads.
+- `native_reader`, gpt-6.1-sol, owns src/native.rs only: replace four-area gate
+  with strictly validated unique visible audio/designer area identity, preserve
+  build/ownership/generation/ambiguity checks. Unknown contexts remain experimental
+  and cannot draw a marker without a matching imported catalog. Synthetic tests.
+- `map_ui`, gpt-6.1-sol, owns src/map_view.rs: auto-load/import the current area
+  through the existing bounded worker, generation-safe transitions, bounded
+  per-area caching, no duplicate jobs/retry loops, retain manual Browse mode.
+  Coordinate importer API; expose source configuration setter to lead. Synthetic
+  switch/failure/stale-result tests. No live game reads or desktop control.
+- Lead owns settings/application integration, scope/evidence documents, live
+  verification and Git/review/publication. Workers do not spawn nested agents.
+
+
+Automatic coverage integration evidence (2026-10-14): all three workers completed
+and the lead inspected their changes. All 313 installed main overviews passed
+actual decode, catalog/image validation and stable cache reuse (no residual
+staging directories). Lead review caught a scale-four resizing defect; the fix
+has a pixel-level regression and the full 313-area check was rerun successfully.
+Starting with empty catalog/source, the release auto-detected the installation
+and loaded MADV155 in the background; Map displayed its overview and fresh
+experimental marker. No game input was sent. User-local installation upgraded.
+
+Local gates: format, strict workspace/all-target Clippy (Rust 1.96 and 1.95),
+111 workspace tests, 79 no-default library tests, workspace/release builds,
+12 installer tests, two nested-X managed-window launches and documentation links
+passed. Three local-asset tests are opt-in; all were separately exercised against
+private local files (initial four-map import, metadata inventory, and corrected
+313-area actual imports). Area switching is covered synthetically; all-instance
+live alignment, auxiliary floors and the full desktop/profile matrix remain open.
+Independent review found stale source-dependent catalog reuse after pausing and
+changing the map source. Fixed unconditional source invalidation and added a
+context-loss regression; 111 workspace tests and strict lint/builds pass.
+A second review found Browse could remain blank after context loss or cancelling
+an automatic asset load. Browse now reloads its selected asset; both paths have
+regression coverage. A third review found saved automatic catalogs bypassed
+source fingerprint checks on startup. Automatic catalog reuse now requires a
+successful per-launch source check; a regression covers first-load and checked
+reuse. Final independent Codex review found no actionable regressions.
+All 111 enabled workspace tests, format and strict Clippy pass. The reviewer did
+not run private local-asset/live checks; lead evidence above covers those.
+Authorized PR publication and remote checks follow.
