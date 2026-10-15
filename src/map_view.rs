@@ -450,6 +450,7 @@ impl MapView {
         ui: &mut egui::Ui,
         sample: Option<&LocationSample>,
         gate: Option<MarkerGate>,
+        collectible: Option<&LocationSample>,
     ) {
         self.update_current_context(sample, gate);
         self.poll(ui.ctx());
@@ -588,6 +589,9 @@ impl MapView {
                 gate.and_then(|gate| maps::marker_position(entry, sample, gate, now))
             })
         });
+        let collectible_marker = entry
+            .filter(|_| self.texture.is_some())
+            .and_then(|entry| projected_marker(entry, collectible, gate, now));
         let marker_status = if marker.is_some() {
             if entry.zip(gate).is_some_and(|(entry, g)| {
                 entry.effective_confidence(g.confidence, g.profile)
@@ -628,6 +632,15 @@ impl MapView {
                 self.follow = true;
             }
         });
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new("Blue diamond: Nearby blue collectible (experimental)")
+                    .small()
+                    .color(egui::Color32::from_rgb(80, 170, 255)),
+            )
+            .truncate(),
+        )
+        .on_hover_text("Nearby blue collectible (experimental): current interaction candidate only; does not show all collectibles in the area.");
         // ScrollArea has unbounded content height; use its visible clipping bounds.
         // Leave room for source credits and the collapsed calibration footer.
         let visible_height = (ui.clip_rect().bottom() - ui.cursor().top() - 90.0).max(160.0);
@@ -659,6 +672,27 @@ impl MapView {
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
                 egui::Color32::WHITE,
             );
+            if let Some(point) = collectible_marker {
+                let center = target.min + egui::vec2(point.x as f32, point.y as f32) * scale;
+                let diamond = vec![
+                    center + egui::vec2(0., -12.),
+                    center + egui::vec2(12., 0.),
+                    center + egui::vec2(0., 12.),
+                    center + egui::vec2(-12., 0.),
+                ];
+                for stroke in [
+                    egui::Stroke::new(5., egui::Color32::from_rgb(10, 20, 35)),
+                    egui::Stroke::new(2., egui::Color32::from_rgb(80, 170, 255)),
+                ] {
+                    painter.add(egui::Shape::closed_line(diamond.clone(), stroke));
+                }
+                ui.interact(
+                    egui::Rect::from_center_size(center, egui::vec2(28., 28.)).intersect(rect),
+                    ui.id().with("nearby-blue-collectible"),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text("Nearby blue collectible (experimental): current interaction candidate only; does not show all collectibles in the area.");
+            }
             if let Some(point) = marker {
                 painter.circle_filled(
                     target.min + egui::vec2(point.x as f32, point.y as f32) * scale,
@@ -697,6 +731,15 @@ impl Drop for MapView {
         }
     }
 }
+fn projected_marker(
+    entry: &MapEntry,
+    sample: Option<&LocationSample>,
+    gate: Option<MarkerGate>,
+    now: Instant,
+) -> Option<maps::Point> {
+    maps::marker_position(entry, sample?, gate?, now)
+}
+
 fn fresh_auto_context(
     sample: Option<&LocationSample>,
     gate: Option<MarkerGate>,
@@ -1167,6 +1210,68 @@ mod tests {
         view.update_current_context(Some(&sample), Some(gate));
         assert!(view.texture.is_none());
         assert!(matches!(view.pending, Some(Request::ImportArea(..))));
+    }
+    #[test]
+    fn collectible_projection_uses_current_context_and_hides_unusable_samples() {
+        let entry = test_entry("AREA1");
+        let (mut sample, gate) = auto_sample("AREA1");
+        let now = sample.observed_at;
+        sample.point = maps::Point { x: 3., y: 4. };
+        assert_eq!(
+            projected_marker(&entry, Some(&sample), Some(gate), now),
+            Some(entry.project(sample.point))
+        );
+        assert!(projected_marker(&entry, None, Some(gate), now).is_none());
+        assert!(projected_marker(&entry, Some(&sample), None, now).is_none());
+        for bad_gate in [
+            MarkerGate {
+                paused: true,
+                ..gate
+            },
+            MarkerGate {
+                session_generation: 2,
+                ..gate
+            },
+            MarkerGate {
+                zone_generation: 2,
+                ..gate
+            },
+            MarkerGate {
+                confidence: maps::LocationConfidence::Unavailable,
+                ..gate
+            },
+        ] {
+            assert!(projected_marker(&entry, Some(&sample), Some(bad_gate), now).is_none());
+        }
+        assert!(
+            projected_marker(
+                &entry,
+                Some(&sample),
+                Some(gate),
+                now + std::time::Duration::from_secs(2)
+            )
+            .is_none()
+        );
+        sample.context.zone = "AREA2".into();
+        assert!(projected_marker(&entry, Some(&sample), Some(gate), now).is_none());
+        sample.context = entry.context.clone();
+        sample.point.x = 11.;
+        assert!(projected_marker(&entry, Some(&sample), Some(gate), now).is_none());
+        sample.point.x = 3.;
+        sample.valid = false;
+        assert!(projected_marker(&entry, Some(&sample), Some(gate), now).is_none());
+        sample.valid = true;
+        let mut incompatible = entry;
+        incompatible.calibration = Some(maps::Calibration {
+            version: 1,
+            profile: "different-profile".into(),
+            confidence: maps::LocationConfidence::Experimental,
+            landmark_count: 0,
+            independent_landmark_count: 0,
+            max_error_pixels: None,
+            accuracy_budget_pixels: None,
+        });
+        assert!(projected_marker(&incompatible, Some(&sample), Some(gate), now).is_none());
     }
     fn png(width: u32, height: u32) -> Vec<u8> {
         let image = image::RgbaImage::from_pixel(width, height, image::Rgba([20, 30, 40, 255]));

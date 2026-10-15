@@ -258,3 +258,8 @@ Estimates remain labeled. Group metrics and other unproven sources remain deferr
   acceptance evidence. Never substitute a synthetic marker for live validation.
 - Publish releases only when explicitly authorized; a passing CI run is not a
   substitute for live companion-window and memory validation.
+
+The nearby collectible extension is a bounded user-requested observation slice:
+prove the blue interaction candidate and its position, show a distinct gated map
+marker, and record live acceptance. Broader collectible discovery/persistence
+requires separate evidence and is not implied by this prototype.

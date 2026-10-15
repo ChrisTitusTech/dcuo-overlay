@@ -589,3 +589,50 @@ to the marker, without blanking or displacement. Captures remain private.
 Independent Codex review found no actionable regressions; supplemental CodeRabbit
 reported zero findings. The reviewer did not repeat live checks; lead evidence
 above covers the installed application. Authorized PR/CI/merge follow.
+
+## Nearby collectible observation (2026-10-14)
+
+User requests marking the ground investigation/interactive spawn if exposed.
+Bounded read-only discovery found the controller's potentialInteractable refers
+to a nearby DCServerPhysicsObject whose DamageObj definition is the blue
+magnifying-glass asset. User confirmed the visible spawn is blue. This authorizes
+an experimental nearby blue collectible marker, not global collectible discovery,
+interaction automation, persistence, or collected/uncollected classification.
+
+- `collectible_reader`, gpt-6.1-sol, owns src/native.rs: expose optional
+  Collectible { position: [f32; 3] } on Sample, validate exact build/reflection,
+  candidate identity/world/location/definition before and after reads, restrict
+  to observed blue asset. Errors omit collectible without breaking player reads.
+  No live reads, Git, nested workers; synthetic validation and handoff.
+- `collectible_ui`, gpt-6.1-sol, owns src/map_view.rs: extra optional location
+  argument on MapView::ui; project through existing freshness/context/profile
+  gates and draw a distinct blue diamond ring with legend/tooltip. Preserve
+  map stability and yellow player marker, including overlapping points. Tests.
+- Lead owns application wiring, scope/evidence, the single live operator,
+  integrated gates/review and already-authorized publication.
+
+Collectible integration evidence: read-only discovery identified the controller's
+nearby potential interaction candidate, its blue magnifying-glass definition,
+and an independent world position. User confirmed the spawn is blue. The installed
+application now displays a blue diamond ring at that live object's projected
+position alongside the yellow player marker. No game inputs were sent.
+
+Reader gates include the exact existing executable, reflected pointer/location/
+world fields, class generations, hidden/deleted flags, same-world and bounded
+proximity checks, and matching relevant identity/position data before/after.
+Optional collectible work has a 250ms deadline and leaves player-read budget
+headroom. One live probe succeeded; a later changing name table was correctly
+rejected rather than publishing a mixed sample. The normal installed application
+subsequently displayed fresh player and collectible markers together. This is
+nearby candidate evidence, not zone-wide discovery or uncollected-state proof.
+
+117 workspace tests, 82 no-default library tests, format, strict all-target
+Clippy and workspace/release builds passed. Added regressions cover lifetime/
+world/proximity/finite-value rejection, unchanged relevant snapshots despite
+unrelated actor updates, and collectible projection/freshness/area/profile gates.
+Private probes/captures remain ignored. The user explicitly confirmed that the
+blue diamond matches the nearby spawn. Independent review precedes publication.
+Independent Codex review found no actionable regressions. A supplemental review
+suggested hiding the legend when no collectible is visible; retained the static
+legend intentionally because it describes marker meaning, not presence, and
+conditional rows would reintroduce the map displacement just fixed.
