@@ -263,3 +263,8 @@ The nearby collectible extension is a bounded user-requested observation slice:
 prove the blue interaction candidate and its position, show a distinct gated map
 marker, and record live acceptance. Broader collectible discovery/persistence
 requires separate evidence and is not implied by this prototype.
+
+User expansion: replace the nearby-only layer with an opt-in ground spawn layer.
+Enumerate bounded current-world live objects incrementally, refresh candidates,
+expose scan progress/limits, and retain stable map geometry. Validate multiple
+markers, toggle persistence, freshness and lifecycle rejection before publication.

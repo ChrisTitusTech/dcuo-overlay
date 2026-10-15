@@ -146,6 +146,8 @@ pub struct Controller {
     api_request: u64,
     api_pending: bool,
     last_native_owner: Option<native::Sample>,
+    ground_spawns_enabled: Arc<AtomicBool>,
+    ground_spawns_enabled_since: Option<Instant>,
     auto_reconnect: bool,
     recovery: Option<Recovery>,
 }
@@ -167,13 +169,22 @@ impl Controller {
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_generation = generation.clone();
         let worker_stop = stopping.clone();
+        let ground_spawns_enabled = Arc::new(AtomicBool::new(false));
+        let worker_ground_spawns = ground_spawns_enabled.clone();
         let api_events = events.clone();
         let api_generation = generation.clone();
         let api_stop = stopping.clone();
         let api_worker =
             thread::spawn(move || api_loop(api_commands, api_events, api_generation, api_stop));
-        let worker =
-            thread::spawn(move || worker_loop(commands, events, worker_generation, worker_stop));
+        let worker = thread::spawn(move || {
+            worker_loop(
+                commands,
+                events,
+                worker_generation,
+                worker_stop,
+                worker_ground_spawns,
+            )
+        });
         let mut result = Self {
             view: View::default(),
             sender,
@@ -188,6 +199,8 @@ impl Controller {
             api_request: 0,
             api_pending: false,
             last_native_owner: None,
+            ground_spawns_enabled,
+            ground_spawns_enabled_since: None,
             auto_reconnect: false,
             recovery: None,
         };
@@ -196,6 +209,23 @@ impl Controller {
     }
     pub fn view(&self) -> &View {
         &self.view
+    }
+    /// Optional world traversal never resets the player or map session.
+    pub fn set_ground_spawns_enabled(&mut self, enabled: bool) {
+        if self.ground_spawns_enabled.load(Ordering::Acquire) == enabled {
+            return;
+        }
+        self.ground_spawns_enabled_since = enabled.then(Instant::now);
+        self.ground_spawns_enabled.store(enabled, Ordering::Release);
+        if let Some(sample) = self.view.native.as_mut() {
+            sample.ground_spawns.clear();
+            sample.ground_spawns_status = if enabled {
+                "Waiting for fresh ground-spawn sample"
+            } else {
+                "Ground-spawn reading disabled"
+            }
+            .into();
+        }
     }
     pub fn is_recovering(&self) -> bool {
         self.recovery.is_some()
@@ -438,7 +468,25 @@ impl Controller {
                 }
                 Update::Native(result) if self.view.connected && !self.view.paused => {
                     match result {
-                        Ok(sample) if sample.observed_at.elapsed() <= Duration::from_secs(1) => {
+                        Ok(mut sample)
+                            if sample.observed_at.elapsed() <= Duration::from_secs(1) =>
+                        {
+                            // Queued samples from before the latest enable cannot
+                            // restore optional markers after an off/on transition.
+                            if !self.ground_spawns_enabled.load(Ordering::Acquire)
+                                || self
+                                    .ground_spawns_enabled_since
+                                    .is_none_or(|since| sample.observed_at < since)
+                            {
+                                sample.ground_spawns.clear();
+                                sample.ground_spawns_status =
+                                    if self.ground_spawns_enabled_since.is_some() {
+                                        "Waiting for fresh ground-spawn sample"
+                                    } else {
+                                        "Ground-spawn reading disabled"
+                                    }
+                                    .into();
+                            }
                             if self
                                 .last_native_owner
                                 .as_ref()
@@ -705,6 +753,7 @@ fn worker_loop(
     events: SyncSender<Event>,
     generation: Arc<AtomicU64>,
     stopping: Arc<AtomicBool>,
+    ground_spawns_enabled: Arc<AtomicBool>,
 ) {
     let mut attached: Option<process::Candidate> = None;
     let mut attached_generation = 0;
@@ -903,6 +952,7 @@ fn worker_loop(
         {
             last_sample = Instant::now();
             let result = if let Some(reader) = reader.as_mut() {
+                reader.set_ground_spawns_enabled(ground_spawns_enabled.load(Ordering::Acquire));
                 reader.sample()
             } else {
                 Err(native_attach_error
@@ -1312,11 +1362,130 @@ mod tests {
                 api_request: 2,
                 api_pending: false,
                 last_native_owner: None,
+                ground_spawns_enabled: Arc::new(AtomicBool::new(false)),
+                ground_spawns_enabled_since: None,
                 auto_reconnect: false,
                 recovery: None,
             },
             events,
         )
+    }
+    #[test]
+    fn ground_spawn_toggle_rejects_queued_markers_without_resetting_player() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.native = Some(native::Sample::synthetic(1));
+        controller.view.location_generation = 7;
+        let marker_sample = || {
+            let mut sample = native::Sample::synthetic(1);
+            sample.ground_spawns.push(native::Collectible {
+                position: [4.0, 5.0, 6.0],
+                kind: native::GroundSpawnKind::Blue,
+            });
+            sample.ground_spawns_status = "Synthetic ground spawn".into();
+            sample
+        };
+        let before_enable = marker_sample();
+        controller.set_ground_spawns_enabled(true);
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(before_enable)),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawns
+                .is_empty()
+        );
+        let fresh = marker_sample();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(fresh.clone())),
+            })
+            .unwrap();
+        controller.poll();
+        assert_eq!(
+            controller.view.native.as_ref().unwrap().ground_spawns.len(),
+            1
+        );
+        controller.set_ground_spawns_enabled(false);
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawns
+                .is_empty()
+        );
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(fresh.clone())),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawns
+                .is_empty()
+        );
+        controller.set_ground_spawns_enabled(true);
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(fresh)),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawns
+                .is_empty()
+        );
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawns_status
+                .contains("Waiting")
+        );
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(marker_sample())),
+            })
+            .unwrap();
+        controller.poll();
+        assert_eq!(
+            controller.view.native.as_ref().unwrap().ground_spawns.len(),
+            1
+        );
+        assert_eq!(
+            controller.view.native.as_ref().unwrap().position,
+            [1.0, 2.0, 3.0]
+        );
+        assert_eq!(controller.view.location_generation, 7);
+        assert_eq!(controller.epoch(), 1);
+        assert_eq!(controller.pending, 1);
+        assert!(controller.view.connected && !controller.view.paused);
     }
     #[test]
     fn native_updates_preserve_command_pending_and_reject_late_generation() {

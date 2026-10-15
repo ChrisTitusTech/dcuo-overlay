@@ -358,7 +358,7 @@ ticks as confirmed ability casts. Manual timers must remain labeled manual.
 - [Xlib window attributes](https://www.x.org/releases/X11R7.5/doc/libX11/libX11.html).
 - [DCUO Census collection index](https://census.daybreakgames.com/get/dcuo:v1/).
 
-## Experimental nearby collectible extension
+## Original nearby collectible slice (superseded by the ground spawn layer)
 
 A user-requested map marker may show the currently exposed nearby blue
 magnifying-glass interaction candidate when exact-build, reflected field,
@@ -366,3 +366,16 @@ object/world identity and finite position checks pass. Bind it to the same fresh
 session/area observation and map projection as the player, but label it separately
 as experimental. Missing/changed candidates hide the marker. This does not prove
 all collectibles, collection availability, floors, or persistent spawn coverage.
+
+## Exposed ground spawn layer
+
+The Map tab provides a persisted Ground spawns toggle, off by default. When on,
+bounded background enumeration discovers recognized live ground spawn actors
+exposed in the current world, beyond the nearby interaction candidate. Each
+marker requires current lifetime, world, identity and position validation and
+the same map/context/freshness gates as the player. Turning off disables this
+optional discovery and hides markers immediately. Discovery reports progress and
+limits; never equate loaded objects with every spawn in an entire zone. Recognized
+marker definitions include the installed magnifying-glass color variants and
+question-mark/seasonal markers; ordinary damageable props are excluded.
+No collected-state inference, game interaction or persistent location database.
