@@ -304,6 +304,7 @@ struct Probe {
     tab: Tab,
     settings: bool,
     about: bool,
+    show_log: bool,
     startup_scan: bool,
     preferences: Settings,
     preference_status: String,
@@ -362,6 +363,7 @@ impl Probe {
             tab: Tab::Character,
             settings: false,
             about: false,
+            show_log: false,
             startup_scan,
             preferences,
             preference_status: warning.unwrap_or_default(),
@@ -557,9 +559,11 @@ impl Probe {
     fn draw(&mut self, ui: &mut egui::Ui, view: &crate::session::View) {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading(TITLE);
-                ui.label(egui::RichText::new("READ-ONLY VERIFICATION").color(egui::Color32::from_rgb(120, 195, 235)));
+            egui::ScrollArea::vertical().id_salt(match self.tab { Tab::Map => "map-page", Tab::Character => "character-page", Tab::Diagnostics => "diagnostics-page" }).show(ui, |ui| {
+                if self.tab != Tab::Map {
+                    ui.heading(TITLE);
+                    ui.label(egui::RichText::new("READ-ONLY VERIFICATION").color(egui::Color32::from_rgb(120, 195, 235)));
+                }
                 ui.horizontal_wrapped(|ui| {
                     egui::ComboBox::from_id_salt("process").selected_text(self.selected.map(|(pid, _)| format!("DCGAME.EXE / {pid}")).unwrap_or("Select game process".into())).show_ui(ui, |ui| {
                         for process in &view.candidates {
@@ -573,16 +577,19 @@ impl Probe {
                         if view.paused { self.controller.resume(); } else { self.controller.pause(); }
                     }
                 });
-                ui.label(&view.status);
-                if view.busy { ui.spinner(); }
+                if self.tab != Tab::Map {
+                    ui.label(&view.status);
+                    if view.busy { ui.spinner(); }
+                }
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
                     for (tab, label) in [(Tab::Character, "Character"), (Tab::Map, "Map"), (Tab::Diagnostics, "Diagnostics")] { ui.selectable_value(&mut self.tab, tab, label); }
+                    ui.toggle_value(&mut self.show_log, "Log");
                     if ui.button("Settings").clicked() { self.settings = !self.settings; }
                     if ui.button("About").clicked() { self.about = !self.about; }
                     if ui.button("Quit").clicked() { ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close); }
                 });
-                ui.add_space(12.0);
+                ui.add_space(4.0);
                 match self.tab {
                     Tab::Character => {
                         ui.heading("Experimental memory resources");
@@ -633,18 +640,11 @@ impl Probe {
                         }
                     }
                     Tab::Map => {
-                        map_evidence_header(ui, view);
-                        ui.separator();
                         let (sample, gate) = map_observation(view);
                         if ui.checkbox(&mut self.preferences.show_ground_spawns, "Ground spawns").on_hover_text("Keep last-seen ground spawn locations from this session until two complete scans miss them. Cached markers do not establish current availability.").changed() {
                             self.save_ground_spawn_toggle();
                         }
                         let enabled = self.preferences.show_ground_spawns;
-                        let reader_status = view.native.as_ref().map(|n| n.ground_spawns_status.as_str())
-                            .unwrap_or("Waiting for a fresh ground spawn sample");
-                        let spawn_status = format!("{} / 1024 cached last-seen locations / {}", self.spawn_cache.entries().len(),
-                            if enabled { reader_status } else { "Ground spawns off" });
-                        evidence_line(ui, spawn_status, false);
                         self.map.ui(ui, sample.as_ref(), Some(gate), if enabled { self.spawn_cache.entries() } else { &[] });
                     }
                     Tab::Diagnostics => {
@@ -717,6 +717,34 @@ impl Probe {
                 }
             });
         });
+        egui::Window::new("Log")
+            .open(&mut self.show_log)
+            .default_width(560.0)
+            .vscroll(true)
+            .show(ui.ctx(), |ui| {
+                ui.label("Current reader status and experimental evidence");
+                evidence_line(ui, &view.status, false);
+                map_evidence_header(ui, view);
+                ui.separator();
+                let reader_status = view
+                    .native
+                    .as_ref()
+                    .map(|n| n.ground_spawns_status.as_str())
+                    .unwrap_or("Waiting for a fresh ground spawn sample");
+                evidence_line(
+                    ui,
+                    format!(
+                        "{} / 1024 cached last-seen locations / {}",
+                        self.spawn_cache.entries().len(),
+                        if self.preferences.show_ground_spawns {
+                            reader_status
+                        } else {
+                            "Ground spawns off"
+                        }
+                    ),
+                    false,
+                );
+            });
     }
 }
 
@@ -788,6 +816,55 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn map_canvas_dominates_window_and_log_does_not_move_it() {
+        let mut app = Probe::with_preferences(
+            Options {
+                smoke: Some(Duration::from_secs(1)),
+                ..Options::default()
+            },
+            String::new(),
+            Settings::default(),
+            None,
+        );
+        app.tab = Tab::Map;
+        for size in [egui::vec2(862.0, 1048.0), egui::vec2(1280.0, 720.0)] {
+            let ctx = egui::Context::default();
+            let mut baseline = None;
+            for show_log in [false, false, true, true, false] {
+                app.show_log = show_log;
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                        ..Default::default()
+                    },
+                    |ui| app.draw(ui, &crate::session::View::default()),
+                );
+                output.textures_delta.clear();
+                let canvas = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Rect(rect)
+                            if rect.fill == egui::Color32::from_rgb(20, 25, 32) =>
+                        {
+                            Some(rect.rect)
+                        }
+                        _ => None,
+                    })
+                    .expect("map canvas drawn");
+                assert!(
+                    canvas.area() / (size.x * size.y) > 0.75,
+                    "Canvas too small: {canvas:?} in {size:?}"
+                );
+                if let Some(expected) = baseline {
+                    assert_eq!(canvas, expected);
+                }
+                baseline = Some(canvas);
+            }
+        }
     }
 
     #[test]
