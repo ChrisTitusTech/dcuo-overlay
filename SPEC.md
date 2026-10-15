@@ -357,3 +357,12 @@ ticks as confirmed ability casts. Manual timers must remain labeled manual.
 - [winit X11 window attributes](https://docs.rs/winit/0.30.13/winit/platform/x11/trait.WindowAttributesExtX11.html).
 - [Xlib window attributes](https://www.x.org/releases/X11R7.5/doc/libX11/libX11.html).
 - [DCUO Census collection index](https://census.daybreakgames.com/get/dcuo:v1/).
+
+## Experimental nearby collectible extension
+
+A user-requested map marker may show the currently exposed nearby blue
+magnifying-glass interaction candidate when exact-build, reflected field,
+object/world identity and finite position checks pass. Bind it to the same fresh
+session/area observation and map projection as the player, but label it separately
+as experimental. Missing/changed candidates hide the marker. This does not prove
+all collectibles, collection availability, floors, or persistent spawn coverage.

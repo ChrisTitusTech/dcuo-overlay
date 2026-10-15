@@ -139,3 +139,21 @@ and are intentionally excluded from publication.
 The installed release was also checked through companion Pause -> Browse ->
 Current area -> Resume. Browse restored the overview while paused without a
 marker; resuming restored fresh live tracking. No game input was involved.
+
+## Nearby blue collectible preview (2026-10-14)
+
+The user identified a nearby blue collectible. Bounded read-only investigation
+found a matching magnifying-glass asset on the controller's potential interaction
+candidate, with its own world position. The application shows a blue diamond ring
+at the object's projected location; the yellow circle remains the player. The
+hollow ring keeps both visible at close range. The legend/tooltip explain the
+experimental scope.
+
+This displays only the currently exposed nearby blue candidate. It does not
+search the whole zone, persist a spawn database, establish collection availability,
+or claim support for other colors. Changed, hidden, deleted, wrong-world, distant
+or stale observations are omitted. All existing map/area/profile gates apply.
+No interaction with the collectible or game-memory writes are performed.
+
+The user explicitly confirmed that the displayed blue diamond matches the spawn.
+This acceptance is for the nearby blue candidate, with the limitations above.

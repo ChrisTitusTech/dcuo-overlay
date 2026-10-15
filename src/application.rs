@@ -613,7 +613,17 @@ impl Probe {
                         map_evidence_header(ui, view);
                         ui.separator();
                         let (sample, gate) = map_observation(view);
-                        self.map.ui(ui, sample.as_ref(), Some(gate));
+                        let collectible = view.native.as_ref()
+                            .and_then(|native| native.collectible.as_ref())
+                            .zip(sample.as_ref())
+                            .map(|(collectible, player)| LocationSample {
+                                point: Point {
+                                    x: collectible.position[0] as f64,
+                                    y: collectible.position[1] as f64,
+                                },
+                                ..player.clone()
+                            });
+                        self.map.ui(ui, sample.as_ref(), Some(gate), collectible.as_ref());
                     }
                     Tab::Diagnostics => {
                         ui.heading("Process and build evidence");

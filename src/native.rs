@@ -16,8 +16,15 @@ const NAMES_RVA: usize = 0x2146c40;
 const ENGINE_RVA: usize = 0x2130f00;
 
 #[derive(Clone, Debug)]
+pub struct Collectible {
+    pub position: [f32; 3],
+}
+
+#[derive(Clone, Debug)]
 pub struct Sample {
     pub position: [f32; 3],
+    /// Only the nearby exact blue asset, with no collection-status claim.
+    pub collectible: Option<Collectible>,
     pub health: f32,
     pub max_health: f32,
     pub power: f32,
@@ -35,6 +42,7 @@ impl Sample {
     pub(crate) fn synthetic(owner_index: u32) -> Self {
         Self {
             position: [1.0, 2.0, 3.0],
+            collectible: None,
             health: 50.0,
             max_health: 100.0,
             power: 20.0,
@@ -127,6 +135,8 @@ fn supported_area(packages: &[String]) -> Option<String> {
     Some(key.into())
 }
 
+type CollectibleSchemas = HashMap<[(usize, u32); 3], Vec<(usize, u32)>>;
+
 pub struct Reader {
     candidate: process::Candidate,
     names: usize,
@@ -140,7 +150,9 @@ pub struct Reader {
     scope_start: Cell<Instant>,
     scope_reads: Cell<usize>,
     scope_bytes: Cell<usize>,
+    collectible_deadline: Cell<Option<Instant>>,
     area_schemas: RefCell<HashSet<(usize, u32)>>,
+    collectible_schemas: RefCell<CollectibleSchemas>,
 }
 fn add(address: usize, offset: usize) -> Result<usize, String> {
     address
@@ -193,6 +205,74 @@ fn validate_values(position: [f32; 3], values: [f32; 4]) -> Result<(), String> {
     }
     Ok(())
 }
+const BLUE_COLLECTIBLE: &str = "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO";
+
+fn validate_collectible_flag(offset: usize, mask: u32) -> Result<(), String> {
+    if !(0x54..=0x3bc).contains(&offset) || !offset.is_multiple_of(4) || !mask.is_power_of_two() {
+        return Err("Invalid collectible lifetime flag schema".into());
+    }
+    Ok(())
+}
+fn collectible_actor_snapshot(bytes: &[u8], flags: &[(usize, u32)]) -> Result<Vec<u8>, String> {
+    let mut snapshot = Vec::new();
+    for (offset, size) in [(8, 4), (0x3c, 24), (0xd0, 12), (0x164, 8), (0x3b8, 8)] {
+        snapshot.extend_from_slice(
+            bytes
+                .get(offset..offset + size)
+                .ok_or("Short collectible snapshot")?,
+        );
+    }
+    for &(offset, mask) in flags {
+        validate_collectible_flag(offset, mask)?;
+        snapshot.extend_from_slice(&(u32_at(bytes, offset)? & mask).to_le_bytes());
+    }
+    Ok(snapshot)
+}
+fn collectible_definition_snapshot(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut snapshot = bytes
+        .get(8..12)
+        .ok_or("Short definition identity")?
+        .to_vec();
+    snapshot.extend_from_slice(bytes.get(0x3c..0x54).ok_or("Short definition header")?);
+    Ok(snapshot)
+}
+fn collectible_position(
+    bytes: &[u8],
+    world: u64,
+    player: [f32; 3],
+    flags: &[(usize, u32)],
+) -> Result<[f32; 3], String> {
+    pointer(world)?;
+    if u64_at(bytes, 0x164)? != world {
+        return Err("Nearby collectible belongs to a different world".into());
+    }
+    for &(offset, mask) in flags {
+        validate_collectible_flag(offset, mask)?;
+        if u32_at(bytes, offset)? & mask != 0 {
+            return Err("Nearby collectible hidden or deleted".into());
+        }
+    }
+    let position = [
+        float(bytes, 0xd0)?,
+        float(bytes, 0xd4)?,
+        float(bytes, 0xd8)?,
+    ];
+    if position
+        .iter()
+        .chain(player.iter())
+        .any(|v| !v.is_finite() || v.abs() > 10_000_000.0)
+        || position
+            .iter()
+            .zip(player)
+            .map(|(a, b)| (*a as f64 - b as f64).powi(2))
+            .sum::<f64>()
+            > 2000.0f64.powi(2)
+    {
+        return Err("Nearby collectible outside bounded proximity".into());
+    }
+    Ok(position)
+}
+
 impl Reader {
     pub fn new(pid: i32) -> Result<Self, String> {
         Self::attach(process::candidate(pid).map_err(|e| e.to_string())?)
@@ -226,7 +306,9 @@ impl Reader {
             scope_start: Cell::new(Instant::now()),
             scope_reads: Cell::new(0),
             scope_bytes: Cell::new(0),
+            collectible_deadline: Cell::new(None),
             area_schemas: RefCell::new(HashSet::new()),
+            collectible_schemas: RefCell::new(HashMap::new()),
         };
         reader.unchanged()?;
         let table = reader.read(reader.rva(NAMES_RVA)?, 16)?;
@@ -275,6 +357,13 @@ impl Reader {
         if size == 0 || size > memory::MAX_READ_BYTES {
             return Err("Experimental read exceeds byte bound".into());
         }
+        if self
+            .collectible_deadline
+            .get()
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err("Optional collectible read exceeded time budget".into());
+        }
         if self.scope_start.get().elapsed() > std::time::Duration::from_secs(3)
             || self
                 .scope_bytes
@@ -312,6 +401,13 @@ impl Reader {
             .iter()
             .try_fold(0usize, |sum, (_, len)| sum.checked_add(*len))
             .ok_or("Experimental scatter byte overflow")?;
+        if self
+            .collectible_deadline
+            .get()
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err("Optional collectible read exceeded time budget".into());
+        }
         if self.scope_start.get().elapsed() > std::time::Duration::from_secs(3)
             || self
                 .scope_bytes
@@ -417,7 +513,7 @@ impl Reader {
                         || self.class_name(pointer(u64_at(&bytes, 0x4c)?)?)? != kind
                         || u32_at(&bytes, 0x6c)? != 1
                         || u32_at(&bytes, 0x70)? != size
-                        || u32_at(&bytes, 0x90)? != offset
+                        || (offset != u32::MAX && u32_at(&bytes, 0x90)? != offset)
                     {
                         return Err(format!("Reflection schema mismatch for {name}"));
                     }
@@ -633,6 +729,74 @@ impl Reader {
             key: supported_area(&packages),
         })
     }
+    fn collectible(&self, owner: &Ownership, player: [f32; 3]) -> Result<Collectible, String> {
+        let controller = owner.objects[2].0;
+        let target_bytes = self.read(add(controller, 0x49c)?, 8)?;
+        let actor = pointer(u64_at(&target_bytes, 0)?)?;
+        let actor_before = self.read(actor, 0x3c0)?;
+        let actor_class = pointer(u64_at(&actor_before, 0x4c)?)?;
+        let definition = pointer(u64_at(&actor_before, 0x3b8)?)?;
+        let definition_before = self.read(definition, 0x54)?;
+        let definition_class = pointer(u64_at(&definition_before, 0x4c)?)?;
+        let classes = [owner.classes[2], actor_class, definition_class];
+        let mut identities = [(0, 0); 3];
+        for (index, class) in classes.into_iter().enumerate() {
+            identities[index] = (class, self.object(class)?.0);
+        }
+        if self.class_name(actor_class)? != "DCServerPhysicsObject"
+            || self.class_name(definition_class)? != "DCDamageableObject"
+            || self.name(u32_at(&definition_before, 0x44)?)? != BLUE_COLLECTIBLE
+            || u32_at(&definition_before, 0x48)? != 0
+        {
+            return Err("Unsupported nearby collectible definition".into());
+        }
+        let cached_flags = self.collectible_schemas.borrow().get(&identities).cloned();
+        let flags = if let Some(flags) = cached_flags {
+            flags
+        } else {
+            self.field(
+                classes[0],
+                "potentialInteractable",
+                "ObjectProperty",
+                0x49c,
+                8,
+            )?;
+            self.field(actor_class, "DamageObj", "ObjectProperty", 0x3b8, 8)?;
+            self.field(actor_class, "Location", "StructProperty", 0xd0, 12)?;
+            self.field(actor_class, "WorldInfo", "ObjectProperty", 0x164, 8)?;
+            let mut flags = Vec::new();
+            for name in ["bDeleteMe", "bHidden"] {
+                let field = self.field(actor_class, name, "BoolProperty", u32::MAX, 4)?;
+                let offset = u32_at(&self.cached_metadata(field, 0x94)?, 0x90)? as usize;
+                let mask = u32_at(&self.read(add(field, 0xcc)?, 4)?, 0)?;
+                validate_collectible_flag(offset, mask)?;
+                flags.push((offset, mask));
+            }
+            if self.collectible_schemas.borrow().len() >= 64 {
+                return Err("Collectible schema cache bound exceeded".into());
+            }
+            self.collectible_schemas
+                .borrow_mut()
+                .insert(identities, flags.clone());
+            flags
+        };
+        let position = collectible_position(&actor_before, owner.world_pointer, player, &flags)?;
+        // Bind relevant fields without rejecting unrelated per-frame actor changes.
+        if collectible_actor_snapshot(&self.read(actor, 0x3c0)?, &flags)?
+            != collectible_actor_snapshot(&actor_before, &flags)?
+            || collectible_definition_snapshot(&self.read(definition, 0x54)?)?
+                != collectible_definition_snapshot(&definition_before)?
+            || self.read(add(controller, 0x49c)?, 8)? != target_bytes
+        {
+            return Err("Nearby collectible changed during sample".into());
+        }
+        for (class, identity) in identities {
+            if self.object(class)?.0 != identity {
+                return Err("Collectible class identity changed".into());
+            }
+        }
+        Ok(Collectible { position })
+    }
     pub fn sample(&mut self) -> Result<Sample, String> {
         self.scope_start.set(Instant::now());
         self.scope_reads.set(0);
@@ -653,6 +817,7 @@ impl Reader {
             self.names_cache.borrow_mut().clear();
             self.metadata_cache.borrow_mut().clear();
             self.area_schemas.borrow_mut().clear();
+            self.collectible_schemas.borrow_mut().clear();
             self.classes = None;
             for (index, expected) in [(0, "None"), (1, "ByteProperty"), (2, "IntProperty")] {
                 if self.name(index)? != expected {
@@ -685,6 +850,18 @@ impl Reader {
             float(&bytes, 12)?,
         ];
         validate_values(position, values)?;
+        // Reserve normal sample validation budget; optional reflection can stop early.
+        let collectible = if self.scope_start.get().elapsed() < std::time::Duration::from_secs(2)
+            && self.scope_bytes.get() < 1024 * 1024
+        {
+            self.collectible_deadline
+                .set(Some(Instant::now() + std::time::Duration::from_millis(250)));
+            let result = self.collectible(&before, position).ok();
+            self.collectible_deadline.set(None);
+            result
+        } else {
+            None
+        };
         let mut after = self.ownership()?;
         after.area = self.area_context(after.objects[3].0).ok();
         if self.read(self.rva(NAMES_RVA)?, 16)? != name_header {
@@ -696,6 +873,7 @@ impl Reader {
         }
         Ok(Sample {
             position,
+            collectible,
             max_health: values[0],
             health: values[1],
             max_power: values[2],
@@ -711,6 +889,83 @@ impl Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn collectible_requires_same_world_visible_lifetime_and_bounded_distance() {
+        let mut bytes = vec![0; 0x3c0];
+        bytes[0x164..0x16c].copy_from_slice(&0x20000u64.to_le_bytes());
+        let flags = [(0x100, 8), (0x104, 128)];
+        assert_eq!(
+            collectible_position(&bytes, 0x20000, [0.0; 3], &flags).unwrap(),
+            [0.0; 3]
+        );
+        assert!(collectible_position(&bytes, 0x30000, [0.0; 3], &flags).is_err());
+        assert!(collectible_position(&bytes, 0, [0.0; 3], &flags).is_err());
+        for (offset, mask) in flags {
+            bytes[offset..offset + 4].copy_from_slice(&mask.to_le_bytes());
+            assert!(collectible_position(&bytes, 0x20000, [0.0; 3], &flags).is_err());
+            bytes[offset..offset + 4].fill(0);
+        }
+        for (x, y, accepted) in [
+            (2000.0f32, 0.0f32, true),
+            (2000.0, 1.0, false),
+            (2001.0, 0.0, false),
+            (f32::NAN, 0.0, false),
+            (10_000_001.0, 0.0, false),
+        ] {
+            bytes[0xd0..0xd4].copy_from_slice(&x.to_le_bytes());
+            bytes[0xd4..0xd8].copy_from_slice(&y.to_le_bytes());
+            assert_eq!(
+                collectible_position(&bytes, 0x20000, [0.0; 3], &flags).is_ok(),
+                accepted
+            );
+        }
+        assert!(collectible_position(&bytes[..100], 0x20000, [0.0; 3], &flags).is_err());
+        assert!(collectible_position(&bytes, 0x20000, [f32::NAN; 3], &flags).is_err());
+    }
+    #[test]
+    fn collectible_snapshot_ignores_unrelated_updates_but_tracks_context_and_identity() {
+        let bytes = vec![0; 0x3c0];
+        let flags = [(0x100, 8)];
+        let original = collectible_actor_snapshot(&bytes, &flags).unwrap();
+        for offset in [8, 0x3c, 0x44, 0x4c, 0xd0, 0x164, 0x3b8] {
+            let mut changed = bytes.clone();
+            changed[offset] = 1;
+            assert_ne!(
+                original,
+                collectible_actor_snapshot(&changed, &flags).unwrap()
+            );
+        }
+        for (offset, value) in [(0x180, 1), (0x100, 1)] {
+            let mut changed = bytes.clone();
+            changed[offset] = value;
+            assert_eq!(
+                original,
+                collectible_actor_snapshot(&changed, &flags).unwrap()
+            );
+        }
+        let mut hidden = bytes.clone();
+        hidden[0x100] = 8;
+        assert_ne!(
+            original,
+            collectible_actor_snapshot(&hidden, &flags).unwrap()
+        );
+        let original = collectible_definition_snapshot(&bytes).unwrap();
+        let mut changed = bytes.clone();
+        changed[0x20] = 1;
+        assert_eq!(original, collectible_definition_snapshot(&changed).unwrap());
+        changed[0x44] = 1;
+        assert_ne!(original, collectible_definition_snapshot(&changed).unwrap());
+    }
+    #[test]
+    fn collectible_flags_require_bounded_reflected_single_bit_masks() {
+        for (offset, mask) in [(0x54, 1), (0x3bc, 0x8000_0000)] {
+            assert!(validate_collectible_flag(offset, mask).is_ok());
+        }
+        for (offset, mask) in [(0x50, 1), (0x55, 1), (0x3c0, 1), (0x100, 0), (0x100, 3)] {
+            assert!(validate_collectible_flag(offset, mask).is_err());
+        }
+        assert!(Sample::synthetic(1).collectible.is_none());
+    }
     #[test]
     fn numbered_unrelated_streams_do_not_hide_valid_area_signals() {
         assert!(!area_signal("MGOT101_BUILDING", 27).unwrap());
@@ -913,7 +1168,9 @@ mod tests {
             scope_start: Cell::new(Instant::now()),
             scope_reads: Cell::new(0),
             scope_bytes: Cell::new(0),
+            collectible_deadline: Cell::new(None),
             area_schemas: RefCell::new(HashSet::new()),
+            collectible_schemas: RefCell::new(HashMap::new()),
         };
         reader.set_cancel(Arc::new(AtomicBool::new(true)));
         assert_eq!(
