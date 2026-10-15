@@ -563,3 +563,29 @@ reuse. Final independent Codex review found no actionable regressions.
 All 111 enabled workspace tests, format and strict Clippy pass. The reviewer did
 not run private local-asset/live checks; lead evidence above covers those.
 Authorized PR publication and remote checks follow.
+
+## Map blinking correction (2026-10-14)
+
+User reports repeated map refresh/blinking. Lead owns map_view.rs: decouple static
+map texture lifetime from transient location validity, retain marker gating and
+cancel stale jobs. `map_ui` (gpt-6.1-sol) owns application.rs only: stabilize the
+Map evidence header geometry across missing/fresh samples; regression for layout
+if practical. No game input or live reads by worker. Lead owns live validation,
+local gates, review and the already-authorized PR/merge workflow.
+
+Blinking fix evidence: transient sample loss and same-area generation changes
+now retain the static map texture, zoom and pan, while marker freshness remains
+independently gated. A positively different area still clears the old texture
+and cancels obsolete work. Header and map status rows keep stable height across
+missing/fresh samples; full clipped status text is available on hover.
+
+113 workspace tests, 79 no-default library tests, strict Clippy on Rust 1.96/1.95,
+format and workspace/release builds passed. Regression coverage exercises twenty
+sample-loss/recovery generations without texture reload or pan/zoom reset, actual
+area changes, and header geometry at three widths. On the installed X11 build,
+Pause retained the Gotham map while removing its marker; Resume restored it.
+Twelve live frames differed from the paused map region by at most 0.016%, confined
+to the marker, without blanking or displacement. Captures remain private.
+Independent Codex review found no actionable regressions; supplemental CodeRabbit
+reported zero findings. The reviewer did not repeat live checks; lead evidence
+above covers the installed application. Authorized PR/CI/merge follow.

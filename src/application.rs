@@ -33,6 +33,60 @@ Usage: dcuo-companion [--smoke-seconds SECONDS] [--position X Y]
   --help                  Show help.
 ";
 
+// Keep every evidence row present and single-line so sample loss and long
+// diagnostics cannot move the map. Full text remains available on hover.
+fn evidence_line(ui: &mut egui::Ui, text: impl Into<String>, small: bool) {
+    let text = text.into().replace(['\n', '\r'], " ");
+    let rich = egui::RichText::new(&text);
+    let rich = if small { rich.small() } else { rich };
+    ui.add(egui::Label::new(rich).truncate())
+        .on_hover_text(text);
+}
+
+fn map_evidence_header(ui: &mut egui::Ui, view: &crate::session::View) {
+    ui.add(
+        egui::Label::new(egui::RichText::new("Experimental location evidence").heading())
+            .truncate(),
+    );
+    evidence_line(ui, &view.native_status, false);
+    let (age, position, area, area_status) = if let Some(sample) = &view.native {
+        (
+            format!(
+                "Memory sample age: {:.2}s",
+                sample.observed_at.elapsed().as_secs_f64()
+            ),
+            format!(
+                "Position (experimental): {:.1}, {:.1}, {:.1}",
+                sample.position[0], sample.position[1], sample.position[2]
+            ),
+            format!(
+                "Streaming area evidence: {}",
+                sample
+                    .area_key
+                    .as_deref()
+                    .unwrap_or("Unavailable / ambiguous")
+            ),
+            sample.area_status.clone(),
+        )
+    } else {
+        (
+            "Memory sample age: unavailable (no fresh sample)".into(),
+            "Position (experimental): unavailable".into(),
+            "Streaming area evidence: unavailable".into(),
+            "No fresh experimental position sample available.".into(),
+        )
+    };
+    for text in [age, position, area] {
+        evidence_line(ui, text, false);
+    }
+    evidence_line(ui, area_status, true);
+    evidence_line(
+        ui,
+        "Position and streaming evidence do not establish map calibration, floor or current-character identity. The experimental marker is a preview, not a fully validated profile.",
+        true,
+    );
+}
+
 fn repaint_delay(
     configured: Duration,
     connected: bool,
@@ -556,15 +610,7 @@ impl Probe {
                         }
                     }
                     Tab::Map => {
-                        ui.heading("Experimental location evidence");
-                        ui.label(&view.native_status);
-                        if let Some(sample) = &view.native {
-                            ui.label(format!("Memory sample age: {:.2}s", sample.observed_at.elapsed().as_secs_f64()));
-                            ui.label(format!("Position (experimental): {:.1}, {:.1}, {:.1}", sample.position[0], sample.position[1], sample.position[2]));
-                            ui.label(format!("Streaming area evidence: {}", sample.area_key.as_deref().unwrap_or("Unavailable / ambiguous")));
-                            ui.small(&sample.area_status);
-                            ui.small("Position and streaming evidence do not establish map calibration, floor or current-character identity. The experimental marker is a preview, not a fully validated profile.");
-                        } else { ui.label("No fresh experimental position sample available."); }
+                        map_evidence_header(ui, view);
                         ui.separator();
                         let (sample, gate) = map_observation(view);
                         self.map.ui(ui, sample.as_ref(), Some(gate));
@@ -771,6 +817,44 @@ mod tests {
                     assert!(!output.shapes.is_empty());
                     output.textures_delta.clear();
                     assert!(!app.controller.view().connected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn map_evidence_keeps_geometry_across_sample_loss_and_long_status() {
+        let missing = crate::session::View::default();
+        let mut sample = crate::native::Sample::synthetic(1);
+        sample.area_status = "Long synthetic area detail ".repeat(30);
+        let fresh = crate::session::View {
+            native: Some(sample),
+            native_status: "Long synthetic reader status\nwith another line ".repeat(30),
+            ..Default::default()
+        };
+        for width in [240.0, 640.0, 1280.0] {
+            let ctx = egui::Context::default();
+            let mut baseline = None;
+            for view in [&missing, &fresh, &missing, &fresh] {
+                let mut bottom = 0.0;
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 600.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        map_evidence_header(ui, view);
+                        bottom = ui.cursor().top();
+                    },
+                );
+                output.textures_delta.clear();
+                if let Some(expected) = baseline {
+                    assert_eq!(bottom, expected, "Header moved at width {width}");
+                } else {
+                    baseline = Some(bottom);
                 }
             }
         }

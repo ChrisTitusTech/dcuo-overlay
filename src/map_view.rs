@@ -195,7 +195,17 @@ impl MapView {
             self.generation = self.generation.wrapping_add(1);
             self.pending = None;
             self.busy = false;
-            self.texture = None;
+            // The image belongs to an area, not a particular memory sample.
+            // Keep it through outages and same-area generation changes; the
+            // independently gated marker still disappears immediately.
+            if next.as_ref().is_some_and(|next| {
+                self.catalog
+                    .as_ref()
+                    .and_then(|catalog| catalog.entries.get(self.selected))
+                    .is_none_or(|entry| entry.context != next.context)
+            }) {
+                self.texture = None;
+            }
             self.auto_context = next;
         }
         let Some(current) = self.auto_context.as_ref() else {
@@ -517,9 +527,15 @@ impl MapView {
             self.selected = index;
             self.asset(true);
         }
-        if !self.browse_other_maps && current_index.is_none() {
-            ui.small("Current area unavailable: waiting for fresh, unambiguous session and area evidence.");
-        }
+        let location_status = if self.browse_other_maps {
+            "Manual map browsing."
+        } else if current_index.is_none() {
+            "Location unavailable; live marker hidden."
+        } else {
+            "Current area follows live location."
+        };
+        ui.add(egui::Label::new(egui::RichText::new(location_status).small()).truncate())
+            .on_hover_text(location_status);
         let previous = self.selected;
         if let Some(catalog) = &self.catalog {
             ui.add_enabled_ui(self.browse_other_maps && !self.busy, |ui| {
@@ -572,7 +588,7 @@ impl MapView {
                 gate.and_then(|gate| maps::marker_position(entry, sample, gate, now))
             })
         });
-        ui.label(if marker.is_some() {
+        let marker_status = if marker.is_some() {
             if entry.zip(gate).is_some_and(|(entry, g)| {
                 entry.effective_confidence(g.confidence, g.profile)
                     == maps::LocationConfidence::Experimental
@@ -583,8 +599,11 @@ impl MapView {
             }
         } else {
             "Browsing - live location unavailable"
-        });
-        ui.label(&self.status);
+        };
+        ui.add(egui::Label::new(marker_status).truncate())
+            .on_hover_text(marker_status);
+        ui.add(egui::Label::new(&self.status).truncate())
+            .on_hover_text(&self.status);
         ui.horizontal(|ui| {
             if ui.button("-").clicked() {
                 self.zoom = (self.zoom / 1.25).max(0.25);
@@ -1100,6 +1119,54 @@ mod tests {
         assert!(
             matches!(&view.pending, Some(Request::Asset(_, _, entry)) if entry.context.zone == "AREA1")
         );
+    }
+    #[test]
+    fn transient_location_loss_keeps_texture_and_view_but_hides_marker() {
+        let mut view = MapView::default();
+        view.set_auto_import_source("/synthetic/source".into());
+        view.catalog_path = "/synthetic/checked/catalog.json".into();
+        view.remember_auto("AREA1".into(), Some(PathBuf::from(&view.catalog_path)));
+        view.catalog = Some(Catalog {
+            schema_version: 1,
+            entries: vec![test_entry("AREA1")],
+        });
+        let ctx = egui::Context::default();
+        let texture = ctx.load_texture(
+            "stable",
+            egui::ColorImage::new([1, 1], vec![egui::Color32::WHITE]),
+            egui::TextureOptions::LINEAR,
+        );
+        let id = texture.id();
+        view.texture = Some(texture);
+        view.zoom = 2.0;
+        view.pan = egui::vec2(13., 17.);
+        let (mut sample, mut gate) = auto_sample("AREA1");
+        for generation in 1..=20 {
+            sample.session_generation = generation;
+            sample.zone_generation = generation;
+            gate.session_generation = generation;
+            gate.zone_generation = generation;
+            view.update_current_context(Some(&sample), Some(gate));
+            assert!(view.pending.is_none());
+            view.update_current_context(None, Some(gate));
+            assert!(
+                current_map_index(
+                    view.catalog.as_ref().unwrap(),
+                    None,
+                    Some(gate),
+                    Instant::now()
+                )
+                .is_none()
+            );
+            assert_eq!(view.texture.as_ref().unwrap().id(), id);
+            assert_eq!(view.zoom, 2.0);
+            assert_eq!(view.pan, egui::vec2(13., 17.));
+            assert!(view.pending.is_none());
+        }
+        sample.context.zone = "AREA2".into();
+        view.update_current_context(Some(&sample), Some(gate));
+        assert!(view.texture.is_none());
+        assert!(matches!(view.pending, Some(Request::ImportArea(..))));
     }
     fn png(width: u32, height: u32) -> Vec<u8> {
         let image = image::RgbaImage::from_pixel(width, height, image::Rgba([20, 30, 40, 255]));
