@@ -268,3 +268,6 @@ User expansion: replace the nearby-only layer with an opt-in ground spawn layer.
 Enumerate bounded current-world live objects incrementally, refresh candidates,
 expose scan progress/limits, and retain stable map geometry. Validate multiple
 markers, toggle persistence, freshness and lifecycle rejection before publication.
+
+Exobyte follow-up: use the user-identified nearby resource as evidence for its
+exact definition/package pair, extend the existing layer and verify it live.
