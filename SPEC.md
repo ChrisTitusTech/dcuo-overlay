@@ -379,3 +379,7 @@ limits; never equate loaded objects with every spawn in an entire zone. Recogniz
 marker definitions include the installed magnifying-glass color variants and
 question-mark/seasonal markers; ordinary damageable props are excluded.
 No collected-state inference, game interaction or persistent location database.
+
+The ground spawn layer also recognizes the observed exobyte definition/package
+pair and distinguishes it with an orange diamond. Generic effect names from
+other packages remain excluded. The same live actor and freshness gates apply.

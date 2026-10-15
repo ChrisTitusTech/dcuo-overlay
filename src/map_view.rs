@@ -635,7 +635,7 @@ impl MapView {
         });
         ui.add(
             egui::Label::new(
-                egui::RichText::new("Diamonds: Exposed ground spawns (experimental)")
+                egui::RichText::new("Diamonds: Ground spawns / Orange: Exobytes (experimental)")
                     .small()
                     .color(egui::Color32::from_rgb(180, 185, 195)),
             )
@@ -693,7 +693,11 @@ impl MapView {
                     ui.id().with(("exposed-ground-spawn", index)),
                     egui::Sense::hover(),
                 )
-                .on_hover_text("Exposed ground spawns (experimental): loaded recognized spawn actors only; unloaded spawns and collected state are not established.");
+                .on_hover_text(if ground_spawns[index].1 == crate::native::GroundSpawnKind::Exobyte {
+                    "Exobyte spawn (experimental): exposed live object; collection availability is not established."
+                } else {
+                    "Exposed ground spawn (experimental): loaded recognized actor; collection availability is not established."
+                });
             }
             if let Some(point) = marker {
                 painter.circle_filled(
@@ -765,6 +769,7 @@ fn ground_spawn_color(kind: crate::native::GroundSpawnKind) -> egui::Color32 {
         GroundSpawnKind::Green => egui::Color32::from_rgb(70, 220, 120),
         GroundSpawnKind::Grey => egui::Color32::from_rgb(180, 185, 195),
         GroundSpawnKind::Purple => egui::Color32::from_rgb(200, 110, 255),
+        GroundSpawnKind::Exobyte => egui::Color32::from_rgb(255, 130, 45),
         GroundSpawnKind::Other => egui::Color32::from_rgb(235, 235, 235),
     }
 }

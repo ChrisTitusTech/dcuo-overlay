@@ -176,3 +176,18 @@ Installed validation found two exposed blue actors and displayed both diamonds.
 Off removed the diamonds without moving or clearing the map or player marker;
 the changed map pixels were confined to the marker region. Preference persistence
 and the default-off behavior passed. Other colors still need live acceptance.
+
+## Exobyte follow-up
+
+The user identified a nearby exobyte spawn. The current potential interaction
+actor resolves to FXSM103_DAMAGEABLEOBJECT in package DFXSM103, with FXSM103 as
+its starting mesh. The previous name-only allowlist deliberately excluded this
+generic effect name; the new exact definition/package classification recognizes
+it as an experimental exobyte marker. Orange diamonds share the existing toggle
+and live actor/world/freshness checks. Other packages with the same generic name
+remain unsupported. No collection-status or unloaded-spawn claim is made.
+
+The installed build displayed five orange and two blue markers in the current
+loaded area. The nearby orange marker matches the potential interaction actor
+next to the character. This is lead-observed rendering and memory evidence, not
+a new user-confirmed alignment or collected-state acceptance.

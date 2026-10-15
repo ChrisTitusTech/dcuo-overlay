@@ -24,8 +24,9 @@ pub enum GroundSpawnKind {
     Grey,
     Purple,
     Other,
+    Exobyte,
 }
-fn ground_spawn_kind(name: &str) -> Option<GroundSpawnKind> {
+fn ground_spawn_kind(name: &str, package: &str) -> Option<GroundSpawnKind> {
     use GroundSpawnKind::*;
     match name {
         "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO" => Some(Blue),
@@ -36,6 +37,7 @@ fn ground_spawn_kind(name: &str) -> Option<GroundSpawnKind> {
             Some(Purple)
         }
         "MAGNIFYINGGLASS_AFOOLS_DO" => Some(Other),
+        "FXSM103_DAMAGEABLEOBJECT" if package == "DFXSM103" => Some(Exobyte),
         _ => None,
     }
 }
@@ -798,9 +800,16 @@ impl Reader {
         for (index, class) in classes.into_iter().enumerate() {
             identities[index] = (class, self.object(class)?.0);
         }
+        let definition_name = self.name(u32_at(&definition_before, 0x44)?)?;
+        let definition_outer_address = pointer(u64_at(&definition_before, 0x3c)?)?;
+        let definition_outer = self.object(definition_outer_address)?;
+        let kind = ground_spawn_kind(&definition_name, &definition_outer.2)
+            .ok_or("Unsupported ground spawn definition")?;
+        if kind == GroundSpawnKind::Exobyte && self.class_name(definition_outer.1)? != "Package" {
+            return Err("Unsupported exobyte definition package".into());
+        }
         if self.class_name(actor_class)? != "DCServerPhysicsObject"
             || self.class_name(definition_class)? != "DCDamageableObject"
-            || ground_spawn_kind(&self.name(u32_at(&definition_before, 0x44)?)?).is_none()
             || u32_at(&definition_before, 0x48)? != 0
         {
             return Err("Unsupported nearby collectible definition".into());
@@ -854,6 +863,7 @@ impl Reader {
             != collectible_actor_snapshot(&actor_before, &flags)?
             || collectible_definition_snapshot(&self.read(definition, 0x54)?)?
                 != collectible_definition_snapshot(&definition_before)?
+            || self.object(definition_outer_address)? != definition_outer
             || (nearby && self.read(add(controller, 0x49c)?, 8)? != target_bytes)
         {
             return Err("Nearby collectible changed during sample".into());
@@ -863,11 +873,7 @@ impl Reader {
                 return Err("Collectible class identity changed".into());
             }
         }
-        Ok(Collectible {
-            position,
-            kind: ground_spawn_kind(&self.name(u32_at(&definition_before, 0x44)?)?)
-                .ok_or("Unsupported spawn")?,
-        })
+        Ok(Collectible { position, kind })
     }
     pub fn set_ground_spawns_enabled(&mut self, enabled: bool) {
         if self.ground_spawns_enabled != enabled {
@@ -1231,6 +1237,21 @@ mod tests {
         assert_eq!(next_scan_cursor(249_999, false), 250_000);
     }
     #[test]
+    fn exobyte_requires_the_observed_definition_package_pair() {
+        assert_eq!(
+            ground_spawn_kind("FXSM103_DAMAGEABLEOBJECT", "DFXSM103"),
+            Some(GroundSpawnKind::Exobyte)
+        );
+        for (name, package) in [
+            ("FXSM103_DAMAGEABLEOBJECT", ""),
+            ("FXSM103_DAMAGEABLEOBJECT", "OTHER_EFFECT"),
+            ("OTHER_DAMAGEABLEOBJECT", "DFXSM103"),
+        ] {
+            assert_eq!(ground_spawn_kind(name, package), None);
+        }
+    }
+
+    #[test]
     fn ground_spawn_allowlist_rejects_props_and_supports_all_proven_families() {
         for (name, kind) in [
             (
@@ -1259,7 +1280,7 @@ mod tests {
             ),
             ("MAGNIFYINGGLASS_AFOOLS_DO", GroundSpawnKind::Other),
         ] {
-            assert_eq!(ground_spawn_kind(name), Some(kind));
+            assert_eq!(ground_spawn_kind(name, "DDSGPROGEN107"), Some(kind));
         }
         for name in [
             "FXSM103_DAMAGEABLEOBJECT",
@@ -1267,7 +1288,7 @@ mod tests {
             "DSGPROGEN107_MAGNIFYINGGLASS_RED_DO",
             "",
         ] {
-            assert_eq!(ground_spawn_kind(name), None);
+            assert_eq!(ground_spawn_kind(name, "DDSGPROGEN107"), None);
         }
         assert!(Sample::synthetic(1).ground_spawns.is_empty());
     }

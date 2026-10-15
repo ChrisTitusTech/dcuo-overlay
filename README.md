@@ -102,3 +102,6 @@ by the running client. The switch is saved and defaults to off. Discovery runs
 in bounded background steps; the status shows progress. Colored diamonds identify
 recognized spawn visuals, while the yellow circle remains your character.
 Unloaded spawns and collected/uncollected status are unavailable.
+
+Orange diamonds mark recognized exobyte spawns whenever the Ground spawns layer
+is enabled and the client exposes a valid live object.

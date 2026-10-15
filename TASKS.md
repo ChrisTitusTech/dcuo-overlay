@@ -686,3 +686,25 @@ The installed application was upgraded again; repeat review is in progress.
 Final independent Codex review found no actionable regressions after the fixes.
 The reviewer repeated workspace tests, format, strict Clippy and diff checks;
 live evidence remains the lead's installed-application checks above.
+
+## Exobyte ground spawn follow-up
+
+PR #7 merged the ground spawn layer as 6e96861 after clean independent review and
+CI. The user now identifies an exobyte spawn beside the character. Read-only
+inspection binds the nearby interaction actor to FXSM103_DAMAGEABLEOBJECT in
+DFXSM103, with matching FXSM103 mesh. Extend the layer using the exact pair and
+a distinct orange marker; retain world, visibility, identity and freshness checks.
+The lead owns this small dependent reader/UI change and live verification.
+No additional worker is needed; independent review remains required.
+
+Exobyte validation: the installed application displayed seven exposed objects,
+with five orange exobyte diamonds and two blue collectible diamonds. An orange
+marker coincides with the nearby potential interaction actor and player position.
+No game actions were sent. The user supplied the spawn-type identification;
+independent user confirmation of the new orange marker has not been requested.
+125 workspace and 88 headless tests, format, strict Clippy on Rust 1.96/1.95,
+workspace and release builds pass. The new classifier test rejects the generic
+definition name under any package other than the observed package.
+
+Independent Codex review found no actionable regressions; its repeated workspace
+tests, format, strict Clippy and diff checks passed. Authorized PR/CI/merge follow.
