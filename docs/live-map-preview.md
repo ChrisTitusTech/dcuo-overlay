@@ -191,3 +191,19 @@ The installed build displayed five orange and two blue markers in the current
 loaded area. The nearby orange marker matches the potential interaction actor
 next to the character. This is lead-observed rendering and memory evidence, not
 a new user-confirmed alignment or collected-state acceptance.
+
+## Stable cached spawn locations
+
+User reports disappearing markers during scanning. Retain bounded in-memory
+last-seen locations, with expiry after two consecutive completed scans miss a
+location. Partial scans, temporary read gaps and interrupted passes do not count.
+Detection resets the miss count. Historical markers retain map/context/profile
+checks but do not claim fresh availability; player freshness remains unchanged.
+Cache clears on confirmed process/controlled-owner/area changes, not on ordinary
+streaming or sample generation changes. No locations are persisted to disk.
+
+Live evidence: four completed reader scans were published despite transient
+client changes. In MLOC136, seven cached markers remained through a missing
+sample and Pause. Toggling off/on while paused restored the exact map-region
+pixels without another scan. The two-miss expiry rule is covered with controlled
+synthetic scans; no game interactions were performed to force despawns.

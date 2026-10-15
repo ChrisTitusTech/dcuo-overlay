@@ -394,19 +394,38 @@ pub fn marker_position(
     gate: MarkerGate,
     now: Instant,
 ) -> Option<Point> {
-    if entry.validate().is_err()
-        || entry.effective_confidence(gate.confidence, gate.profile)
-            == LocationConfidence::Unavailable
-        || gate.paused
+    if gate.paused
         || !sample.valid
-        || sample.context != entry.context
         || sample.session_generation != gate.session_generation
         || sample.zone_generation != gate.zone_generation
         || now.checked_duration_since(sample.observed_at)? > Duration::from_secs(1)
     {
         return None;
     }
-    let p = sample.point;
+    recorded_marker_position(
+        entry,
+        sample.point,
+        &sample.context,
+        gate.confidence,
+        gate.profile,
+    )
+}
+
+/// Project a historical location without claiming live freshness or availability.
+/// Admission, session lifetime and scan-based expiry belong to the spawn cache.
+pub fn recorded_marker_position(
+    entry: &MapEntry,
+    p: Point,
+    context: &Context,
+    confidence: LocationConfidence,
+    profile: Option<&str>,
+) -> Option<Point> {
+    if entry.validate().is_err()
+        || entry.effective_confidence(confidence, profile) == LocationConfidence::Unavailable
+        || *context != entry.context
+    {
+        return None;
+    }
     let [x0, y0, x1, y1] = entry.world_bounds;
     if !p.x.is_finite() || !p.y.is_finite() || p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1 {
         return None;

@@ -271,3 +271,11 @@ markers, toggle persistence, freshness and lifecycle rejection before publicatio
 
 Exobyte follow-up: use the user-identified nearby resource as evidence for its
 exact definition/package pair, extend the existing layer and verify it live.
+
+Spawn stability follow-up: separate last-seen location lifetime from incremental
+scan results and player freshness; validate retention and context invalidation.
+
+User refinement: remove a cached location only after two consecutive complete
+scans fail to detect it. Partial/interrupted scans do not count; a new detection
+resets the miss count. Native worker owns completed-scan evidence in native.rs;
+cache worker owns expiry tests and integration.

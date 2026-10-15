@@ -219,6 +219,7 @@ impl Controller {
         self.ground_spawns_enabled.store(enabled, Ordering::Release);
         if let Some(sample) = self.view.native.as_mut() {
             sample.ground_spawns.clear();
+            sample.ground_spawn_sweep = None;
             sample.ground_spawns_status = if enabled {
                 "Waiting for fresh ground-spawn sample"
             } else {
@@ -479,6 +480,7 @@ impl Controller {
                                     .is_none_or(|since| sample.observed_at < since)
                             {
                                 sample.ground_spawns.clear();
+                                sample.ground_spawn_sweep = None;
                                 sample.ground_spawns_status =
                                     if self.ground_spawns_enabled_since.is_some() {
                                         "Waiting for fresh ground-spawn sample"
@@ -1382,6 +1384,13 @@ mod tests {
                 position: [4.0, 5.0, 6.0],
                 kind: native::GroundSpawnKind::Blue,
             });
+            sample.ground_spawn_sweep = Some(
+                native::GroundSpawnSweep {
+                    completed_at: sample.observed_at,
+                    spawns: sample.ground_spawns.clone(),
+                }
+                .into(),
+            );
             sample.ground_spawns_status = "Synthetic ground spawn".into();
             sample
         };
@@ -1394,6 +1403,15 @@ mod tests {
             })
             .unwrap();
         controller.poll();
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawn_sweep
+                .is_none()
+        );
         assert!(
             controller
                 .view
@@ -1438,6 +1456,15 @@ mod tests {
                 .native
                 .as_ref()
                 .unwrap()
+                .ground_spawn_sweep
+                .is_none()
+        );
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
                 .ground_spawns
                 .is_empty()
         );
@@ -1449,6 +1476,15 @@ mod tests {
             })
             .unwrap();
         controller.poll();
+        assert!(
+            controller
+                .view
+                .native
+                .as_ref()
+                .unwrap()
+                .ground_spawn_sweep
+                .is_none()
+        );
         assert!(
             controller
                 .view

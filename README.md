@@ -105,3 +105,10 @@ Unloaded spawns and collected/uncollected status are unavailable.
 
 Orange diamonds mark recognized exobyte spawns whenever the Ground spawns layer
 is enabled and the client exposes a valid live object.
+
+Spawn locations stay cached during partial scans and temporary read gaps. A
+location disappears after two consecutive complete scans miss it; seeing it again
+resets that count. These are last-seen locations, not a guarantee that a spawn is
+available. The cache clears on a confirmed area/character/session change and is
+not saved to disk. Turning the layer off hides cached locations without erasing
+them in the same context.

@@ -6,6 +6,7 @@ use crate::{
     maps::{Context, LocationConfidence, LocationSample, MarkerGate, Point},
     session::Controller,
     settings::{self, Settings},
+    spawn_cache::SpawnCache,
 };
 use std::io::Read;
 use std::time::{Duration, Instant};
@@ -307,6 +308,7 @@ struct Probe {
     preferences: Settings,
     preference_status: String,
     map: MapView,
+    spawn_cache: SpawnCache,
     initialized: bool,
     detected_map_source_for: Option<(i32, u64)>,
 }
@@ -364,6 +366,7 @@ impl Probe {
             preferences,
             preference_status: warning.unwrap_or_default(),
             map,
+            spawn_cache: SpawnCache::default(),
             initialized: false,
             detected_map_source_for: None,
         }
@@ -483,6 +486,11 @@ impl eframe::App for Probe {
             self.initialized = true;
         }
         self.controller.poll();
+        self.spawn_cache.update(
+            self.controller.view(),
+            self.preferences.show_ground_spawns,
+            Instant::now(),
+        );
         if let Some(build) = self.controller.view().build.as_ref() {
             let identity = (build.pid, build.start_ticks);
             if self.detected_map_source_for != Some(identity) {
@@ -628,23 +636,16 @@ impl Probe {
                         map_evidence_header(ui, view);
                         ui.separator();
                         let (sample, gate) = map_observation(view);
-                        if ui.checkbox(&mut self.preferences.show_ground_spawns, "Ground spawns").on_hover_text("Show recognized ground spawn objects currently exposed by the client. Unloaded objects and collection availability are not known.").changed() {
+                        if ui.checkbox(&mut self.preferences.show_ground_spawns, "Ground spawns").on_hover_text("Keep last-seen ground spawn locations from this session until two complete scans miss them. Cached markers do not establish current availability.").changed() {
                             self.save_ground_spawn_toggle();
                         }
                         let enabled = self.preferences.show_ground_spawns;
-                        let spawn_status = if enabled {
-                            view.native.as_ref().map(|n| n.ground_spawns_status.as_str()).unwrap_or("Waiting for a fresh ground spawn sample")
-                        } else { "Ground spawns off" };
-                        ui.add(egui::Label::new(spawn_status).truncate()).on_hover_text(spawn_status);
-                        let ground_spawns: Vec<_> = view.native.as_ref().zip(sample.as_ref())
-                            .filter(|_| enabled)
-                            .map(|(native, player)| native.ground_spawns.iter().map(|spawn| (
-                                LocationSample {
-                                    point: Point { x: spawn.position[0] as f64, y: spawn.position[1] as f64 },
-                                    ..player.clone()
-                                }, spawn.kind
-                            )).collect()).unwrap_or_default();
-                        self.map.ui(ui, sample.as_ref(), Some(gate), &ground_spawns);
+                        let reader_status = view.native.as_ref().map(|n| n.ground_spawns_status.as_str())
+                            .unwrap_or("Waiting for a fresh ground spawn sample");
+                        let spawn_status = format!("{} / 1024 cached last-seen locations / {}", self.spawn_cache.entries().len(),
+                            if enabled { reader_status } else { "Ground spawns off" });
+                        evidence_line(ui, spawn_status, false);
+                        self.map.ui(ui, sample.as_ref(), Some(gate), if enabled { self.spawn_cache.entries() } else { &[] });
                     }
                     Tab::Diagnostics => {
                         ui.heading("Process and build evidence");
