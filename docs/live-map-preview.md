@@ -140,7 +140,7 @@ The installed release was also checked through companion Pause -> Browse ->
 Current area -> Resume. Browse restored the overview while paused without a
 marker; resuming restored fresh live tracking. No game input was involved.
 
-## Nearby blue collectible preview (2026-10-14)
+## Original nearby blue collectible preview (2026-10-14)
 
 The user identified a nearby blue collectible. Bounded read-only investigation
 found a matching magnifying-glass asset on the controller's potential interaction
@@ -157,3 +157,22 @@ No interaction with the collectible or game-memory writes are performed.
 
 The user explicitly confirmed that the displayed blue diamond matches the spawn.
 This acceptance is for the nearby blue candidate, with the limitations above.
+
+## Exposed ground spawn layer
+
+The Map tab's Ground spawns switch enables bounded discovery of recognized live
+spawn actors beyond the controller's nearby interaction candidate. The preference
+is saved and defaults to off. Progress and any discovery limits appear in a fixed
+status row; markers use the same area, freshness and calibration gates as the
+player. Discovery supports the installed magnifying-glass color definitions and
+question-mark/seasonal variants. Only blue has live user acceptance so far.
+
+This supersedes the nearby-only display described above. It does not show unloaded
+objects, establish collected/uncollected status, or persist a location database.
+An exact definition match alone is insufficient: objects must also pass current
+world, identity, position and lifetime validation.
+
+Installed validation found two exposed blue actors and displayed both diamonds.
+Off removed the diamonds without moving or clearing the map or player marker;
+the changed map pixels were confined to the marker region. Preference persistence
+and the default-off behavior passed. Other colors still need live acceptance.

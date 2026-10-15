@@ -20,6 +20,7 @@ pub struct Settings {
     pub map_source: String,
     pub auto_import_maps: bool,
     pub auto_reconnect: bool,
+    pub show_ground_spawns: bool,
     pub poll_ms: u64,
 }
 
@@ -34,6 +35,7 @@ impl Default for Settings {
             map_source: String::new(),
             auto_import_maps: true,
             auto_reconnect: false,
+            show_ground_spawns: false,
             poll_ms: 250,
         }
     }
@@ -86,6 +88,21 @@ impl Settings {
     pub fn save(&self) -> Result<(), String> {
         let path = config_path().ok_or("The configuration directory is unavailable.")?;
         self.save_path(&path)
+    }
+
+    /// Persist only this immediate Map control, leaving unapplied settings alone.
+    pub fn save_ground_spawns(enabled: bool) -> Result<(), String> {
+        let path = config_path().ok_or("The configuration directory is unavailable.")?;
+        Self::save_ground_spawns_path(&path, enabled)
+    }
+
+    fn save_ground_spawns_path(path: &Path, enabled: bool) -> Result<(), String> {
+        let (mut saved, warning) = load_path(path);
+        if let Some(warning) = warning {
+            return Err(warning);
+        }
+        saved.show_ground_spawns = enabled;
+        saved.save_path(path)
     }
 
     fn save_path(&self, path: &Path) -> Result<(), String> {
@@ -270,6 +287,7 @@ mod tests {
         let mut settings = Settings::default();
         settings.save_path(&dir.path()).unwrap();
         settings.poll_ms = 100;
+        settings.show_ground_spawns = true;
         settings.ui_scale = 2.0;
         settings.save_path(&dir.path()).unwrap();
         assert_eq!(load_path(&dir.path()), (settings, None));
@@ -281,6 +299,30 @@ mod tests {
             fs::read_dir(dir.path().parent().unwrap()).unwrap().count(),
             1
         );
+    }
+
+    #[test]
+    fn map_toggle_preserves_other_saved_preferences() {
+        let dir = TempDir::new();
+        let saved = Settings {
+            map_source: "/saved/source".into(),
+            auto_import_maps: false,
+            ..Settings::default()
+        };
+        saved.save_path(&dir.path()).unwrap();
+        Settings::save_ground_spawns_path(&dir.path(), true).unwrap();
+        let (actual, warning) = load_path(&dir.path());
+        assert!(warning.is_none());
+        assert_eq!(
+            actual,
+            Settings {
+                show_ground_spawns: true,
+                ..saved
+            }
+        );
+        fs::write(dir.path(), b"invalid").unwrap();
+        assert!(Settings::save_ground_spawns_path(&dir.path(), false).is_err());
+        assert_eq!(fs::read(dir.path()).unwrap(), b"invalid");
     }
 
     #[test]

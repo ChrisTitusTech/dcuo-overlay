@@ -450,7 +450,7 @@ impl MapView {
         ui: &mut egui::Ui,
         sample: Option<&LocationSample>,
         gate: Option<MarkerGate>,
-        collectible: Option<&LocationSample>,
+        ground_spawns: &[(LocationSample, crate::native::GroundSpawnKind)],
     ) {
         self.update_current_context(sample, gate);
         self.poll(ui.ctx());
@@ -589,9 +589,10 @@ impl MapView {
                 gate.and_then(|gate| maps::marker_position(entry, sample, gate, now))
             })
         });
-        let collectible_marker = entry
+        let ground_spawn_markers = entry
             .filter(|_| self.texture.is_some())
-            .and_then(|entry| projected_marker(entry, collectible, gate, now));
+            .map(|entry| projected_ground_spawns(entry, ground_spawns, gate, now))
+            .unwrap_or_default();
         let marker_status = if marker.is_some() {
             if entry.zip(gate).is_some_and(|(entry, g)| {
                 entry.effective_confidence(g.confidence, g.profile)
@@ -634,13 +635,13 @@ impl MapView {
         });
         ui.add(
             egui::Label::new(
-                egui::RichText::new("Blue diamond: Nearby blue collectible (experimental)")
+                egui::RichText::new("Diamonds: Exposed ground spawns (experimental)")
                     .small()
-                    .color(egui::Color32::from_rgb(80, 170, 255)),
+                    .color(egui::Color32::from_rgb(180, 185, 195)),
             )
             .truncate(),
         )
-        .on_hover_text("Nearby blue collectible (experimental): current interaction candidate only; does not show all collectibles in the area.");
+        .on_hover_text("Exposed ground spawns (experimental): loaded recognized spawn actors only; unloaded spawns and collected state are not established.");
         // ScrollArea has unbounded content height; use its visible clipping bounds.
         // Leave room for source credits and the collapsed calibration footer.
         let visible_height = (ui.clip_rect().bottom() - ui.cursor().top() - 90.0).max(160.0);
@@ -672,7 +673,8 @@ impl MapView {
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
                 egui::Color32::WHITE,
             );
-            if let Some(point) = collectible_marker {
+            for (index, point) in ground_spawn_markers {
+                let color = ground_spawn_color(ground_spawns[index].1);
                 let center = target.min + egui::vec2(point.x as f32, point.y as f32) * scale;
                 let diamond = vec![
                     center + egui::vec2(0., -12.),
@@ -682,16 +684,16 @@ impl MapView {
                 ];
                 for stroke in [
                     egui::Stroke::new(5., egui::Color32::from_rgb(10, 20, 35)),
-                    egui::Stroke::new(2., egui::Color32::from_rgb(80, 170, 255)),
+                    egui::Stroke::new(2., color),
                 ] {
                     painter.add(egui::Shape::closed_line(diamond.clone(), stroke));
                 }
                 ui.interact(
                     egui::Rect::from_center_size(center, egui::vec2(28., 28.)).intersect(rect),
-                    ui.id().with("nearby-blue-collectible"),
+                    ui.id().with(("exposed-ground-spawn", index)),
                     egui::Sense::hover(),
                 )
-                .on_hover_text("Nearby blue collectible (experimental): current interaction candidate only; does not show all collectibles in the area.");
+                .on_hover_text("Exposed ground spawns (experimental): loaded recognized spawn actors only; unloaded spawns and collected state are not established.");
             }
             if let Some(point) = marker {
                 painter.circle_filled(
@@ -738,6 +740,33 @@ fn projected_marker(
     now: Instant,
 ) -> Option<maps::Point> {
     maps::marker_position(entry, sample?, gate?, now)
+}
+
+fn projected_ground_spawns(
+    entry: &MapEntry,
+    samples: &[(LocationSample, crate::native::GroundSpawnKind)],
+    gate: Option<MarkerGate>,
+    now: Instant,
+) -> Vec<(usize, maps::Point)> {
+    samples
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (sample, _))| {
+            projected_marker(entry, Some(sample), gate, now).map(|point| (index, point))
+        })
+        .collect()
+}
+
+fn ground_spawn_color(kind: crate::native::GroundSpawnKind) -> egui::Color32 {
+    use crate::native::GroundSpawnKind;
+    match kind {
+        GroundSpawnKind::Blue => egui::Color32::from_rgb(80, 170, 255),
+        GroundSpawnKind::Gold => egui::Color32::from_rgb(255, 195, 60),
+        GroundSpawnKind::Green => egui::Color32::from_rgb(70, 220, 120),
+        GroundSpawnKind::Grey => egui::Color32::from_rgb(180, 185, 195),
+        GroundSpawnKind::Purple => egui::Color32::from_rgb(200, 110, 255),
+        GroundSpawnKind::Other => egui::Color32::from_rgb(235, 235, 235),
+    }
 }
 
 fn fresh_auto_context(
@@ -1272,6 +1301,48 @@ mod tests {
             accuracy_budget_pixels: None,
         });
         assert!(projected_marker(&incompatible, Some(&sample), Some(gate), now).is_none());
+    }
+    #[test]
+    fn ground_spawn_projection_filters_each_sample_without_hiding_valid_peers() {
+        let entry = test_entry("AREA1");
+        let (sample, gate) = auto_sample("AREA1");
+        let now = sample.observed_at;
+        let mut samples = vec![(sample.clone(), crate::native::GroundSpawnKind::Blue); 6];
+        samples[0].0.point = maps::Point { x: 2., y: 3. };
+        samples[1].0.observed_at = now - std::time::Duration::from_secs(2);
+        samples[2].0.context.zone = "AREA2".into();
+        samples[3].0.session_generation += 1;
+        samples[4].0.valid = false;
+        samples[5].0.point = maps::Point { x: 4., y: 5. };
+        assert_eq!(
+            projected_ground_spawns(&entry, &samples, Some(gate), now),
+            vec![
+                (0, entry.project(samples[0].0.point)),
+                (5, entry.project(samples[5].0.point))
+            ]
+        );
+        assert!(projected_ground_spawns(&entry, &samples, None, now).is_empty());
+        assert!(
+            projected_ground_spawns(
+                &entry,
+                &samples,
+                Some(MarkerGate {
+                    paused: true,
+                    ..gate
+                }),
+                now
+            )
+            .is_empty()
+        );
+        assert!(
+            projected_ground_spawns(
+                &entry,
+                &samples,
+                Some(gate),
+                now + std::time::Duration::from_secs(2)
+            )
+            .is_empty()
+        );
     }
     fn png(width: u32, height: u32) -> Vec<u8> {
         let image = image::RgbaImage::from_pixel(width, height, image::Rgba([20, 30, 40, 255]));

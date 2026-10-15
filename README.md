@@ -96,3 +96,9 @@ feature must identify its source and distinguish measurements from estimates.
 
 No reference-project code is included. Dependency and source licenses must be
 checked before incorporating external code or assets.
+
+On the Map tab, enable **Ground spawns** to show recognized spawn objects exposed
+by the running client. The switch is saved and defaults to off. Discovery runs
+in bounded background steps; the status shows progress. Colored diamonds identify
+recognized spawn visuals, while the yellow circle remains your character.
+Unloaded spawns and collected/uncollected status are unavailable.

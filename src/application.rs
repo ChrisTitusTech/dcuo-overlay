@@ -340,6 +340,7 @@ impl Probe {
         }
         let mut controller = Controller::new();
         controller.set_auto_reconnect(preferences.auto_reconnect);
+        controller.set_ground_spawns_enabled(preferences.show_ground_spawns);
         if let Some(pid) = options.pid {
             controller.connect(pid);
         }
@@ -370,7 +371,21 @@ impl Probe {
 }
 
 impl Probe {
+    fn save_ground_spawn_toggle(&mut self) {
+        self.controller
+            .set_ground_spawns_enabled(self.preferences.show_ground_spawns);
+        self.preference_status = if self.smoke.is_some() {
+            "Smoke mode: preferences are not saved.".into()
+        } else {
+            match Settings::save_ground_spawns(self.preferences.show_ground_spawns) {
+                Ok(()) => "Ground spawn preference saved.".into(),
+                Err(error) => error,
+            }
+        };
+    }
     fn save_preferences(&mut self) {
+        self.controller
+            .set_ground_spawns_enabled(self.preferences.show_ground_spawns);
         self.preferences.api_base = self.base.clone();
         self.preferences.world = self.world.clone();
         self.preferences.ui_scale = self.scale;
@@ -613,17 +628,23 @@ impl Probe {
                         map_evidence_header(ui, view);
                         ui.separator();
                         let (sample, gate) = map_observation(view);
-                        let collectible = view.native.as_ref()
-                            .and_then(|native| native.collectible.as_ref())
-                            .zip(sample.as_ref())
-                            .map(|(collectible, player)| LocationSample {
-                                point: Point {
-                                    x: collectible.position[0] as f64,
-                                    y: collectible.position[1] as f64,
-                                },
-                                ..player.clone()
-                            });
-                        self.map.ui(ui, sample.as_ref(), Some(gate), collectible.as_ref());
+                        if ui.checkbox(&mut self.preferences.show_ground_spawns, "Ground spawns").on_hover_text("Show recognized ground spawn objects currently exposed by the client. Unloaded objects and collection availability are not known.").changed() {
+                            self.save_ground_spawn_toggle();
+                        }
+                        let enabled = self.preferences.show_ground_spawns;
+                        let spawn_status = if enabled {
+                            view.native.as_ref().map(|n| n.ground_spawns_status.as_str()).unwrap_or("Waiting for a fresh ground spawn sample")
+                        } else { "Ground spawns off" };
+                        ui.add(egui::Label::new(spawn_status).truncate()).on_hover_text(spawn_status);
+                        let ground_spawns: Vec<_> = view.native.as_ref().zip(sample.as_ref())
+                            .filter(|_| enabled)
+                            .map(|(native, player)| native.ground_spawns.iter().map(|spawn| (
+                                LocationSample {
+                                    point: Point { x: spawn.position[0] as f64, y: spawn.position[1] as f64 },
+                                    ..player.clone()
+                                }, spawn.kind
+                            )).collect()).unwrap_or_default();
+                        self.map.ui(ui, sample.as_ref(), Some(gate), &ground_spawns);
                     }
                     Tab::Diagnostics => {
                         ui.heading("Process and build evidence");
@@ -766,6 +787,26 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn ground_spawn_toggle_does_not_apply_pending_map_settings() {
+        let mut app = Probe::with_preferences(
+            Options {
+                smoke: Some(Duration::from_secs(1)),
+                ..Options::default()
+            },
+            String::new(),
+            Settings::default(),
+            None,
+        );
+        app.map.load();
+        let before = app.map.sanitized_diagnostics(None);
+        app.preferences.map_source = "/pending/source".into();
+        app.preferences.show_ground_spawns = true;
+        app.save_ground_spawn_toggle();
+        assert_eq!(app.map.sanitized_diagnostics(None), before);
+        assert_eq!(app.preferences.map_source, "/pending/source");
     }
 
     // Replay presentation only: no PID, name lookup, persisted preferences, or

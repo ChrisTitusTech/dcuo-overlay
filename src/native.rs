@@ -13,18 +13,45 @@ use std::{
 
 pub const PROFILE_ID: &str = "a5a14396497bd05336e0267d14a1c3442fec5c21b4c28b8d298fa0a6e0105cf3";
 const NAMES_RVA: usize = 0x2146c40;
+const OBJECTS_RVA: usize = 0x2146cc8;
 const ENGINE_RVA: usize = 0x2130f00;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroundSpawnKind {
+    Blue,
+    Gold,
+    Green,
+    Grey,
+    Purple,
+    Other,
+}
+fn ground_spawn_kind(name: &str) -> Option<GroundSpawnKind> {
+    use GroundSpawnKind::*;
+    match name {
+        "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO" => Some(Blue),
+        "DSGPROGEN107_MAGNIFYINGGLASS_GOLD_DO" => Some(Gold),
+        "DSGPROGEN107_MAGNIFYINGGLASS_GREEN_DO" => Some(Green),
+        "DSGPROGEN107_MAGNIFYINGGLASS_GREY_DO" => Some(Grey),
+        "DSGPROGEN107_MAGNIFYINGGLASS_PURPLE_DO" | "DSGPROGEN107_QUESTIONMARK_PURPLE_DO" => {
+            Some(Purple)
+        }
+        "MAGNIFYINGGLASS_AFOOLS_DO" => Some(Other),
+        _ => None,
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Collectible {
+    pub kind: GroundSpawnKind,
     pub position: [f32; 3],
 }
 
 #[derive(Clone, Debug)]
 pub struct Sample {
     pub position: [f32; 3],
-    /// Only the nearby exact blue asset, with no collection-status claim.
+    /// Legacy nearby recognized spawn, with no collection-status claim.
     pub collectible: Option<Collectible>,
+    pub ground_spawns: Vec<Collectible>,
+    pub ground_spawns_status: String,
     pub health: f32,
     pub max_health: f32,
     pub power: f32,
@@ -43,6 +70,8 @@ impl Sample {
         Self {
             position: [1.0, 2.0, 3.0],
             collectible: None,
+            ground_spawns: Vec::new(),
+            ground_spawns_status: "Ground spawns off".into(),
             health: 50.0,
             max_health: 100.0,
             power: 20.0,
@@ -137,7 +166,26 @@ fn supported_area(packages: &[String]) -> Option<String> {
 
 type CollectibleSchemas = HashMap<[(usize, u32); 3], Vec<(usize, u32)>>;
 
+#[derive(Default)]
+struct GroundScan {
+    owner: Option<Ownership>,
+    table: usize,
+    count: usize,
+    cursor: usize,
+    completed: bool,
+    candidates: Vec<(usize, u32)>,
+    refresh_cursor: usize,
+    class_names: HashMap<usize, bool>,
+}
+fn rotated_indices(start: usize, count: usize) -> impl Iterator<Item = usize> {
+    (0..count).map(move |offset| (start % count.max(1) + offset) % count.max(1))
+}
+fn next_scan_cursor(index: u32, interrupted: bool) -> usize {
+    index as usize + usize::from(!interrupted)
+}
 pub struct Reader {
+    ground_spawns_enabled: bool,
+    ground_scan: GroundScan,
     candidate: process::Candidate,
     names: usize,
     name_count: u32,
@@ -205,7 +253,6 @@ fn validate_values(position: [f32; 3], values: [f32; 4]) -> Result<(), String> {
     }
     Ok(())
 }
-const BLUE_COLLECTIBLE: &str = "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO";
 
 fn validate_collectible_flag(offset: usize, mask: u32) -> Result<(), String> {
     if !(0x54..=0x3bc).contains(&offset) || !offset.is_multiple_of(4) || !mask.is_power_of_two() {
@@ -294,6 +341,8 @@ impl Reader {
         }
         let candidate_pid = candidate.identity.pid;
         let mut reader = Self {
+            ground_spawns_enabled: false,
+            ground_scan: GroundScan::default(),
             candidate,
             names: 0,
             name_count: 0,
@@ -729,10 +778,16 @@ impl Reader {
             key: supported_area(&packages),
         })
     }
-    fn collectible(&self, owner: &Ownership, player: [f32; 3]) -> Result<Collectible, String> {
+    fn collectible_actor(
+        &self,
+        owner: &Ownership,
+        player: [f32; 3],
+        actor: usize,
+        nearby: bool,
+    ) -> Result<Collectible, String> {
         let controller = owner.objects[2].0;
         let target_bytes = self.read(add(controller, 0x49c)?, 8)?;
-        let actor = pointer(u64_at(&target_bytes, 0)?)?;
+
         let actor_before = self.read(actor, 0x3c0)?;
         let actor_class = pointer(u64_at(&actor_before, 0x4c)?)?;
         let definition = pointer(u64_at(&actor_before, 0x3b8)?)?;
@@ -745,7 +800,7 @@ impl Reader {
         }
         if self.class_name(actor_class)? != "DCServerPhysicsObject"
             || self.class_name(definition_class)? != "DCDamageableObject"
-            || self.name(u32_at(&definition_before, 0x44)?)? != BLUE_COLLECTIBLE
+            || ground_spawn_kind(&self.name(u32_at(&definition_before, 0x44)?)?).is_none()
             || u32_at(&definition_before, 0x48)? != 0
         {
             return Err("Unsupported nearby collectible definition".into());
@@ -780,13 +835,26 @@ impl Reader {
                 .insert(identities, flags.clone());
             flags
         };
-        let position = collectible_position(&actor_before, owner.world_pointer, player, &flags)?;
+        let position = collectible_position(
+            &actor_before,
+            owner.world_pointer,
+            if nearby {
+                player
+            } else {
+                [
+                    float(&actor_before, 0xd0)?,
+                    float(&actor_before, 0xd4)?,
+                    float(&actor_before, 0xd8)?,
+                ]
+            },
+            &flags,
+        )?;
         // Bind relevant fields without rejecting unrelated per-frame actor changes.
         if collectible_actor_snapshot(&self.read(actor, 0x3c0)?, &flags)?
             != collectible_actor_snapshot(&actor_before, &flags)?
             || collectible_definition_snapshot(&self.read(definition, 0x54)?)?
                 != collectible_definition_snapshot(&definition_before)?
-            || self.read(add(controller, 0x49c)?, 8)? != target_bytes
+            || (nearby && self.read(add(controller, 0x49c)?, 8)? != target_bytes)
         {
             return Err("Nearby collectible changed during sample".into());
         }
@@ -795,7 +863,246 @@ impl Reader {
                 return Err("Collectible class identity changed".into());
             }
         }
-        Ok(Collectible { position })
+        Ok(Collectible {
+            position,
+            kind: ground_spawn_kind(&self.name(u32_at(&definition_before, 0x44)?)?)
+                .ok_or("Unsupported spawn")?,
+        })
+    }
+    pub fn set_ground_spawns_enabled(&mut self, enabled: bool) {
+        if self.ground_spawns_enabled != enabled {
+            self.ground_scan = GroundScan::default();
+            self.ground_spawns_enabled = enabled;
+        }
+    }
+    fn optional_interrupted(&self) -> bool {
+        self.collectible_deadline
+            .get()
+            .is_some_and(|d| Instant::now() >= d)
+            || self
+                .cancel
+                .as_ref()
+                .is_some_and(|c| c.load(Ordering::Acquire))
+    }
+    fn ground_spawns(
+        &mut self,
+        owner: &Ownership,
+        player: [f32; 3],
+    ) -> Result<(Vec<Collectible>, String), String> {
+        let table = self.read(self.rva(OBJECTS_RVA)?, 16)?;
+        let base = pointer(u64_at(&table, 0)?)?;
+        let count = u32_at(&table, 8)? as usize;
+        let capacity = u32_at(&table, 12)? as usize;
+        if !(1..=250_000).contains(&count) || capacity < count || capacity > 250_000 {
+            self.ground_scan = GroundScan::default();
+            return Err("Object table outside bounds".into());
+        }
+        if self.ground_scan.owner.as_ref() != Some(owner) || self.ground_scan.table != base {
+            self.ground_scan = GroundScan {
+                owner: Some(owner.clone()),
+                table: base,
+                ..Default::default()
+            };
+        }
+        if self.ground_scan.count != count {
+            self.ground_scan.completed = false;
+            self.ground_scan.count = count;
+        }
+        if self.ground_scan.cursor >= count {
+            self.ground_scan.cursor = 0;
+        }
+        let candidates = self.ground_scan.candidates.clone();
+        let mut result = Vec::new();
+        let discovery_deadline = self.collectible_deadline.get();
+        // Reserve forty milliseconds of the optional budget for discovery.
+        self.collectible_deadline
+            .set(discovery_deadline.map(|d| d - std::time::Duration::from_millis(40)));
+        let mut refreshed = 0;
+        for candidate_index in rotated_indices(self.ground_scan.refresh_cursor, candidates.len()) {
+            let (address, index) = candidates[candidate_index];
+            if self.optional_interrupted() {
+                self.ground_scan.refresh_cursor = candidate_index;
+                break;
+            }
+            self.ground_scan.refresh_cursor = (candidate_index + 1) % candidates.len();
+            refreshed += 1;
+            if index as usize >= count {
+                self.ground_scan
+                    .candidates
+                    .retain(|entry| *entry != (address, index));
+                continue;
+            }
+            let Ok(slot) = self.read(add(base, index as usize * 8)?, 8) else {
+                if self.optional_interrupted() {
+                    break;
+                }
+                self.ground_scan
+                    .candidates
+                    .retain(|entry| *entry != (address, index));
+                continue;
+            };
+            let identity = self.object(address).map(|object| object.0);
+            if self.optional_interrupted() {
+                break;
+            }
+            if u64_at(&slot, 0)? != address as u64 || identity != Ok(index) {
+                self.ground_scan
+                    .candidates
+                    .retain(|entry| *entry != (address, index));
+                continue;
+            }
+            match self.collectible_actor(owner, player, address, false) {
+                Ok(spawn) => result.push(spawn),
+                Err(_) => {
+                    if self.optional_interrupted() {
+                        break;
+                    }
+                    self.ground_scan
+                        .candidates
+                        .retain(|entry| *entry != (address, index));
+                }
+            }
+        }
+        let refresh_limited = refreshed < candidates.len() || self.optional_interrupted();
+        self.collectible_deadline.set(discovery_deadline);
+        let discovery = (|| -> Result<(), String> {
+            let start = self.ground_scan.cursor;
+            let end = (start + 4096).min(count);
+            let ranges: Vec<_> = (start..end)
+                .step_by(512)
+                .map(|offset| Ok((add(base, offset * 8)?, (end - offset).min(512) * 8)))
+                .collect::<Result<_, String>>()?;
+            let slots: Vec<u8> = self.read_scatter(&ranges)?.into_iter().flatten().collect();
+            let mut actors = Vec::new();
+            for index in start..end {
+                if let Ok(address) = pointer(u64_at(&slots, (index - start) * 8)?) {
+                    let readable = self.maps.borrow().iter().any(|m| {
+                        m.readable
+                            && address >= m.start
+                            && address.checked_add(0x54).is_some_and(|e| e <= m.end)
+                    });
+                    if readable {
+                        actors.push((address, index as u32));
+                    }
+                }
+            }
+            for batch in actors.chunks(128) {
+                let ranges: Vec<_> = batch.iter().map(|(address, _)| (*address, 0x54)).collect();
+                let headers = match self.read_scatter(&ranges) {
+                    Ok(headers) => headers.into_iter().map(Some).collect::<Vec<_>>(),
+                    Err(error) => {
+                        if self.optional_interrupted() {
+                            return Err(error);
+                        }
+                        let mut headers = Vec::new();
+                        for &(address, _) in batch {
+                            let header = self.read(address, 0x54);
+                            if self.optional_interrupted() {
+                                self.ground_scan.cursor = next_scan_cursor(batch[0].1, true);
+                                return Err("Optional scan budget reached".into());
+                            }
+                            headers.push(header.ok());
+                        }
+                        headers
+                    }
+                };
+                for (&(address, index), bytes) in batch.iter().zip(headers) {
+                    if self
+                        .collectible_deadline
+                        .get()
+                        .is_some_and(|d| Instant::now() >= d)
+                    {
+                        return Err("Optional scan budget reached".into());
+                    }
+                    self.ground_scan.cursor = next_scan_cursor(index, false);
+                    let Some(bytes) = bytes else {
+                        continue;
+                    };
+                    if u32_at(&bytes, 8)? != index {
+                        continue;
+                    }
+                    let Ok(class) = pointer(u64_at(&bytes, 0x4c)?) else {
+                        continue;
+                    };
+                    let supported = if let Some(value) = self.ground_scan.class_names.get(&class) {
+                        *value
+                    } else {
+                        let name = self.class_name(class);
+                        if self.optional_interrupted() {
+                            self.ground_scan.cursor = next_scan_cursor(index, true);
+                            return Err("Optional scan budget reached".into());
+                        }
+                        let Ok(name) = name else {
+                            continue;
+                        };
+                        let value = name == "DCServerPhysicsObject";
+                        if self.ground_scan.class_names.len() >= 4096 {
+                            return Err("Class cache bound reached".into());
+                        }
+                        self.ground_scan.class_names.insert(class, value);
+                        value
+                    };
+                    if !supported {
+                        continue;
+                    }
+                    if self.ground_scan.candidates.len() >= 256 {
+                        return Err("Ground spawn candidate bound reached".into());
+                    }
+                    if !self.ground_scan.candidates.contains(&(address, index)) {
+                        // Admission requires the full reflected live actor and recognized definition.
+                        if self
+                            .collectible_actor(owner, player, address, false)
+                            .is_ok()
+                        {
+                            self.ground_scan.candidates.push((address, index));
+                        }
+                        if self
+                            .collectible_deadline
+                            .get()
+                            .is_some_and(|d| Instant::now() >= d)
+                        {
+                            self.ground_scan.cursor = next_scan_cursor(index, true);
+                            return Err("Optional scan budget reached".into());
+                        }
+                    }
+                }
+            }
+            self.ground_scan.cursor = end;
+            if end == count {
+                self.ground_scan.completed = true;
+                self.ground_scan.cursor = 0;
+                self.ground_scan.class_names.clear();
+            }
+            Ok(())
+        })();
+        self.collectible_deadline.set(None);
+        if self.read(self.rva(OBJECTS_RVA)?, 16)? != table {
+            // Addresses are only discovery hints and are fully revalidated next time.
+            // Unrelated object allocation must not restart a complete world scan.
+            self.ground_scan.class_names.clear();
+            self.ground_scan.completed = false;
+            return Err("Object table changed during scan".into());
+        }
+        let status = if self.ground_scan.completed {
+            format!("{} exposed ground spawns; refreshing", result.len())
+        } else {
+            format!(
+                "{} exposed ground spawns; scanning {}/{}",
+                result.len(),
+                self.ground_scan.cursor,
+                count
+            )
+        };
+        let status = match discovery {
+            Ok(()) => status,
+            Err(error) => format!("{} exposed; scan paused: {error}", result.len()),
+        };
+        let status = if refresh_limited {
+            format!("{status}; refresh partial")
+        } else {
+            status
+        };
+        Ok((result, status))
     }
     pub fn sample(&mut self) -> Result<Sample, String> {
         self.scope_start.set(Instant::now());
@@ -819,6 +1126,7 @@ impl Reader {
             self.area_schemas.borrow_mut().clear();
             self.collectible_schemas.borrow_mut().clear();
             self.classes = None;
+            self.ground_scan.class_names.clear();
             for (index, expected) in [(0, "None"), (1, "ByteProperty"), (2, "IntProperty")] {
                 if self.name(index)? != expected {
                     return Err("Changed name table anchors mismatch".into());
@@ -850,30 +1158,33 @@ impl Reader {
             float(&bytes, 12)?,
         ];
         validate_values(position, values)?;
-        // Reserve normal sample validation budget; optional reflection can stop early.
-        let collectible = if self.scope_start.get().elapsed() < std::time::Duration::from_secs(2)
-            && self.scope_bytes.get() < 1024 * 1024
-        {
+        let collectible = None;
+        let (ground_spawns, ground_spawns_status) = if self.ground_spawns_enabled {
             self.collectible_deadline
-                .set(Some(Instant::now() + std::time::Duration::from_millis(250)));
-            let result = self.collectible(&before, position).ok();
+                .set(Some(Instant::now() + std::time::Duration::from_millis(100)));
+            let result = self.ground_spawns(&before, position);
             self.collectible_deadline.set(None);
             result
+                .unwrap_or_else(|error| (Vec::new(), format!("Ground spawns unavailable: {error}")))
         } else {
-            None
+            (Vec::new(), "Ground spawns off".into())
         };
         let mut after = self.ownership()?;
         after.area = self.area_context(after.objects[3].0).ok();
         if self.read(self.rva(NAMES_RVA)?, 16)? != name_header {
+            self.ground_scan.class_names.clear();
             return Err("Name table changed during sample; discarded".into());
         }
         self.unchanged()?;
         if before != after {
+            self.ground_scan = GroundScan::default();
             return Err("Controlled object changed during sample; discarded".into());
         }
         Ok(Sample {
             position,
             collectible,
+            ground_spawns,
+            ground_spawns_status,
             max_health: values[0],
             health: values[1],
             max_power: values[2],
@@ -889,6 +1200,77 @@ impl Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn refresh_rotation_services_every_candidate_under_a_small_budget() {
+        let mut cursor = 0;
+        let mut seen = [false; 256];
+        for _ in 0..128 {
+            let serviced: Vec<_> = rotated_indices(cursor, 256).take(2).collect();
+            for &index in &serviced {
+                seen[index] = true;
+            }
+            cursor = (serviced[1] + 1) % 256;
+        }
+        assert!(seen.into_iter().all(|value| value));
+        // A deadline before the fourth entry preserves it as the next start.
+        let first: Vec<_> = rotated_indices(0, 4).take(3).collect();
+        let next = (first.last().unwrap() + 1) % 4;
+        assert_eq!(rotated_indices(next, 4).next(), Some(3));
+
+        assert_eq!(rotated_indices(400, 0).count(), 0);
+        assert_eq!(rotated_indices(5, 3).collect::<Vec<_>>(), vec![2, 0, 1]);
+    }
+    #[test]
+    fn malformed_discovery_entries_advance_but_interrupted_entries_retry() {
+        let mut cursor = 50;
+        for _ in 0..4 {
+            cursor = next_scan_cursor(cursor as u32, false);
+        }
+        assert_eq!(cursor, 54);
+        assert_eq!(next_scan_cursor(cursor as u32, true), 54);
+        assert_eq!(next_scan_cursor(249_999, false), 250_000);
+    }
+    #[test]
+    fn ground_spawn_allowlist_rejects_props_and_supports_all_proven_families() {
+        for (name, kind) in [
+            (
+                "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO",
+                GroundSpawnKind::Blue,
+            ),
+            (
+                "DSGPROGEN107_MAGNIFYINGGLASS_GOLD_DO",
+                GroundSpawnKind::Gold,
+            ),
+            (
+                "DSGPROGEN107_MAGNIFYINGGLASS_GREEN_DO",
+                GroundSpawnKind::Green,
+            ),
+            (
+                "DSGPROGEN107_MAGNIFYINGGLASS_GREY_DO",
+                GroundSpawnKind::Grey,
+            ),
+            (
+                "DSGPROGEN107_MAGNIFYINGGLASS_PURPLE_DO",
+                GroundSpawnKind::Purple,
+            ),
+            (
+                "DSGPROGEN107_QUESTIONMARK_PURPLE_DO",
+                GroundSpawnKind::Purple,
+            ),
+            ("MAGNIFYINGGLASS_AFOOLS_DO", GroundSpawnKind::Other),
+        ] {
+            assert_eq!(ground_spawn_kind(name), Some(kind));
+        }
+        for name in [
+            "FXSM103_DAMAGEABLEOBJECT",
+            "MAGNIFYINGGLASS_BLUE",
+            "DSGPROGEN107_MAGNIFYINGGLASS_RED_DO",
+            "",
+        ] {
+            assert_eq!(ground_spawn_kind(name), None);
+        }
+        assert!(Sample::synthetic(1).ground_spawns.is_empty());
+    }
     #[test]
     fn collectible_requires_same_world_visible_lifetime_and_bounded_distance() {
         let mut bytes = vec![0; 0x3c0];
@@ -1150,6 +1532,8 @@ mod tests {
             .unwrap()
             .remove(0);
         let mut reader = Reader {
+            ground_spawns_enabled: false,
+            ground_scan: GroundScan::default(),
             candidate: process::Candidate {
                 identity: process::Identity {
                     pid: -1,
@@ -1172,6 +1556,16 @@ mod tests {
             area_schemas: RefCell::new(HashSet::new()),
             collectible_schemas: RefCell::new(HashMap::new()),
         };
+        assert!(!reader.ground_spawns_enabled);
+        reader.set_ground_spawns_enabled(true);
+        reader.ground_scan.cursor = 42;
+        reader.ground_scan.candidates.push((0x10000, 1));
+        reader.set_ground_spawns_enabled(true);
+        assert_eq!(reader.ground_scan.cursor, 42);
+        reader.set_ground_spawns_enabled(false);
+        assert_eq!(reader.ground_scan.cursor, 0);
+        assert!(reader.ground_scan.candidates.is_empty());
+        assert!(!reader.ground_scan.completed);
         reader.set_cancel(Arc::new(AtomicBool::new(true)));
         assert_eq!(
             reader.read(0x10000, 4).unwrap_err(),

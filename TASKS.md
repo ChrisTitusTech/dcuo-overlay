@@ -636,3 +636,53 @@ Independent Codex review found no actionable regressions. A supplemental review
 suggested hiding the legend when no collectible is visible; retained the static
 legend intentionally because it describes marker meaning, not presence, and
 conditional rows would reintroduce the map displacement just fixed.
+
+## Exposed ground spawn layer (2026-10-14)
+
+User requests a toggle for all ground spawns exposed by the client.
+- ground_reader, gpt-6.1-sol, owns src/native.rs: bounded incremental enumeration,
+  lifetime/context checks, opt-in reader configuration, synthetic tests.
+- ground_ui, gpt-6.1-sol, owns src/map_view.rs: multiple colored markers, projection
+  gates, stable legend/geometry and synthetic tests.
+- ground_session, gpt-6.1-sol, owns src/session.rs: propagate toggle and suppress
+  delayed optional samples across off/on transitions without resetting the map.
+- Lead owns application/settings, shared contract, live read-only checks, docs,
+  full gates and authorized review/PR/merge. Workers do not perform live reads,
+  desktop actions, Git operations or spawn additional workers.
+
+Acceptance pending: saved toggle, no optional enumeration while off, multiple
+current-world markers, bounded scanning, stale/hidden/unloaded rejection,
+unchanged static map on toggles and full local/independent review gates.
+
+Ground spawn integration evidence: the installed application displayed two live
+blue diamonds, including an object outside the former interaction radius.
+Toggling off immediately removed both while retaining player position, map
+texture, zoom and pan. The map-region image difference was confined to the
+51x36-pixel marker region. The preference persisted to the private settings file and remained enabled after
+restarting the installed application.
+No game input was sent, and private observations/captures remain ignored.
+
+120 workspace tests and 84 no-default library tests passed, along with format,
+strict Clippy on Rust 1.96/1.95 and workspace/release builds. Three unchanged
+local-asset tests remain opt-in; their earlier passing evidence is retained.
+Tests cover multiple independent projection gates, late optional samples across
+off/on transitions, preference round trips and bounded recognized definitions.
+The scan processes at most 4096 slots per step under a 100ms optional deadline,
+with 250000 object and 256 candidate bounds. Candidates are freshly revalidated;
+ordinary object allocations do not discard discovery progress. Unloaded objects,
+unrecognized definitions and collection availability remain unsupported; other
+colors have package evidence and synthetic coverage but no live acceptance.
+Independent review and authorized publication follow.
+
+Independent review identified candidate-refresh starvation, a scan stall on
+invalid class metadata, and a toggle that applied unrelated pending settings.
+Fixed rotating refresh with reserved discovery time, per-object failure progress
+and isolated preference persistence. Added regressions for scheduling, interrupted
+scan progress, saved-setting preservation and pending map settings. Updated local
+gates passed: 124 workspace and 87 headless tests, strict Clippy on both toolchains,
+format, whitespace and builds. Both nested-X managed startup/relaunch checks passed.
+The installed application was upgraded again; repeat review is in progress.
+
+Final independent Codex review found no actionable regressions after the fixes.
+The reviewer repeated workspace tests, format, strict Clippy and diff checks;
+live evidence remains the lead's installed-application checks above.
