@@ -279,3 +279,6 @@ User refinement: remove a cached location only after two consecutive complete
 scans fail to detect it. Partial/interrupted scans do not count; a new detection
 resets the miss count. Native worker owns completed-scan evidence in native.rs;
 cache worker owns expiry tests and integration.
+
+Map presentation follow-up: prioritize canvas space, move technical evidence
+and setup into toggled windows, and verify canvas stability and live rendering.

@@ -760,3 +760,32 @@ workspace and 102 headless, with format, both strict lints and builds passing.
 
 Final independent Codex review covered staged, unstaged and untracked files and
 found no actionable regressions. Lead live evidence is recorded above.
+
+## Map-focused presentation
+
+The Map tab now reserves its remaining viewport for the canvas. Log is hidden by
+default and contains reader status, experimental evidence and scan progress.
+Map details is hidden by default and contains import/catalog setup, browsing,
+retry, provenance, marker validation and calibration. Essential navigation and
+ground-spawn toggle remain visible; no memory or cache semantics changed.
+
+Validation: 141 workspace tests passed (three opt-in private asset tests remain
+ignored), 102 headless tests passed, formatting, strict Clippy on Rust 1.96/1.95,
+workspace/release builds and two managed-X11 startup/shutdown checks passed.
+The application regression requires over 75% canvas area at 862x1048 and 1280x720
+and identical canvas geometry with Log open/closed. Live DWM observation at
+862x1048 shows approximately 86% canvas, the current map and player/spawn
+markers. Log opens without shifting the map. Private screenshots remain under
+ignored local-data; no game assets or personal observations are published.
+
+Independent Codex review found no actionable regressions. A supplemental review
+suggested preventing inherited scroll offsets; each tab now has its own scroll
+state, so long Character/Diagnostics pages cannot shift the Map viewport. The
+installed app was also checked with Map details open and closed. Both detail
+windows preserve map geometry; user acceptance is not claimed for this UI change.
+
+Final independent Codex review after scroll-state isolation found no actionable
+regressions. The supplemental suggestion to restore experimental wording on the
+main map is not applied: the user's explicit request is to hide that evidence;
+confidence remains visible in Map details and the compact label reports live
+availability, not verification. All 12 installer tests also passed.

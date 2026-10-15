@@ -56,6 +56,7 @@ pub struct MapView {
     cookedpc: String,
     busy: bool,
     browse_other_maps: bool,
+    details_open: bool,
     auto_import: bool,
     auto_context: Option<AutoContext>,
     auto_token: Option<ImportCancellation>,
@@ -137,6 +138,7 @@ impl MapView {
             cookedpc: std::env::var_os("HOME").map(PathBuf::from).filter(|path| path.is_absolute()).map(|path| path.join(".local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC").to_string_lossy().into_owned()).unwrap_or_default(),
             busy: false,
             browse_other_maps: false,
+            details_open: false,
             auto_import: true,
             auto_context: None,
             auto_token: None,
@@ -454,7 +456,155 @@ impl MapView {
     ) {
         self.update_current_context(sample, gate);
         self.poll(ui.ctx());
-        ui.heading("Map browser");
+        ui.horizontal(|ui| {
+            ui.strong("Map");
+            ui.toggle_value(&mut self.details_open, "Map details");
+            if let Some(entry) = self
+                .catalog
+                .as_ref()
+                .and_then(|c| c.entries.get(self.selected))
+            {
+                ui.add(egui::Label::new(&entry.label).truncate())
+                    .on_hover_text(&entry.label);
+            }
+        });
+        let mut details_open = self.details_open;
+        egui::Window::new("Map details")
+            .open(&mut details_open)
+            .default_width(520.0)
+            .vscroll(true)
+            .show(ui.ctx(), |ui| self.details_ui(ui, sample, gate));
+        self.details_open = details_open;
+        let now = Instant::now();
+        let current_index = self
+            .catalog
+            .as_ref()
+            .and_then(|catalog| current_map_index(catalog, sample, gate, now));
+        if !self.browse_other_maps
+            && !self.busy
+            && let Some(index) = current_index
+            && index != self.selected
+        {
+            self.selected = index;
+            self.asset(true);
+        }
+        let entry = self
+            .catalog
+            .as_ref()
+            .and_then(|c| c.entries.get(self.selected));
+        let marker = entry
+            .filter(|_| self.texture.is_some())
+            .and_then(|entry| projected_marker(entry, sample, gate, now));
+        let ground_spawn_markers = entry
+            .filter(|_| self.texture.is_some())
+            .map(|entry| projected_ground_spawns(entry, ground_spawns, gate))
+            .unwrap_or_default();
+        let location_status = if self.browse_other_maps {
+            "Manual browsing"
+        } else if marker.is_none() {
+            "Location unavailable"
+        } else {
+            "Live location"
+        };
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                self.zoom = (self.zoom / 1.25).max(0.25);
+            }
+            if ui.button("+").clicked() {
+                self.zoom = (self.zoom * 1.25).min(16.0);
+            }
+            if ui.button("Fit").clicked() {
+                self.zoom = 1.0;
+                self.pan = egui::Vec2::ZERO;
+                self.follow = false;
+            }
+            ui.add_enabled(
+                marker.is_some(),
+                egui::Checkbox::new(&mut self.follow, "Follow"),
+            );
+            if ui
+                .add_enabled(marker.is_some(), egui::Button::new("Recenter"))
+                .clicked()
+            {
+                self.pan = egui::Vec2::ZERO;
+                self.follow = true;
+            }
+            ui.add(egui::Label::new(egui::RichText::new(location_status).small()).truncate())
+                .on_hover_text(location_status);
+        });
+        // The enclosing scroll area can have unbounded content height.
+        // Fill its visible viewport without reserving space for hidden details.
+        let size = map_canvas_size(
+            ui.available_width(),
+            ui.clip_rect().bottom(),
+            ui.cursor().top(),
+        );
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::drag());
+        ui.painter()
+            .rect_filled(rect, 0.0, egui::Color32::from_rgb(20, 25, 32));
+        if response.dragged() {
+            self.pan += response.drag_delta();
+            self.follow = false;
+        }
+        if response.hovered() {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            self.zoom = (self.zoom * (scroll * 0.002).exp()).clamp(0.25, 16.0);
+        }
+        if let Some(texture) = &self.texture {
+            let image_size = texture.size_vec2();
+            let scale = (rect.width() / image_size.x).min(rect.height() / image_size.y) * self.zoom;
+            if self.follow
+                && let Some(point) = marker
+            {
+                self.pan = (image_size * 0.5 - egui::vec2(point.x as f32, point.y as f32)) * scale;
+            }
+            let target = egui::Rect::from_center_size(rect.center() + self.pan, image_size * scale);
+            let painter = ui.painter().with_clip_rect(rect);
+            painter.image(
+                texture.id(),
+                target,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
+                egui::Color32::WHITE,
+            );
+            for (index, point) in ground_spawn_markers {
+                let color = ground_spawn_color(ground_spawns[index].kind);
+                let center = target.min + egui::vec2(point.x as f32, point.y as f32) * scale;
+                let diamond = vec![
+                    center + egui::vec2(0., -12.),
+                    center + egui::vec2(12., 0.),
+                    center + egui::vec2(0., 12.),
+                    center + egui::vec2(-12., 0.),
+                ];
+                for stroke in [
+                    egui::Stroke::new(5., egui::Color32::from_rgb(10, 20, 35)),
+                    egui::Stroke::new(2., color),
+                ] {
+                    painter.add(egui::Shape::closed_line(diamond.clone(), stroke));
+                }
+                ui.interact(
+                    egui::Rect::from_center_size(center, egui::vec2(28., 28.)).intersect(rect),
+                    ui.id().with(("exposed-ground-spawn", index)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(format!("{} location last seen {}s ago. Removed after two complete scans miss it; availability is unknown.",
+                    if ground_spawns[index].kind == crate::native::GroundSpawnKind::Exobyte { "Exobyte" } else { "Ground spawn" },
+                    now.saturating_duration_since(ground_spawns[index].last_seen).as_secs()));
+            }
+            if let Some(point) = marker {
+                painter.circle_filled(
+                    target.min + egui::vec2(point.x as f32, point.y as f32) * scale,
+                    6.,
+                    egui::Color32::YELLOW,
+                );
+            }
+        }
+    }
+    fn details_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        sample: Option<&LocationSample>,
+        gate: Option<MarkerGate>,
+    ) {
         ui.horizontal(|ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.catalog_path)
@@ -515,28 +665,6 @@ impl MapView {
                 self.update_current_context(sample, gate);
             }
         });
-        let now = Instant::now();
-        let current_index = self
-            .catalog
-            .as_ref()
-            .and_then(|catalog| current_map_index(catalog, sample, gate, now));
-        if !self.browse_other_maps
-            && !self.busy
-            && let Some(index) = current_index
-            && index != self.selected
-        {
-            self.selected = index;
-            self.asset(true);
-        }
-        let location_status = if self.browse_other_maps {
-            "Manual map browsing."
-        } else if current_index.is_none() {
-            "Location unavailable; live marker hidden."
-        } else {
-            "Current area follows live location."
-        };
-        ui.add(egui::Label::new(egui::RichText::new(location_status).small()).truncate())
-            .on_hover_text(location_status);
         let previous = self.selected;
         if let Some(catalog) = &self.catalog {
             ui.add_enabled_ui(self.browse_other_maps && !self.busy, |ui| {
@@ -580,6 +708,7 @@ impl MapView {
         if previous != self.selected {
             self.asset(false);
         }
+        let now = Instant::now();
         let entry = self
             .catalog
             .as_ref()
@@ -587,10 +716,6 @@ impl MapView {
         let marker = entry
             .filter(|_| self.texture.is_some())
             .and_then(|entry| projected_marker(entry, sample, gate, now));
-        let ground_spawn_markers = entry
-            .filter(|_| self.texture.is_some())
-            .map(|entry| projected_ground_spawns(entry, ground_spawns, gate))
-            .unwrap_or_default();
         let marker_status = if marker.is_some() {
             if entry.zip(gate).is_some_and(|(entry, g)| {
                 entry.effective_confidence(g.confidence, g.profile)
@@ -607,30 +732,6 @@ impl MapView {
             .on_hover_text(marker_status);
         ui.add(egui::Label::new(&self.status).truncate())
             .on_hover_text(&self.status);
-        ui.horizontal(|ui| {
-            if ui.button("-").clicked() {
-                self.zoom = (self.zoom / 1.25).max(0.25);
-            }
-            if ui.button("+").clicked() {
-                self.zoom = (self.zoom * 1.25).min(16.0);
-            }
-            if ui.button("Fit").clicked() {
-                self.zoom = 1.0;
-                self.pan = egui::Vec2::ZERO;
-                self.follow = false;
-            }
-            ui.add_enabled(
-                marker.is_some(),
-                egui::Checkbox::new(&mut self.follow, "Follow"),
-            );
-            if ui
-                .add_enabled(marker.is_some(), egui::Button::new("Recenter"))
-                .clicked()
-            {
-                self.pan = egui::Vec2::ZERO;
-                self.follow = true;
-            }
-        });
         ui.add(
             egui::Label::new(
                 egui::RichText::new("Diamonds: Cached spawn locations / Orange: Exobytes")
@@ -640,69 +741,6 @@ impl MapView {
             .truncate(),
         )
         .on_hover_text("Last-seen locations persist during scanning and are removed after two complete scans miss them. Collection availability is unknown.");
-        // ScrollArea has unbounded content height; use its visible clipping bounds.
-        // Leave room for source credits and the collapsed calibration footer.
-        let visible_height = (ui.clip_rect().bottom() - ui.cursor().top() - 90.0).max(160.0);
-        let size = egui::vec2(ui.available_width().max(1.0), visible_height);
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::drag());
-        ui.painter()
-            .rect_filled(rect, 0.0, egui::Color32::from_rgb(20, 25, 32));
-        if response.dragged() {
-            self.pan += response.drag_delta();
-            self.follow = false;
-        }
-        if response.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            self.zoom = (self.zoom * (scroll * 0.002).exp()).clamp(0.25, 16.0);
-        }
-        if let Some(texture) = &self.texture {
-            let image_size = texture.size_vec2();
-            let scale = (rect.width() / image_size.x).min(rect.height() / image_size.y) * self.zoom;
-            if self.follow
-                && let Some(point) = marker
-            {
-                self.pan = (image_size * 0.5 - egui::vec2(point.x as f32, point.y as f32)) * scale;
-            }
-            let target = egui::Rect::from_center_size(rect.center() + self.pan, image_size * scale);
-            let painter = ui.painter().with_clip_rect(rect);
-            painter.image(
-                texture.id(),
-                target,
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
-                egui::Color32::WHITE,
-            );
-            for (index, point) in ground_spawn_markers {
-                let color = ground_spawn_color(ground_spawns[index].kind);
-                let center = target.min + egui::vec2(point.x as f32, point.y as f32) * scale;
-                let diamond = vec![
-                    center + egui::vec2(0., -12.),
-                    center + egui::vec2(12., 0.),
-                    center + egui::vec2(0., 12.),
-                    center + egui::vec2(-12., 0.),
-                ];
-                for stroke in [
-                    egui::Stroke::new(5., egui::Color32::from_rgb(10, 20, 35)),
-                    egui::Stroke::new(2., color),
-                ] {
-                    painter.add(egui::Shape::closed_line(diamond.clone(), stroke));
-                }
-                ui.interact(
-                    egui::Rect::from_center_size(center, egui::vec2(28., 28.)).intersect(rect),
-                    ui.id().with(("exposed-ground-spawn", index)),
-                    egui::Sense::hover(),
-                )
-                .on_hover_text(format!("{} location last seen {}s ago. Removed after two complete scans miss it; availability is unknown.",
-                    if ground_spawns[index].kind == crate::native::GroundSpawnKind::Exobyte { "Exobyte" } else { "Ground spawn" },
-                    now.saturating_duration_since(ground_spawns[index].last_seen).as_secs()));
-            }
-            if let Some(point) = marker {
-                painter.circle_filled(
-                    target.min + egui::vec2(point.x as f32, point.y as f32) * scale,
-                    6.,
-                    egui::Color32::YELLOW,
-                );
-            }
-        }
         if let Some(entry) = entry {
             ui.small(format!(
                 "Source: {} | Credit: {}",
@@ -733,6 +771,10 @@ impl Drop for MapView {
         }
     }
 }
+fn map_canvas_size(width: f32, bottom: f32, top: f32) -> egui::Vec2 {
+    egui::vec2(width.max(1.0), (bottom - top).max(1.0))
+}
+
 fn projected_marker(
     entry: &MapEntry,
     sample: Option<&LocationSample>,
@@ -893,6 +935,16 @@ mod tests {
             calibration: None,
         }
     }
+    #[test]
+    fn canvas_fills_remaining_viewport_without_footer_reservation() {
+        assert_eq!(
+            map_canvas_size(800.0, 720.0, 80.0),
+            egui::vec2(800.0, 640.0)
+        );
+        assert_eq!(map_canvas_size(200.0, 100.0, 96.0), egui::vec2(200.0, 4.0));
+        assert_eq!(map_canvas_size(0.0, 100.0, 120.0), egui::vec2(1.0, 1.0));
+    }
+
     #[test]
     fn current_selection_requires_exact_fresh_unambiguous_session_context() {
         let now = Instant::now();

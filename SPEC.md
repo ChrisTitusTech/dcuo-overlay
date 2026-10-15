@@ -399,3 +399,10 @@ User refinement: remove a cached location only after two consecutive complete
 scans fail to detect it. Partial/interrupted scans do not count; a new detection
 resets the miss count. Native worker owns completed-scan evidence in native.rs;
 cache worker owns expiry tests and integration.
+
+## Map-focused presentation
+
+The Map tab dedicates most of the window to the map. Keep essential navigation
+and the ground-spawn toggle visible. Experimental evidence, scan status, map
+source metadata, import setup and calibration are available on demand in
+default-hidden Log and Map details windows, without resizing the map canvas.
