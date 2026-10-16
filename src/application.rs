@@ -310,6 +310,8 @@ struct Probe {
     preference_status: String,
     map: MapView,
     spawn_cache: SpawnCache,
+    character: crate::character_view::CharacterView,
+    feats: crate::feat_loader::Loader,
     initialized: bool,
     detected_map_source_for: Option<(i32, u64)>,
 }
@@ -369,6 +371,8 @@ impl Probe {
             preference_status: warning.unwrap_or_default(),
             map,
             spawn_cache: SpawnCache::default(),
+            character: crate::character_view::CharacterView::default(),
+            feats: crate::feat_loader::Loader::default(),
             initialized: false,
             detected_map_source_for: None,
         }
@@ -488,6 +492,9 @@ impl eframe::App for Probe {
             self.initialized = true;
         }
         self.controller.poll();
+        self.feats
+            .select(self.controller.view().api.as_ref().map(|r| r.id.as_str()));
+        self.feats.poll();
         self.spawn_cache.update(
             self.controller.view(),
             self.preferences.show_ground_spawns,
@@ -560,7 +567,7 @@ impl Probe {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::vertical().id_salt(match self.tab { Tab::Map => "map-page", Tab::Character => "character-page", Tab::Diagnostics => "diagnostics-page" }).show(ui, |ui| {
-                if self.tab != Tab::Map {
+                if self.tab == Tab::Diagnostics {
                     ui.heading(TITLE);
                     ui.label(egui::RichText::new("READ-ONLY VERIFICATION").color(egui::Color32::from_rgb(120, 195, 235)));
                 }
@@ -592,51 +599,19 @@ impl Probe {
                 ui.add_space(4.0);
                 match self.tab {
                     Tab::Character => {
-                        ui.heading("Experimental memory resources");
-                        ui.label("Read-only controlled-pawn chain observations. Current-character identity, resource meaning and this build-specific profile still require independent validation; these values are not API comparisons.");
-                        ui.label(&view.native_status);
-                        if let Some(sample) = &view.native {
-                            ui.label(format!("Memory sample age: {:.2}s", sample.observed_at.elapsed().as_secs_f64()));
-                            egui::Grid::new("experimental_resources").spacing([20.0, 8.0]).show(ui, |ui| {
-                                row(ui, "Health (experimental)", format!("{:.0} / {:.0}", sample.health, sample.max_health));
-                                row(ui, "Power (experimental)", format!("{:.0} / {:.0}", sample.power, sample.max_power));
-                            });
-                            let health = if sample.max_health > 0.0 { (sample.health / sample.max_health).clamp(0.0, 1.0) } else { 0.0 };
-                            let power = if sample.max_power > 0.0 { (sample.power / sample.max_power).clamp(0.0, 1.0) } else { 0.0 };
-                            ui.add(egui::ProgressBar::new(health).text("Experimental health"));
-                            ui.add(egui::ProgressBar::new(power).text("Experimental power"));
-                        } else { ui.label("No fresh experimental resource sample available."); }
-                        ui.separator();
-                        ui.heading("API character reference");
-                        ui.label("An exact-name lookup is a reference, not memory-verified current-character identity.");
-                        ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Exact character name").char_limit(64).desired_width(f32::INFINITY));
                         ui.horizontal_wrapped(|ui| {
-                            ui.label("World ID"); ui.add(egui::TextEdit::singleline(&mut self.world).desired_width(70.0).char_limit(10));
-                            if ui.add_enabled(!view.busy && !self.name.trim().is_empty(), egui::Button::new("Look up reference")).clicked() { self.controller.lookup_reference(&self.base, &self.name, &self.world); }
+                            ui.label("Character");
+                            ui.add(egui::TextEdit::singleline(&mut self.name).hint_text("Exact character name").char_limit(64).desired_width(200.0));
+                            ui.label("World ID");
+                            ui.add(egui::TextEdit::singleline(&mut self.world).desired_width(55.0).char_limit(10));
+                            if ui.add_enabled(!view.busy && !self.name.trim().is_empty(), egui::Button::new("Look up character")).clicked() {
+                                self.feats.select(None);
+                                self.controller.lookup_reference(&self.base, &self.name, &self.world);
+                            }
                         });
-                        ui.label(&view.api_status);
-                        if let Some(fetched) = view.api_fetched { ui.label(format!("Received {:.0}s ago / server cache freshness unknown", fetched.elapsed().as_secs_f64())); }
-                        if let Some(reference) = &view.api {
-                            egui::Grid::new("reference_stats").spacing([20.0, 8.0]).show(ui, |ui| {
-                                row(ui, "Reference name", &reference.name); row(ui, "Character ID", &reference.id);
-                                row(ui, "World ID", &reference.world_id);
-                                row(ui, "Power", optional(&reference.power)); row(ui, "Movement", optional(&reference.movement));
-                                row(ui, "Alignment", optional(&reference.alignment)); row(ui, "Combat rating", optional(&reference.combat_rating));
-                                row(ui, "Skill points", optional(&reference.skill_points)); row(ui, "Health (reference maximum)", optional(&reference.health));
-                                row(ui, "Power (reference maximum)", optional(&reference.power_max)); row(ui, "League", optional(&reference.league));
-                            });
-                            ui.small("Every field above comes from the API. Live health, power, location and character identity remain unverified.");
-                        }
-                        ui.add_space(16.0); ui.separator(); ui.heading("Experimental name-byte evidence");
-                        ui.label("A matching string can be cached or unrelated. It does not prove the current character.");
-                        if ui.add_enabled(view.connected && !view.busy && !view.paused && !self.name.trim().is_empty(), egui::Button::new("Scan next bounded step")).clicked() { self.controller.scan_name(&self.name); }
-                        if let Some(scan) = &view.scan {
-                            ui.label(&scan.status);
-                            let fraction = if scan.total_bytes > 0 { scan.bytes_scanned as f32 / scan.total_bytes as f32 } else { 0.0 };
-                            ui.add(egui::ProgressBar::new(fraction.clamp(0.0, 1.0)).text(format!("{} / {} bytes", scan.bytes_scanned, scan.total_bytes)));
-                            ui.label(format!("UTF-8 hits: {} / UTF-16 hits: {} / candidates: {}", scan.utf8_hits, scan.utf16_hits, scan.candidate_count));
-                            if let Some(name) = &scan.observed_name { ui.label(format!("Observed string: {name} (unverified)")); }
-                            if scan.done { ui.small("Bounded search complete. A supported character profile is still required."); }
+                        if view.api.is_none() { ui.label(&view.api_status); }
+                        if self.character.ui(ui, view.api.as_ref(), self.feats.progress.as_ref(), &self.feats.status) {
+                            self.feats.refresh();
                         }
                     }
                     Tab::Map => {
@@ -722,6 +697,31 @@ impl Probe {
             .default_width(560.0)
             .vscroll(true)
             .show(ui.ctx(), |ui| {
+                        ui.heading("Experimental memory resources");
+                        ui.label("Read-only controlled-pawn chain observations. Current-character identity, resource meaning and this build-specific profile still require independent validation; these values are not API comparisons.");
+                        ui.label(&view.native_status);
+                        if let Some(sample) = &view.native {
+                            ui.label(format!("Memory sample age: {:.2}s", sample.observed_at.elapsed().as_secs_f64()));
+                            egui::Grid::new("experimental_resources").spacing([20.0, 8.0]).show(ui, |ui| {
+                                row(ui, "Health (experimental)", format!("{:.0} / {:.0}", sample.health, sample.max_health));
+                                row(ui, "Power (experimental)", format!("{:.0} / {:.0}", sample.power, sample.max_power));
+                            });
+                            let health = if sample.max_health > 0.0 { (sample.health / sample.max_health).clamp(0.0, 1.0) } else { 0.0 };
+                            let power = if sample.max_power > 0.0 { (sample.power / sample.max_power).clamp(0.0, 1.0) } else { 0.0 };
+                            ui.add(egui::ProgressBar::new(health).text("Experimental health"));
+                            ui.add(egui::ProgressBar::new(power).text("Experimental power"));
+                        } else { ui.label("No fresh experimental resource sample available."); }
+                        ui.add_space(16.0); ui.separator(); ui.heading("Experimental name-byte evidence");
+                        ui.label("A matching string can be cached or unrelated. It does not prove the current character.");
+                        if ui.add_enabled(view.connected && !view.busy && !view.paused && !self.name.trim().is_empty(), egui::Button::new("Scan next bounded step")).clicked() { self.controller.scan_name(&self.name); }
+                        if let Some(scan) = &view.scan {
+                            ui.label(&scan.status);
+                            let fraction = if scan.total_bytes > 0 { scan.bytes_scanned as f32 / scan.total_bytes as f32 } else { 0.0 };
+                            ui.add(egui::ProgressBar::new(fraction.clamp(0.0, 1.0)).text(format!("{} / {} bytes", scan.bytes_scanned, scan.total_bytes)));
+                            ui.label(format!("UTF-8 hits: {} / UTF-16 hits: {} / candidates: {}", scan.utf8_hits, scan.utf16_hits, scan.candidate_count));
+                            if let Some(name) = &scan.observed_name { ui.label(format!("Observed string: {name} (unverified)")); }
+                            if scan.done { ui.small("Bounded search complete. A supported character profile is still required."); }
+                        }
                 ui.label("Current reader status and experimental evidence");
                 evidence_line(ui, &view.status, false);
                 map_evidence_header(ui, view);
@@ -889,6 +889,29 @@ mod tests {
 
     // Replay presentation only: no PID, name lookup, persisted preferences, or
     // process attachment. Backend generation/expiry tests live in session/maps.
+    #[test]
+    fn character_tab_keeps_connection_failure_visible_without_log() {
+        let mut app = Probe::with_preferences(
+            Options {
+                smoke: Some(Duration::from_secs(1)),
+                ..Options::default()
+            },
+            String::new(),
+            Settings::default(),
+            None,
+        );
+        let view = crate::session::View {
+            status: "Read access denied for selected process".into(),
+            ..Default::default()
+        };
+        let mut output =
+            egui::Context::default().run_ui(egui::RawInput::default(), |ui| app.draw(ui, &view));
+        assert!(!app.show_log);
+        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+            egui::epaint::Shape::Text(text) if text.galley.text() == view.status)));
+        output.textures_delta.clear();
+    }
+
     #[test]
     fn offline_presentation_replay_at_supported_scales() {
         let mut app = Probe::with_preferences(
