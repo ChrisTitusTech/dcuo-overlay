@@ -447,8 +447,12 @@ or an unambiguous exact title and reward; ambiguous or unsupported definitions
 remain unknown. Refresh only while Character is visible, on the existing session
 reader, with byte/time limits and no game calls or writes. Cooperatively read and
 publish fresh physics during longer feat scans so the physics freshness deadline
-continues to apply; do not retimestamp old coordinates. Discard expired or
-changed-session evidence. The live list is explicitly for the current game
+continues to apply; do not retimestamp old coordinates. Discard expired physics and
+changed-session evidence. Retain character feat knowledge separately from expiring
+physics samples: merge new observations without removing established rows during
+refresh gaps. Clear it on a known owner or connection change. Apply the selected
+cached API faction consistently to this checklist, explicitly as a faction filter
+and not as proof of live character identity. The live list is explicitly for the current game
 character and never combines statuses with a separately selected API character.
 Cache decoded definitions and confirmed character completions within the
 PID/build-bound reader. Reuse definitions while their archive signature is stable

@@ -607,13 +607,11 @@ impl Probe {
                             ui.label("World ID");
                             ui.add(egui::TextEdit::singleline(&mut self.world).desired_width(55.0).char_limit(10));
                             if ui.add_enabled(!view.busy && !self.name.trim().is_empty(), egui::Button::new("Look up character")).clicked() {
-                                self.feats.select(None);
                                 self.controller.lookup_reference(&self.base, &self.name, &self.world);
                             }
                         });
-                        if view.api.is_none() { ui.label(&view.api_status); }
-                        if let Some(sample) = &view.native && sample.feats.is_none() { ui.small(&sample.feats_status); }
-                        if self.character.ui(ui, view.api.as_ref(), self.feats.progress.as_ref(), &self.feats.status, view.native.as_ref().and_then(|sample| sample.feats.as_deref()).filter(|snapshot| snapshot.observed_at.elapsed().as_secs() < 15)) {
+                        evidence_line(ui, &view.api_status, true);
+                        if self.character.ui(ui, view.api.as_ref(), self.feats.progress.as_ref(), &self.feats.status, view.feats.as_deref()) {
                             self.feats.refresh();
                         }
                     }

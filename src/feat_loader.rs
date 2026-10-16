@@ -51,6 +51,7 @@ impl Loader {
     pub fn select(&mut self, id: Option<&str>) {
         if self.selected.as_deref() != id {
             self.selected = id.map(str::to_owned);
+            self.progress = None;
             self.refresh();
         }
     }
@@ -58,7 +59,12 @@ impl Loader {
         self.cancel.store(true, Ordering::Relaxed);
         self.cancel = Arc::new(AtomicBool::new(false));
         self.generation = self.generation.wrapping_add(1);
-        self.progress = None;
+        // A refresh replaces transport work, not proven same-character facts.
+        if self.progress.as_ref().is_some_and(|progress| {
+            Some(progress.character_id.as_str()) != self.selected.as_deref()
+        }) {
+            self.progress = None;
+        }
         self.pending = self.selected.as_ref().map(|id| Job {
             generation: self.generation,
             id: id.clone(),
@@ -76,18 +82,31 @@ impl Loader {
             return;
         }
         match result {
-            Ok(progress) if Some(progress.character_id.as_str()) == self.selected.as_deref() => {
+            Ok(mut progress)
+                if Some(progress.character_id.as_str()) == self.selected.as_deref() =>
+            {
+                if let Some(previous) = self
+                    .progress
+                    .as_ref()
+                    .filter(|previous| previous.character_id == progress.character_id)
+                {
+                    progress
+                        .completed
+                        .extend(previous.completed.iter().cloned());
+                }
                 self.status =
                     "Completion checked with Daybreak Census; source freshness unknown.".into();
                 self.progress = Some(progress);
             }
             Ok(_) => {
-                self.progress = None;
-                self.status = "Character changed; completion unknown.".into();
+                self.status = "Ignored completion response for another character.".into();
             }
             Err(error) => {
-                self.progress = None;
-                self.status = error;
+                self.status = if self.progress.is_some() {
+                    format!("{error} Showing the last completion result.")
+                } else {
+                    error
+                };
             }
         }
     }
@@ -142,10 +161,75 @@ mod tests {
         );
         assert!(loader.progress.is_some());
         loader.refresh();
-        assert!(loader.progress.is_none());
+        assert_eq!(loader.progress.as_ref().unwrap().character_id, "2");
         loader.accept(current, Err("late".into()));
         assert_eq!(loader.status, "Checking completed feats...");
         loader.select(None);
         assert!(loader.pending.is_none());
+        assert!(loader.progress.is_none());
+    }
+    fn progress(id: &str, completed: &[&str], received_at: std::time::Instant) -> Progress {
+        Progress {
+            character_id: id.into(),
+            completed: completed.iter().map(|id| (*id).into()).collect(),
+            received_at,
+        }
+    }
+    #[test]
+    fn same_character_refresh_and_error_preserve_prior_result_and_receipt() {
+        let mut loader = Loader::default();
+        loader.select(Some("1"));
+        let received = std::time::Instant::now();
+        loader.accept(loader.generation, Ok(progress("1", &["10"], received)));
+        let old_generation = loader.generation;
+        loader.refresh();
+        assert_eq!(loader.progress.as_ref().unwrap().received_at, received);
+        loader.accept(loader.generation, Err("Temporary failure.".into()));
+        assert_eq!(
+            loader.progress.as_ref().unwrap().completed,
+            ["10".to_owned()].into()
+        );
+        assert_eq!(loader.progress.as_ref().unwrap().received_at, received);
+        assert!(loader.status.contains("Showing the last completion result"));
+        loader.accept(old_generation, Ok(progress("1", &["99"], received)));
+        assert!(!loader.progress.as_ref().unwrap().completed.contains("99"));
+    }
+    #[test]
+    fn partial_refresh_unions_completions_and_uses_new_receipt() {
+        let mut loader = Loader::default();
+        loader.select(Some("1"));
+        let first = std::time::Instant::now();
+        let later = first + std::time::Duration::from_secs(1);
+        loader.accept(loader.generation, Ok(progress("1", &["10", "20"], first)));
+        loader.refresh();
+        loader.accept(loader.generation, Ok(progress("1", &["20", "30"], later)));
+        let current = loader.progress.as_ref().unwrap();
+        assert_eq!(
+            current.completed,
+            ["10".into(), "20".into(), "30".into()].into()
+        );
+        assert_eq!(current.received_at, later);
+        loader.refresh();
+        loader.accept(loader.generation, Ok(progress("1", &[], later)));
+        assert_eq!(loader.progress.as_ref().unwrap().completed.len(), 3);
+    }
+    #[test]
+    fn selected_identity_change_clears_immediately_and_rejects_stale_or_wrong_identity() {
+        let mut loader = Loader::default();
+        loader.select(Some("1"));
+        let received = std::time::Instant::now();
+        loader.accept(loader.generation, Ok(progress("1", &["10"], received)));
+        let stale = loader.generation;
+        loader.select(Some("2"));
+        assert!(loader.progress.is_none());
+        loader.accept(stale, Ok(progress("1", &["11"], received)));
+        assert!(loader.progress.is_none());
+        loader.accept(loader.generation, Ok(progress("2", &["20"], received)));
+        loader.accept(loader.generation, Ok(progress("1", &["10"], received)));
+        let current = loader.progress.as_ref().unwrap();
+        assert_eq!(current.character_id, "2");
+        assert_eq!(current.completed, ["20".into()].into());
+        loader.select(None);
+        assert!(loader.progress.is_none());
     }
 }

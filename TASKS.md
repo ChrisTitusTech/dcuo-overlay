@@ -1068,3 +1068,47 @@ independent review are being finalized before updating PR #17.
 Both managed-X11 smoke launches pass. Installed live UI retains the expected
 24 completed / 106 incomplete / 38 unknown catalog status counts and default
 filtering. Independent Codex review completed with no actionable regressions.
+
+## Stable character checklist (2026-10-16)
+
+User observed the checklist alternating between live and API counts during
+refreshes. Retained feat knowledge now lives independently of expiring physics
+samples. Same-owner successful snapshots merge observations and preserve confirmed
+completions and omitted rows; transient errors and missing snapshots leave the
+list intact. Known native owner changes and explicit session invalidation clear
+it. The UI uses retained knowledge with its last successful read age.
+
+The selected cached API faction filters both completion sources consistently,
+explicitly labeled as an API reference rather than verified live identity.
+Same-character reference refresh keeps existing details while pending/failed.
+API feat refresh likewise retains previous results and unions confirmed IDs;
+selection changes clear those API results and reject stale replies.
+
+Worker player_detection_review (gpt-6.1-sol) owned faction filtering and API
+completion retention with regression tests. Lead owned session/view integration.
+Local gates: 192 workspace tests pass (3 opt-in private-asset tests ignored),
+147 headless tests, formatting, strict Clippy on Rust 1.96/1.95 and debug/release
+builds. Final installed UI checks and independent review follow before publication.
+
+Installed live evidence retained 106 incomplete / 24 completed / 11 unknown with
+the cached Villain faction across refreshes, including a rejected mutable memory
+snapshot. Removed the conditional scan-error row that shifted the list; read age
+remains visible. All 12 installer checks and both X11 smoke launches pass.
+
+Independent review identified a native entity-binding change that can happen
+without changing Unreal ownership objects, plus hidden API refresh failure status.
+Propagated the independently checked native binding so retained knowledge clears
+before replacement scans, added a regression, and made API status occupy a stable
+line whether details are retained or not. Repeating affected gates and review.
+
+Re-review found the full physics ownership comparison also includes ordinary
+streaming-context changes. Feat retention now uses character object/class identity
+plus the independently read native entity binding; map ownership rules remain
+unchanged. Expanded the gap regression with a streaming change. All affected
+gates pass: 193 workspace / 148 headless tests, both strict lint versions, format
+and builds. Final independent re-review follows.
+
+Final independent Codex review found no actionable regressions. The installed
+final binary matches the release build; lead live UI validation shows the stable
+Villain-filtered list and read-age/status lines. Private screenshots retained
+locally. The independent reviewer did not operate the game.

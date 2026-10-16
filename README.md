@@ -24,7 +24,9 @@ in-game Feats menu open. Definitions and confirmed completions are cached for th
 connected character session, including across tab switches. Completed feats never
 revert to incomplete; refreshes check unfinished progress and new completions.
 Restarting or reconnecting rebuilds this memory cache. API character details remain
-a separate reference.
+a separate reference. The checklist retains previously read rows during scan gaps
+and merges new findings. The cached API character faction filters both API and
+memory views consistently; it does not verify live identity.
 Missions are ordered by Normal-entry CR (level-30 missions first); each documented
 feat shows its reward points. Completed feats are hidden unless Show completed is
 checked. Search matches mission names, feat names and requirements. Character

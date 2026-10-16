@@ -91,9 +91,14 @@ impl CharacterView {
         }
         if let Some(live) = live {
             ui.label("Completion from game memory for the current character.");
-            ui.small("Updates every 8 seconds while this tab is open.");
+            ui.small("New findings update this list; previously read feats stay visible.");
+            if let Some(alignment) = reference.and_then(|r| r.alignment.as_deref()) {
+                ui.small(format!(
+                    "Faction filter: {alignment} (cached API reference)."
+                ));
+            }
             ui.small(format!(
-                "Read {}s ago. Account-only completions do not count as completed here.",
+                "Last successful read {}s ago. Account-only completions do not count as completed here.",
                 live.observed_at.elapsed().as_secs()
             ));
         } else {

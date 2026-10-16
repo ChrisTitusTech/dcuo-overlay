@@ -46,6 +46,8 @@ pub struct View {
     pub api_fetched: Option<Instant>,
     pub native: Option<native::Sample>,
     pub native_status: String,
+    /// Retained character knowledge, independent of short-lived physics samples.
+    pub feats: Option<Arc<crate::feat_memory::Snapshot>>,
     pub location_generation: u64,
 }
 
@@ -64,10 +66,46 @@ impl Default for View {
             api_status: "No reference requested".into(),
             api_fetched: None,
             native: None,
+            feats: None,
             native_status: "Experimental physics reader not connected".into(),
             location_generation: 0,
         }
     }
+}
+
+// Merge only proven observations. A transient missing sample cannot remove rows.
+fn retain_feats(
+    saved: &mut Option<Arc<crate::feat_memory::Snapshot>>,
+    incoming: &Arc<crate::feat_memory::Snapshot>,
+) {
+    let Some(old) = saved
+        .as_ref()
+        .filter(|old| old.entity == incoming.entity && old.entity_id == incoming.entity_id)
+    else {
+        *saved = Some(incoming.clone());
+        return;
+    };
+    if old.observed_at >= incoming.observed_at {
+        return;
+    }
+    let mut merged = (**incoming).clone();
+    let mut entries: std::collections::BTreeMap<_, _> = old
+        .entries
+        .iter()
+        .map(|entry| (entry.id, entry.clone()))
+        .collect();
+    for entry in &incoming.entries {
+        let mut entry = entry.clone();
+        if let Some(previous) = entries.get(&entry.id) {
+            entry.completed |= previous.completed;
+        }
+        entries.insert(entry.id, entry);
+    }
+    if entries.len() > 8192 {
+        return;
+    }
+    merged.entries = entries.into_values().collect();
+    *saved = Some(Arc::new(merged));
 }
 
 enum Operation {
@@ -255,6 +293,7 @@ impl Controller {
         self.view.busy = false;
         self.view.native = None;
         self.last_native_owner = None;
+        self.view.feats = None;
         self.view.location_generation = self.view.location_generation.wrapping_add(1);
     }
     fn queue(&mut self, operation: Operation) -> bool {
@@ -371,8 +410,12 @@ impl Controller {
     }
     pub fn lookup_reference(&mut self, base: &str, name: &str, world: &str) {
         self.api_request = self.api_request.wrapping_add(1);
-        self.view.api = None;
-        self.view.api_fetched = None;
+        if !self.view.api.as_ref().is_some_and(|old| {
+            old.name.eq_ignore_ascii_case(name.trim()) && old.world_id == world.trim()
+        }) {
+            self.view.api = None;
+            self.view.api_fetched = None;
+        }
         self.view.api_status = "Fetching exact API reference...".into();
         self.api_pending = self.queue(Operation::Lookup {
             base: base.into(),
@@ -506,6 +549,22 @@ impl Controller {
                                 self.view.location_generation =
                                     self.view.location_generation.wrapping_add(1);
                                 self.view.scan = None;
+                            }
+                            if self
+                                .last_native_owner
+                                .as_ref()
+                                .is_some_and(|old| !old.same_character_owner(&sample))
+                                || sample.feats_binding.is_some_and(|binding| {
+                                    self.view
+                                        .feats
+                                        .as_ref()
+                                        .is_some_and(|old| (old.entity, old.entity_id) != binding)
+                                })
+                            {
+                                self.view.feats = None;
+                            }
+                            if let Some(feats) = &sample.feats {
+                                retain_feats(&mut self.view.feats, feats);
                             }
                             self.last_native_owner = Some(sample.clone());
                             self.view.native = Some(sample);
@@ -1393,6 +1452,103 @@ mod tests {
             },
             events,
         )
+    }
+    fn feat_snapshot(id: u32, completed: bool) -> Arc<crate::feat_memory::Snapshot> {
+        Arc::new(crate::feat_memory::Snapshot {
+            entity: 0x10000,
+            entity_id: 77,
+            observed_at: Instant::now(),
+            entries: vec![crate::feat_memory::Entry {
+                id,
+                title: format!("Synthetic {id}"),
+                description: "Goal".into(),
+                points: 10,
+                completed,
+                eligible: true,
+            }],
+        })
+    }
+    #[test]
+    fn character_knowledge_survives_physics_gaps_but_not_owner_or_session_changes() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        let mut first = native::Sample::synthetic(1);
+        first.feats = Some(feat_snapshot(1, true));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(first)),
+            })
+            .unwrap();
+        controller.poll();
+        let saved = controller.view.feats.clone().unwrap();
+        for result in [
+            Err("Transient scan failure".into()),
+            Ok(native::Sample::synthetic(1)),
+            Ok(native::Sample::synthetic(1).with_changed_streaming()),
+        ] {
+            events
+                .send(Event {
+                    generation: 1,
+                    update: Update::Native(result),
+                })
+                .unwrap();
+            controller.poll();
+            assert!(Arc::ptr_eq(&saved, controller.view.feats.as_ref().unwrap()));
+        }
+        controller.view.native.as_mut().unwrap().observed_at =
+            Instant::now() - Duration::from_secs(2);
+        controller.poll();
+        assert!(controller.view.native.is_none());
+        assert!(controller.view.feats.is_some());
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(native::Sample::synthetic(2))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.feats.is_none());
+        controller.view.feats = Some(saved);
+        controller.disconnect();
+        assert!(controller.view.feats.is_none());
+    }
+    #[test]
+    fn native_entity_change_clears_retained_feats_before_replacement_scan() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.last_native_owner = Some(native::Sample::synthetic(1));
+        controller.view.feats = Some(feat_snapshot(1, true));
+        let mut changed = native::Sample::synthetic(1);
+        changed.feats_binding = Some((0x10000, 88));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(changed)),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.feats.is_none());
+    }
+    #[test]
+    fn new_findings_merge_without_removing_rows_or_completed_facts() {
+        let mut saved = Some(feat_snapshot(1, true));
+        retain_feats(&mut saved, &feat_snapshot(2, false));
+        retain_feats(&mut saved, &feat_snapshot(1, false));
+        let entries = &saved.as_ref().unwrap().entries;
+        assert_eq!(entries.len(), 2);
+        assert!(
+            entries
+                .iter()
+                .find(|entry| entry.id == 1)
+                .unwrap()
+                .completed
+        );
+        let mut changed = (*feat_snapshot(3, false)).clone();
+        changed.entity_id = 88;
+        retain_feats(&mut saved, &Arc::new(changed));
+        assert_eq!(saved.as_ref().unwrap().entries.len(), 1);
+        assert_eq!(saved.unwrap().entries[0].id, 3);
     }
     #[test]
     fn fresh_progress_during_feat_scan_preserves_location_generation() {
