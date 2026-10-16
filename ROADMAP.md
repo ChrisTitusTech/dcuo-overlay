@@ -317,3 +317,8 @@ player_detection_review worker owns the bounded snapshot parser and synthetic
 mutation tests. No worker operates the game. User-provided completed/incomplete
 examples are the live gate. Unknown/ambiguous definitions and remaining catalog
 coverage gaps stay visible; no exhaustive coverage claim follows this phase.
+
+Cache follow-up: player_detection_review owns the bounded session cache and
+synthetic reuse/invalidation tests; lead owns native-reader integration, live
+cold/warm measurements and final gates. Confirmed completions are monotonic for
+the same native owner. No persistent native pointers or cross-character reuse.

@@ -1040,3 +1040,31 @@ independent Codex review found no actionable regressions across tracked changes
 and new modules. Lead live validation covers installed behavior; the reviewer did
 not independently operate the game. The installed final build retains the verified
 states and default filtering across refreshes.
+
+### Feat cache follow-up (2026-10-16)
+
+Added a bounded cache owned by the existing PID/build-bound native reader. It
+retains decoded definitions and proven character completions across tab switches.
+Confirmed completions never downgrade for the same owner. Unchanged completed
+rows and serialized definition payloads are not reread; active rows and cheap
+owner/archive/tree signatures remain validated. New completion trees are read and
+unioned with proven facts. Unsupported definition IDs are remembered to avoid
+repeated failed decoding. Cache changes publish only after stable rechecks; owner
+changes rebuild it and a shrinking completed tree fails closed. No native pointer
+or personal completion data is persisted across reconnects/app restarts.
+
+The gpt-6.1-sol parser worker added six synthetic cache regressions covering hot
+read avoidance, new completions, monotonic status, source/owner invalidation and
+failed-refresh rollback. Lead integrated the cache and measured the same live
+character at 1.52 seconds cold and 0.59 seconds warm (61% lower elapsed time),
+with identical catalog statuses and all confirmed completions retained across a
+tab toggle. Both user-confirmed example states remained correct.
+
+Local gates: 185 workspace tests pass (3 opt-in private asset checks ignored),
+140 headless tests, strict Clippy on Rust 1.96 and 1.95, formatting, workspace and
+release builds, and 12 installer checks. Managed-X11 smoke, installed UI and
+independent review are being finalized before updating PR #17.
+
+Both managed-X11 smoke launches pass. Installed live UI retains the expected
+24 completed / 106 incomplete / 38 unknown catalog status counts and default
+filtering. Independent Codex review completed with no actionable regressions.

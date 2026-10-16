@@ -3,6 +3,7 @@
 use crate::feat_memory_codec;
 use std::{
     collections::{BTreeMap, HashSet},
+    sync::Arc,
     time::Instant,
 };
 
@@ -25,6 +26,65 @@ pub struct Entry {
     pub points: u32,
     pub completed: bool,
     pub eligible: bool,
+}
+/// Session-only cache. The owner must discard this with its PID/build-bound reader.
+#[derive(Default)]
+pub struct Cache {
+    state: Option<CacheState>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Binding {
+    base: usize,
+    manager: usize,
+    entity: usize,
+    entity_id: u64,
+    component: usize,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RowSignature {
+    tree: usize,
+    count: usize,
+    nodes: usize,
+    root: u32,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ArchiveSignature {
+    type_root: usize,
+    record: usize,
+    vtable: usize,
+    total: usize,
+    flags: [u8; 3],
+    first_capacity: u32,
+    first_len: u32,
+    first_links: [u8; 24],
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DefinitionSignature {
+    root: usize,
+    archive: ArchiveSignature,
+}
+#[derive(Clone)]
+struct CacheState {
+    binding: Binding,
+    signature: Option<DefinitionSignature>,
+    definitions: BTreeMap<u32, Arc<feat_memory_codec::Definition>>,
+    covered: HashSet<u32>,
+    completed_signature: Option<RowSignature>,
+    completed_rows: BTreeMap<u32, (bool, bool)>,
+    proven_completed: BTreeMap<u32, bool>,
+}
+impl CacheState {
+    fn new(binding: Binding) -> Self {
+        Self {
+            binding,
+            signature: None,
+            definitions: BTreeMap::new(),
+            covered: HashSet::new(),
+            completed_signature: None,
+            completed_rows: BTreeMap::new(),
+            proven_completed: BTreeMap::new(),
+        }
+    }
 }
 fn add(address: usize, offset: usize) -> Result<usize, String> {
     address
@@ -128,14 +188,28 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         }
         Err("Feat component ancestry bound exceeded".into())
     }
-    fn rows(&mut self, tree: usize, rows: &mut BTreeMap<u32, (bool, bool)>) -> Result<(), String> {
+    fn row_signature(&mut self, tree: usize) -> Result<RowSignature, String> {
         let count = d(&self.bytes(add(tree, 0x1c)?, 4)?, 0) as usize;
         if count == 0 || count > MAX_ROWS + 1 {
             return Err("Invalid feat row count".into());
         }
         let header = self.bytes(add(tree, 0x24)?, 12)?;
-        let nodes = q(&header, 0)?;
-        let mut todo = vec![d(&header, 8)];
+        Ok(RowSignature {
+            tree,
+            count,
+            nodes: q(&header, 0)?,
+            root: d(&header, 8),
+        })
+    }
+    fn rows(
+        &mut self,
+        signature: &RowSignature,
+        rows: &mut BTreeMap<u32, (bool, bool)>,
+    ) -> Result<(), String> {
+        let RowSignature {
+            count, nodes, root, ..
+        } = *signature;
+        let mut todo = vec![root];
         let mut seen = HashSet::new();
         while let Some(index) = todo.pop() {
             if index == 0 {
@@ -202,13 +276,14 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         }
         Ok(definitions)
     }
-    fn archive(
+    fn archive_signature(
         &mut self,
         cache: usize,
         token: usize,
         expected_vtable: usize,
-    ) -> Result<(Vec<u8>, bool), String> {
-        let mut node = q(&self.bytes(add(cache, 0x70)?, 8)?, 0)?;
+    ) -> Result<ArchiveSignature, String> {
+        let type_root = q(&self.bytes(add(cache, 0x70)?, 8)?, 0)?;
+        let mut node = type_root;
         let mut seen = HashSet::new();
         let record = loop {
             pointer(node)?;
@@ -231,9 +306,28 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         if total == 0 || total > MAX_ARCHIVE {
             return Err("Feat archive exceeds byte bound".into());
         }
-        let flags = self.bytes(add(archive, 0xd4)?, 3)?;
-        let big_endian = flags[0] != 0 && flags[2] == 0;
-        let mut block = add(archive, 8)?;
+        let flags = self
+            .bytes(add(archive, 0xd4)?, 3)?
+            .try_into()
+            .map_err(|_| "Short archive flags")?;
+        let first = add(archive, 8)?;
+        Ok(ArchiveSignature {
+            type_root,
+            record,
+            vtable: expected_vtable,
+            total,
+            flags,
+            first_capacity: d(&self.bytes(add(first, 8)?, 4)?, 0),
+            first_len: d(&self.bytes(add(first, 0x10)?, 4)?, 0),
+            first_links: self
+                .bytes(add(first, 0x9c)?, 24)?
+                .try_into()
+                .map_err(|_| "Short archive links")?,
+        })
+    }
+    fn archive(&mut self, signature: &ArchiveSignature) -> Result<Vec<u8>, String> {
+        let total = signature.total;
+        let mut block = add(signature.record, 16)?;
         let mut previous = 0;
         let mut seen = HashSet::new();
         let mut bytes = Vec::with_capacity(total);
@@ -269,7 +363,7 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         if bytes.len() != total {
             return Err("Incomplete feat archive".into());
         }
-        Ok((bytes, big_endian))
+        Ok(bytes)
     }
 }
 /// Read only through `read`; unsupported individual serialized prefixes stay absent.
@@ -277,6 +371,16 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
 pub fn read(
     base: usize,
     pawn: usize,
+    read: impl FnMut(usize, usize) -> Result<Vec<u8>, String>,
+) -> Result<Snapshot, String> {
+    read_cached(base, pawn, &mut Cache::default(), read)
+}
+/// Reuse static definitions and monotonic character completions within one native owner.
+/// No cache changes are published until every dynamic and cold-source proof rechecks.
+pub fn read_cached(
+    base: usize,
+    pawn: usize,
+    cache: &mut Cache,
     read: impl FnMut(usize, usize) -> Result<Vec<u8>, String>,
 ) -> Result<Snapshot, String> {
     pointer(base)?;
@@ -299,26 +403,67 @@ pub fn read(
             .map_err(|_| "Short feat entity ID")?,
     );
     let component = reader.component(entity)?;
+    let binding = Binding {
+        base,
+        manager,
+        entity,
+        entity_id,
+        component,
+    };
+    let mut staged = cache
+        .state
+        .as_ref()
+        .filter(|state| state.binding == binding)
+        .cloned()
+        .unwrap_or_else(|| CacheState::new(binding));
     let trees = reader.bytes(add(component, 0x5c)?, 16)?;
+    let active = reader.row_signature(pointer(q(&trees, 0)?)?)?;
+    let completed = reader.row_signature(pointer(q(&trees, 8)?)?)?;
+    if staged
+        .completed_signature
+        .as_ref()
+        .is_some_and(|old| completed.count < old.count)
+    {
+        return Err("Completed feat count decreased; owner context must be re-established".into());
+    }
     let mut rows = BTreeMap::new();
-    reader.rows(pointer(q(&trees, 0)?)?, &mut rows)?;
-    reader.rows(pointer(q(&trees, 8)?)?, &mut rows)?;
-    let mut entries = Vec::new();
+    reader.rows(&active, &mut rows)?;
+    if staged.completed_signature.as_ref() != Some(&completed) {
+        let mut refreshed = BTreeMap::new();
+        reader.rows(&completed, &mut refreshed)?;
+        staged.completed_rows = refreshed;
+        staged.completed_signature = Some(completed);
+    }
+    for (&id, &status) in &staged.completed_rows {
+        if rows.insert(id, status).is_some() {
+            return Err("Duplicate active/completed feat ID".into());
+        }
+    }
+    for (&id, &(done, eligible)) in &rows {
+        if done {
+            staged.proven_completed.insert(id, eligible);
+        }
+    }
+    for (&id, &eligible) in &staged.proven_completed {
+        rows.entry(id)
+            .and_modify(|status| status.0 = true)
+            .or_insert((true, eligible));
+    }
+    if rows.len() > MAX_ROWS {
+        return Err("Cached feat row bound exceeded".into());
+    }
     if !rows.is_empty() {
-        let cache = add(manager, 0x217c)?;
+        let source = add(manager, 0x217c)?;
         let token = add(base, 0x2153450)?;
-        let definitions = reader.definitions(cache, token)?;
-        let selected: Vec<_> = rows
-            .iter()
-            .filter_map(|(&id, &status)| {
-                definitions
-                    .get(&id)
-                    .filter(|&&offset| offset != u32::MAX)
-                    .map(|&offset| (id, status, offset as usize))
-            })
-            .collect();
-        if !selected.is_empty() {
-            let (archive, big_endian) = reader.archive(cache, token, add(base, 0x1d94a68)?)?;
+        let signature = DefinitionSignature {
+            root: q(&reader.bytes(add(source, 0x50)?, 8)?, 0)?,
+            archive: reader.archive_signature(source, token, add(base, 0x1d94a68)?)?,
+        };
+        if staged.signature.as_ref() != Some(&signature)
+            || rows.keys().any(|id| !staged.covered.contains(id))
+        {
+            let definitions = reader.definitions(source, token)?;
+            let archive = reader.archive(&signature.archive)?;
             let mut offsets: Vec<_> = definitions
                 .values()
                 .filter(|&&n| n != u32::MAX)
@@ -329,7 +474,13 @@ pub fn read(
             if offsets.iter().any(|&offset| offset >= archive.len()) {
                 return Err("Feat definition offset outside archive".into());
             }
-            for (id, (completed, eligible), offset) in selected {
+            let big_endian = signature.archive.flags[0] != 0 && signature.archive.flags[2] == 0;
+            let mut decoded = BTreeMap::new();
+            for (&id, &offset) in &definitions {
+                if offset == u32::MAX {
+                    continue;
+                }
+                let offset = offset as usize;
                 let end = offsets
                     .get(offsets.partition_point(|&next| next <= offset))
                     .copied()
@@ -339,20 +490,34 @@ pub fn read(
                     if definition.id != id {
                         return Err("Feat serialized ID differs from lookup key".into());
                     }
-                    entries.push(Entry {
-                        id,
-                        title: definition.title,
-                        description: definition.description,
-                        points: definition.points,
-                        completed,
-                        eligible,
-                    });
+                    decoded.insert(id, Arc::new(definition));
                 }
             }
+            staged.definitions = decoded;
+            staged.covered = definitions
+                .keys()
+                .copied()
+                .chain(rows.keys().copied())
+                .collect();
+            staged.signature = Some(signature);
         }
     }
+    let entries = rows
+        .iter()
+        .filter_map(|(&id, &(completed, eligible))| {
+            staged.definitions.get(&id).map(|definition| Entry {
+                id,
+                title: definition.title.clone(),
+                description: definition.description.clone(),
+                points: definition.points,
+                completed,
+                eligible,
+            })
+        })
+        .collect();
     let observed_at = Instant::now();
     reader.recheck()?;
+    cache.state = Some(staged);
     Ok(Snapshot {
         entity,
         entity_id,
@@ -379,7 +544,7 @@ mod tests {
     const DEFINITION: usize = 0x3900_0000;
     const TYPE: usize = 0x4000_0000;
     const ARCHIVE_DATA: usize = 0x4100_0000;
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct Memory(HashMap<usize, u8>);
     impl Memory {
         fn put(&mut self, address: usize, bytes: &[u8]) {
@@ -447,6 +612,236 @@ mod tests {
         memory.q(block + 0x9c, ARCHIVE_DATA);
         memory.put(ARCHIVE_DATA, &prefix);
         memory
+    }
+    fn two_feats() -> Memory {
+        let mut memory = fixture();
+        memory.d(ROW + 0x18, 0);
+        let completed_nodes = ROW_NODES + 0x1000;
+        let completed_row = ROW + 0x1000;
+        memory.d(COMPLETED + 0x1c, 2);
+        memory.q(COMPLETED + 0x24, completed_nodes);
+        memory.d(COMPLETED + 0x2c, 1);
+        memory.q(completed_nodes + 32 + 24, completed_row);
+        memory.d(completed_row + 0x10, 124);
+        memory.d(completed_row + 0x18, 1);
+        memory.put(completed_row + 0x1d, &[1]);
+        let len = d(&memory.read(TYPE + 8 + 0xd0, 4).unwrap(), 0) as usize;
+        let mut prefix = memory.read(ARCHIVE_DATA, len).unwrap();
+        prefix[..4].copy_from_slice(&124u32.to_le_bytes());
+        memory.put(ARCHIVE_DATA + len, &prefix);
+        memory.q(DEFINITION + 0x68, DEFINITION + 0x100);
+        memory.q(DEFINITION + 0x100 + 8, BASE + 0x2153450);
+        memory.d(DEFINITION + 0x100 + 0x50, 124);
+        memory.d(DEFINITION + 0x100 + 0x78, len as u32);
+        memory.d(TYPE + 8 + 0xd0, (len * 2) as u32);
+        memory.d(TYPE + 16 + 8, (len * 2 - 1) as u32);
+        memory.d(TYPE + 16 + 0x10, (len * 2) as u32);
+        memory
+    }
+    #[test]
+    fn hot_cache_skips_static_sources_and_completed_rows_but_reads_active_rows() {
+        let mut memory = two_feats();
+        let mut cache = Cache::default();
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        memory.put(ROW + 0x1c, &[1]);
+        let mut active_reads = 0;
+        let snapshot = read_cached(BASE, PAWN, &mut cache, |a, n| {
+            assert!(a != DEFINITION && a != DEFINITION + 0x100);
+            assert!(!(ARCHIVE_DATA..ARCHIVE_DATA + 4096).contains(&a));
+            assert!(a != ROW_NODES + 0x1000 + 32 && a != ROW + 0x1000 + 0x10);
+            if a == ROW + 0x10 {
+                active_reads += 1;
+            }
+            memory.read(a, n)
+        })
+        .unwrap();
+        assert_eq!(active_reads, 2);
+        assert!(
+            !snapshot
+                .entries
+                .iter()
+                .find(|entry| entry.id == 123)
+                .unwrap()
+                .eligible
+        );
+        assert!(
+            snapshot
+                .entries
+                .iter()
+                .find(|entry| entry.id == 124)
+                .unwrap()
+                .completed
+        );
+    }
+    #[test]
+    fn new_completions_union_without_downgrade_and_count_decrease_rejects() {
+        let mut memory = two_feats();
+        let mut cache = Cache::default();
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        memory.d(ACTIVE + 0x1c, 1);
+        memory.d(ACTIVE + 0x2c, 0);
+        memory.d(COMPLETED + 0x1c, 3);
+        memory.d(ROW_NODES + 0x1000 + 32 + 8, 2);
+        memory.q(ROW_NODES + 0x1000 + 64 + 24, ROW);
+        memory.d(ROW + 0x18, 1);
+        memory.d(ROW + 0x1000 + 0x18, 0);
+        memory.put(ROW + 0x1000 + 0x44, &[1]);
+        let snapshot = read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        assert_eq!(snapshot.entries.len(), 2);
+        assert!(snapshot.entries.iter().all(|entry| entry.completed));
+        memory.d(COMPLETED + 0x1c, 2);
+        assert!(read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).is_err());
+        assert_eq!(
+            cache
+                .state
+                .as_ref()
+                .unwrap()
+                .completed_signature
+                .as_ref()
+                .unwrap()
+                .count,
+            3
+        );
+    }
+    #[test]
+    fn owner_and_archive_signature_changes_refresh_static_definitions() {
+        let mut memory = fixture();
+        let mut cache = Cache::default();
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        memory.q(PAWN + 0x68, 88);
+        memory.d(ROW + 0x18, 0);
+        let mut definition_reads = 0;
+        let snapshot = read_cached(BASE, PAWN, &mut cache, |a, n| {
+            if a == DEFINITION {
+                definition_reads += 1;
+            }
+            memory.read(a, n)
+        })
+        .unwrap();
+        assert_eq!(definition_reads, 2);
+        assert_eq!(snapshot.entity_id, 88);
+        assert!(!snapshot.entries[0].completed);
+        let len = d(&memory.read(TYPE + 8 + 0xd0, 4).unwrap(), 0) as usize;
+        let mut prefix = memory.read(ARCHIVE_DATA, len).unwrap();
+        prefix[20] = b'X';
+        memory.put(ARCHIVE_DATA + 0x1000, &prefix);
+        memory.q(TYPE + 16 + 0x9c, ARCHIVE_DATA + 0x1000);
+        let snapshot = read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        assert_eq!(snapshot.entries[0].title, "Xynthetic feat");
+    }
+    #[test]
+    fn unsupported_and_absent_ids_are_covered_without_repeated_cold_reads() {
+        let mut memory = fixture();
+        let mut cache = Cache::default();
+        memory.put(ARCHIVE_DATA + 19, &[0xff]);
+        assert!(
+            read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n))
+                .unwrap()
+                .entries
+                .is_empty()
+        );
+        read_cached(BASE, PAWN, &mut cache, |a, n| {
+            assert!(a != DEFINITION && a != ARCHIVE_DATA);
+            memory.read(a, n)
+        })
+        .unwrap();
+        memory.d(ROW + 0x10, 999);
+        let mut definition_reads = 0;
+        read_cached(BASE, PAWN, &mut cache, |a, n| {
+            if a == DEFINITION {
+                definition_reads += 1;
+            }
+            memory.read(a, n)
+        })
+        .unwrap();
+        assert_eq!(definition_reads, 2);
+        read_cached(BASE, PAWN, &mut cache, |a, n| {
+            assert!(a != DEFINITION && a != ARCHIVE_DATA);
+            memory.read(a, n)
+        })
+        .unwrap();
+    }
+    #[test]
+    fn failed_hot_and_cold_refreshes_never_publish_staged_cache_state() {
+        let memory = fixture();
+        let mut cache = Cache::default();
+        assert!(
+            read_cached(BASE, PAWN, &mut cache, |a, n| {
+                if a == ARCHIVE_DATA {
+                    return Err("Transient".into());
+                }
+                memory.read(a, n)
+            })
+            .is_err()
+        );
+        assert!(cache.state.is_none());
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        let old = cache.state.as_ref().unwrap().definitions[&123].clone();
+        let mut changed = memory.clone();
+        changed.q(PAWN + 0x68, 88);
+        assert!(
+            read_cached(BASE, PAWN, &mut cache, |a, n| {
+                if a == ARCHIVE_DATA {
+                    return Err("Transient".into());
+                }
+                changed.read(a, n)
+            })
+            .is_err()
+        );
+        assert_eq!(cache.state.as_ref().unwrap().binding.entity_id, 77);
+        assert!(Arc::ptr_eq(
+            &old,
+            &cache.state.as_ref().unwrap().definitions[&123]
+        ));
+        let mut reads = 0;
+        assert!(
+            read_cached(BASE, PAWN, &mut cache, |a, n| {
+                let mut bytes = memory.read(a, n)?;
+                if a == ROW + 0x10 {
+                    reads += 1;
+                    if reads > 1 {
+                        bytes[8] ^= 1;
+                    }
+                }
+                Ok(bytes)
+            })
+            .is_err()
+        );
+        assert!(Arc::ptr_eq(
+            &old,
+            &cache.state.as_ref().unwrap().definitions[&123]
+        ));
+    }
+    #[test]
+    fn failed_new_completion_does_not_poison_monotonic_facts() {
+        let mut memory = fixture();
+        memory.d(ROW + 0x18, 0);
+        let mut cache = Cache::default();
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        let mut completed = memory.clone();
+        completed.d(ROW + 0x18, 1);
+        let mut reads = 0;
+        assert!(
+            read_cached(BASE, PAWN, &mut cache, |a, n| {
+                if a == ROW + 0x10 {
+                    reads += 1;
+                    if reads == 2 {
+                        return Err("Transient status recheck".into());
+                    }
+                }
+                completed.read(a, n)
+            })
+            .is_err()
+        );
+        assert!(cache.state.as_ref().unwrap().proven_completed.is_empty());
+        let snapshot = read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        assert!(!snapshot.entries[0].completed);
+        memory.d(ROW + 0x18, 1);
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        memory.d(ROW + 0x18, 0);
+        memory.put(ROW + 0x44, &[1]);
+        let snapshot = read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        assert!(snapshot.entries[0].completed);
     }
     #[test]
     fn matched_native_snapshot_keeps_character_completion_and_eligibility() {

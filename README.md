@@ -20,7 +20,11 @@ character name/world to load API completion data, then use Refresh feats when
 needed. With the supported game connected, the tab automatically uses live
 completion for the current in-game character and refreshes about every eight
 seconds while visible. It reads the client's feat definitions without needing the
-in-game Feats menu open. API character details remain a separate reference.
+in-game Feats menu open. Definitions and confirmed completions are cached for the
+connected character session, including across tab switches. Completed feats never
+revert to incomplete; refreshes check unfinished progress and new completions.
+Restarting or reconnecting rebuilds this memory cache. API character details remain
+a separate reference.
 Missions are ordered by Normal-entry CR (level-30 missions first); each documented
 feat shows its reward points. Completed feats are hidden unless Show completed is
 checked. Search matches mission names, feat names and requirements. Character

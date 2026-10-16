@@ -450,6 +450,13 @@ publish fresh physics during longer feat scans so the physics freshness deadline
 continues to apply; do not retimestamp old coordinates. Discard expired or
 changed-session evidence. The live list is explicitly for the current game
 character and never combines statuses with a separately selected API character.
+Cache decoded definitions and confirmed character completions within the
+PID/build-bound reader. Reuse definitions while their archive signature is stable
+and skip completed-row traversal while its tree signature is unchanged. Retain
+confirmed completions monotonically for the same native owner; validate dynamic
+unfinished rows and newly completed IDs. Commit cache updates only after stable
+rereads, invalidate on owner changes, and preserve the cache across tab switches.
+Do not persist native addresses or infer a Census identity from native entity IDs.
 Without live evidence, use sourced IDs and the fully fetched Census completion
 set for the selected API character. Missing IDs and failed retrieval are unknown,
 not incomplete. API selection does not prove the currently controlled character. Keep catalog coverage and source

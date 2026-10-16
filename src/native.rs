@@ -393,6 +393,7 @@ fn next_scan_cursor(index: u32, interrupted: bool) -> usize {
 }
 pub struct Reader {
     feats_enabled: bool,
+    feat_cache: crate::feat_memory::Cache,
     feats: Option<Arc<crate::feat_memory::Snapshot>>,
     feats_owner: Option<[(usize, u32); 4]>,
     feats_attempt: Option<Instant>,
@@ -555,6 +556,7 @@ impl Reader {
         let candidate_pid = candidate.identity.pid;
         let mut reader = Self {
             feats_enabled: false,
+            feat_cache: crate::feat_memory::Cache::default(),
             feats: None,
             feats_owner: None,
             feats_attempt: None,
@@ -1589,8 +1591,12 @@ impl Reader {
         let mut maps = self.maps.borrow().clone();
         progress(self.sample_physics(false));
         let mut last_progress = Instant::now();
-        let result =
-            crate::feat_memory::read(self.candidate.mapping.start, pawn, |address, len| {
+        let mut cache = std::mem::take(&mut self.feat_cache);
+        let result = crate::feat_memory::read_cached(
+            self.candidate.mapping.start,
+            pawn,
+            &mut cache,
+            |address, len| {
                 bytes = bytes.checked_add(len).ok_or("Feat read budget overflow")?;
                 if bytes > 12 * 1024 * 1024
                     || started.elapsed() > std::time::Duration::from_secs(2)
@@ -1619,7 +1625,9 @@ impl Reader {
                     .ok_or("Live feat data is no longer readable")?;
                 memory::read_discovery(&self.candidate.identity, map, address, len)
                     .map_err(|e| e.to_string())
-            });
+            },
+        );
+        self.feat_cache = cache;
         match result {
             Ok(snapshot) => {
                 self.feats_status =
@@ -2453,6 +2461,7 @@ mod tests {
             .remove(0);
         let mut reader = Reader {
             feats_enabled: false,
+            feat_cache: crate::feat_memory::Cache::default(),
             feats: None,
             feats_owner: None,
             feats_attempt: None,
