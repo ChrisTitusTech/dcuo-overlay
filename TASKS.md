@@ -1317,3 +1317,24 @@ supported Broker panels. Updated the local install and relaunched the companion.
 Live recognition of the user's changed item succeeded on three consecutive reads.
 End-to-end field pasting/search/price verification remains a user live acceptance
 gate; no automatic transaction or injection occurred.
+
+## Hotkey readiness repair
+
+User reported no hotkey response. Live thread inspection showed Broker OCR and
+keyboard workers disappearing/restarting during ordinary sampling. Application
+lifecycle incorrectly tied Broker controls to transient one-second physics
+observations; it now retains them across missing physics/binding samples, clears
+on a proven owner or build/session change, and gates input with Broker's own
+five-second freshness (OCR remains three seconds). Pause/disconnect/tab exit
+still cancel. Added a regression for missing-physics routing.
+
+The workstation's Num Lock was on, which the old modifier guard rejected. Worker
+hotkey_failure_review (gpt-6.1-sol) added dedicated-mapping Num Lock support while
+retaining all held-key and other effective-modifier checks. Seven isolated Xvfb
+keyboard tests pass, including mixed-case text and digits with Num Lock on and
+ambiguous modifier rejection. Added Listening/Detected events for visible feedback.
+All 242 workspace tests pass (four opt-in checks ignored), strict Clippy on both
+toolchains and release build pass. Independent review found no blocking regression.
+Installed and relaunched the fix; physical game hotkey acceptance is still pending.
+A bounded diagnostic observed only Ctrl/Alt/P states, with no unrelated keystrokes
+recorded. No physical chord was captured during that diagnostic window.

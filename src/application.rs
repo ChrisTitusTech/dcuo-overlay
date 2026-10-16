@@ -498,6 +498,14 @@ fn optional<T: std::fmt::Display>(value: &Option<T>) -> String {
         .unwrap_or_else(|| "Unavailable".into())
 }
 
+fn broker_control_pid(view: &crate::session::View) -> Option<i32> {
+    if view.connected && !view.paused {
+        view.selected_pid
+    } else {
+        None
+    }
+}
+
 impl eframe::App for Probe {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if !self.initialized {
@@ -517,8 +525,15 @@ impl eframe::App for Probe {
         }
         self.controller.poll();
         let view = self.controller.view();
-        if view.native.is_none() {
-            self.broker.cancel_hotkey();
+        // Broker has its own observation age. Brief physics gaps must not
+        // tear down its OCR/key listener; a changed session still clears it.
+        if self.broker_owner.is_some_and(|(pid, ticks, _, _)| {
+            view.build
+                .as_ref()
+                .is_none_or(|build| build.pid != pid || build.start_ticks != ticks)
+        }) {
+            self.broker.clear();
+            self.broker_owner = None;
         }
         if !view.connected {
             self.broker.clear();
@@ -529,7 +544,7 @@ impl eframe::App for Probe {
                 .as_ref()
                 .zip(sample.feats_binding)
                 .map(|(build, (entity, id))| (build.pid, build.start_ticks, entity, id));
-            if self.broker_owner != owner {
+            if owner.is_some() && self.broker_owner != owner {
                 self.broker.clear();
                 self.broker_owner = owner;
             }
@@ -681,7 +696,7 @@ impl Probe {
                     }
                     Tab::Broker => {
                         let status = if view.paused { "Paused - showing previously observed listings" } else { view.native.as_ref().map(|s| s.broker_status.as_str()).unwrap_or("Connect to the game and open its Broker") };
-                        self.broker.ui(ui, status, if view.connected && !view.paused && view.native.is_some() {view.selected_pid} else {None});
+                        self.broker.ui(ui, status, broker_control_pid(view));
                     }
                     Tab::Map => {
                         let (sample, gate) = map_observation(view);
@@ -1185,5 +1200,25 @@ mod tests {
             assert!(parse_options(args(&values)).is_err());
         }
         assert!(parse_options(args(&["--help"])).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod broker_lifecycle_tests {
+    use super::broker_control_pid;
+    #[test]
+    fn broker_control_is_independent_of_transient_physics_samples() {
+        let mut view = crate::session::View {
+            connected: true,
+            selected_pid: Some(42),
+            ..Default::default()
+        };
+        assert!(view.native.is_none());
+        assert_eq!(broker_control_pid(&view), Some(42));
+        view.paused = true;
+        assert_eq!(broker_control_pid(&view), None);
+        view.paused = false;
+        view.connected = false;
+        assert_eq!(broker_control_pid(&view), None);
     }
 }

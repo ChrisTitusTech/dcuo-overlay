@@ -71,7 +71,7 @@ and English language data (`tesseract` and `tesseract-langpack-eng` on Fedora;
 selection is unavailable and the UI reports why. Prices still come from the
 existing read-only memory reader.
 
-Turn off Caps Lock, Num Lock and Sticky Keys. Focus the correct field yourself;
+Turn off Caps Lock and Sticky Keys. Ordinary Num Lock can remain on. Focus the correct field yourself;
 the app identifies the panel but cannot prove which text widget is focused.
 Changing companion tabs, pausing, disconnecting or an uncertain screen stops input.
 If typing stops partway, inspect the field before retrying. Existing clipboard

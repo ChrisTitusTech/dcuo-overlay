@@ -234,12 +234,26 @@ impl PriceEntry {
             self.stop_input();
             return;
         }
+        // Only Broker freshness gates input; physics has an independent lifetime.
+        if snapshot.is_none_or(|s| s.observed_at.elapsed() >= Duration::from_secs(5)) {
+            self.stop_input();
+            self.status = "Waiting for a fresh Broker read".into();
+            return;
+        }
         // Cancel an in-progress price action immediately when its panel/selection changes.
         if matches!(self.action, Some(Action::Price(..))) && self.desired() != self.action {
             self.stop_input();
         }
         while let Some(event) = self.hotkey.as_mut().and_then(Hotkey::poll) {
             match event {
+                Event::Listening => {
+                    self.status =
+                        "Hotkey listening: focus the intended game field, then press Ctrl+Alt+P"
+                            .into()
+                }
+                Event::Detected => {
+                    self.status = "Ctrl+Alt+P detected; release the keys to paste".into()
+                }
                 Event::Started(at) => {
                     if let Some(Action::Name(name)) = &self.action {
                         if let Some(s) =
@@ -431,7 +445,7 @@ impl PriceEntry {
             ui.label(&self.status);
         }
         ui.small("No arming button. Focus the intended field before pressing the hotkey. The first press pastes the item name; run the search yourself after the status says it is ready. On returning to the same selected item in Tradable Inventory, the next press fills Sell Price. Neither step presses Enter or submits a listing.");
-        ui.small("Selected item is read from the visible English game screen (2560 x 1440). Prices come from fresh memory observations, including your own offers. Set All and Price Ascending; single-item market prices only. The selected inventory quantity is not read: list one item and verify the final amount. Coverage is partial. Turn off Caps Lock, Num Lock and Sticky Keys.");
+        ui.small("Selected item is read from the visible English game screen (2560 x 1440). Prices come from fresh memory observations, including your own offers. Set All and Price Ascending; single-item market prices only. The selected inventory quantity is not read: list one item and verify the final amount. Coverage is partial. Turn off Caps Lock and Sticky Keys. Num Lock is supported.");
         ui.separator();
     }
 }

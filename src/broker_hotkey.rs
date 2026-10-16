@@ -24,6 +24,8 @@ fn err(e: impl std::fmt::Display) -> String {
 
 #[derive(Debug, PartialEq)]
 pub enum Event {
+    Listening,
+    Detected,
     Started(Instant),
     ReadyToSearch(Instant),
     Finished(Result<(), String>),
@@ -228,19 +230,66 @@ fn focused(c: &RustConnection, w: u32, root: u32) -> Result<(), String> {
     }
     Err("Keyboard focus is outside the game window".into())
 }
+// Num Lock is harmless for the main-keyboard ASCII strokes used here only when
+// its modifier slot has no other meaning. Unknown or shared mappings fail closed.
+fn num_lock_mask(min: u8, width: usize, keysyms: &[u32], modifiers: &[u8]) -> u16 {
+    if width == 0
+        || !keysyms.len().is_multiple_of(width)
+        || modifiers.is_empty()
+        || !modifiers.len().is_multiple_of(8)
+    {
+        return 0;
+    }
+    let is_num = |code: u8| {
+        let Some(index) = code.checked_sub(min).map(usize::from) else {
+            return false;
+        };
+        let Some(row) = keysyms.chunks_exact(width).nth(index) else {
+            return false;
+        };
+        row.contains(&0xff7f) && row.iter().all(|symbol| *symbol == 0 || *symbol == 0xff7f)
+    };
+    let mut slot = None;
+    for (index, codes) in modifiers.chunks_exact(modifiers.len() / 8).enumerate() {
+        if codes.iter().any(|code| {
+            code.checked_sub(min)
+                .and_then(|offset| keysyms.chunks_exact(width).nth(usize::from(offset)))
+                .is_some_and(|row| row.contains(&0xff7f))
+        }) {
+            if index < 3 || slot.is_some() || codes.iter().any(|code| *code != 0 && !is_num(*code))
+            {
+                return 0;
+            }
+            slot = Some(index);
+        }
+    }
+    slot.map_or(0, |index| 1 << index)
+}
 fn no_modifiers(c: &RustConnection, root: u32) -> Result<(), String> {
     // Physical key state alone misses locks and accessibility-latched modifiers.
     // QueryPointer reports the effective core modifier state, including those.
     let pointer = c.query_pointer(root).map_err(err)?.reply().map_err(err)?;
-    if u16::from(pointer.mask) & 0xff != 0 {
-        return Err("Release modifiers and turn off Caps Lock, Num Lock and sticky/latched modifiers before Browse search".into());
-    }
     let keys = c.query_keymap().map_err(err)?.reply().map_err(err)?.keys;
     let modifiers = c
         .get_modifier_mapping()
         .map_err(err)?
         .reply()
         .map_err(err)?;
+    let min = c.setup().min_keycode;
+    let mapping = c
+        .get_keyboard_mapping(min, c.setup().max_keycode - min + 1)
+        .map_err(err)?
+        .reply()
+        .map_err(err)?;
+    let allowed = num_lock_mask(
+        min,
+        usize::from(mapping.keysyms_per_keycode),
+        &mapping.keysyms,
+        &modifiers.keycodes,
+    );
+    if u16::from(pointer.mask) & 0xff & !allowed != 0 {
+        return Err("Release modifiers and turn off Caps Lock and sticky/latched modifiers before Browse search".into());
+    }
     if modifiers
         .keycodes
         .iter()
@@ -528,6 +577,7 @@ fn run(
         focused(&c, window, root)?;
         budget(cancel, started)
     };
+    events.send(Event::Listening).map_err(err)?;
     let mut edge = Edge::default();
     loop {
         budget(cancel, started)?;
@@ -541,6 +591,7 @@ fn run(
         }
         thread::sleep(Duration::from_millis(10));
     }
+    events.send(Event::Detected).map_err(err)?;
     // Wait for the user's own releases. Never synthesize modifier releases.
     loop {
         validate()?;
@@ -676,6 +727,32 @@ mod tests {
         };
         let shift = resolve(0xffe1).code;
         let ctrl = resolve(0xffe3).code;
+        let num = resolve(0xff7f).code;
+        let modifiers = c.get_modifier_mapping().unwrap().reply().unwrap();
+        let num_mask = num_lock_mask(
+            min,
+            usize::from(map.keysyms_per_keycode),
+            &map.keysyms,
+            &modifiers.keycodes,
+        );
+        assert_ne!(num_mask, 0);
+        send_key(&c, root, num).unwrap();
+        no_modifiers(&c, root).unwrap();
+        assert!(u16::from(c.query_pointer(root).unwrap().reply().unwrap().mask) & 0xff != 0);
+        c.xtest_fake_input(KEY_PRESS_EVENT, num, 0, root, 0, 0, 0)
+            .unwrap()
+            .check()
+            .unwrap();
+        let held_num = no_modifiers(&c, root);
+        c.xtest_fake_input(KEY_RELEASE_EVENT, num, 0, root, 0, 0, 0)
+            .unwrap()
+            .check()
+            .unwrap();
+        assert!(held_num.is_err());
+        send_key(&c, root, num).unwrap();
+        no_modifiers(&c, root).unwrap();
+        // Discard the lock-toggle events before checking exact text strokes.
+        while c.poll_for_event().unwrap().is_some() {}
         let mut sequence = input_sequence(
             "Ab Name: X"
                 .bytes()
@@ -714,15 +791,29 @@ mod tests {
         }
         c.get_input_focus().unwrap().reply().unwrap();
         let mut actual = Vec::new();
+        let mut text = String::new();
         while let Some(event) = c.poll_for_event().unwrap() {
             match event {
-                XEvent::KeyPress(e) => actual.push((true, e.detail)),
+                XEvent::KeyPress(e) => {
+                    actual.push((true, e.detail));
+                    // Main-keyboard ASCII uses Shift only; Num Lock must stay
+                    // set without altering these characters or Ctrl+A.
+                    assert_ne!(u16::from(e.state) & num_mask, 0);
+                    let level = usize::from(u16::from(e.state) & 1 != 0);
+                    let symbol = map.keysyms[usize::from(e.detail - min)
+                        * usize::from(map.keysyms_per_keycode)
+                        + level];
+                    if (32..=126).contains(&symbol) {
+                        text.push(char::from_u32(symbol).unwrap());
+                    }
+                }
                 XEvent::KeyRelease(e) => actual.push((false, e.detail)),
                 XEvent::ButtonPress(_) | XEvent::ButtonRelease(_) => panic!("mouse event"),
                 _ => {}
             }
         }
         assert_eq!(actual, expected);
+        assert_eq!(text, "aAb Name: Xa12345");
         assert!(
             send_stroke(
                 &c,
@@ -761,7 +852,25 @@ mod tests {
         send_key(&c, root, caps).unwrap();
         assert!(locked.is_err());
         no_modifiers(&c, root).unwrap();
+        send_key(&c, root, num).unwrap();
         c.destroy_window(window).unwrap().check().unwrap();
+    }
+    #[test]
+    fn num_lock_requires_one_dedicated_modifier_slot() {
+        let mut modifiers = [0; 8];
+        modifiers[4] = 20;
+        assert_eq!(num_lock_mask(20, 2, &[0xff7f, 0], &modifiers), 1 << 4);
+        modifiers[3] = 20;
+        assert_eq!(num_lock_mask(20, 2, &[0xff7f, 0], &modifiers), 0);
+        modifiers[3] = 0;
+        assert_eq!(num_lock_mask(20, 2, &[0xff7f, 97], &modifiers), 0);
+        let mut shared = [0; 16];
+        shared[8] = 20;
+        shared[9] = 21;
+        assert_eq!(num_lock_mask(20, 2, &[0xff7f, 0, 0xffe9, 0], &shared), 0);
+        modifiers[4] = 0;
+        modifiers[2] = 20;
+        assert_eq!(num_lock_mask(20, 2, &[0xff7f, 0], &modifiers), 0);
     }
     #[test]
     fn mapping_and_names_fail_closed() {
