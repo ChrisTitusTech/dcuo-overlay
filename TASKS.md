@@ -789,3 +789,31 @@ regressions. The supplemental suggestion to restore experimental wording on the
 main map is not applied: the user's explicit request is to hide that evidence;
 confidence remains visible in Map details and the compact label reports live
 availability, not verification. All 12 installer tests also passed.
+
+## Ground-spawn false-positive cleanup
+
+User-reported orange clutter exposed an unsupported assumption: the shared
+FXSM103 effect definition does not establish an exo-material node. Bounded live
+inventory found 33 matching effect actors and one explicit green collectible in
+the current area. No distinguishing replicated mesh name was exposed. Discovery
+now rejects shared effects and unverified event variants, accepting exact blue,
+green and gold collectible definitions only with the expected Package outer.
+Exo detection is unavailable until a specific discriminator is validated; the
+user has been asked for a real nearby exo node for paired evidence. Existing cache
+expiry is unchanged; restarting the installed app clears old false locations.
+
+Validation: 140 workspace tests passed (3 opt-in private-asset tests ignored),
+101 headless tests passed, format, strict lint on Rust 1.96/1.95, workspace and
+release builds passed. The classifier regression covers the previously accepted
+shared effect and rejects wrong-package and unproven variant definitions.
+
+Independent review caught a renamed rejection message missing from the known
+absence classifier. Fixed that mapping and covered it in sweep-completion tests,
+so a rejected non-package actor cannot prevent two-scan expiry. All gates rerun.
+The installed app's live map retained its background after the client changed
+areas; the reader reports ambiguous streaming context and correctly hides live
+markers. A retained positive pickup cannot be revalidated in that state. No new
+user acceptance claimed; private captures/inventory remain ignored locally.
+
+Final independent Codex review found no actionable regressions. The corrected
+build is installed and running on Map; no false orange markers are retained.

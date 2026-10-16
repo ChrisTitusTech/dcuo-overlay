@@ -27,17 +27,15 @@ pub enum GroundSpawnKind {
     Exobyte,
 }
 fn ground_spawn_kind(name: &str, package: &str) -> Option<GroundSpawnKind> {
-    use GroundSpawnKind::*;
+    // Shared effect/prop definitions do not establish a harvestable exo node.
+    // Accept only the explicit investigation, briefing and collection definitions.
+    if package != "DDSGPROGEN107" {
+        return None;
+    }
     match name {
-        "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO" => Some(Blue),
-        "DSGPROGEN107_MAGNIFYINGGLASS_GOLD_DO" => Some(Gold),
-        "DSGPROGEN107_MAGNIFYINGGLASS_GREEN_DO" => Some(Green),
-        "DSGPROGEN107_MAGNIFYINGGLASS_GREY_DO" => Some(Grey),
-        "DSGPROGEN107_MAGNIFYINGGLASS_PURPLE_DO" | "DSGPROGEN107_QUESTIONMARK_PURPLE_DO" => {
-            Some(Purple)
-        }
-        "MAGNIFYINGGLASS_AFOOLS_DO" => Some(Other),
-        "FXSM103_DAMAGEABLEOBJECT" if package == "DFXSM103" => Some(Exobyte),
+        "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO" => Some(GroundSpawnKind::Blue),
+        "DSGPROGEN107_MAGNIFYINGGLASS_GOLD_DO" => Some(GroundSpawnKind::Gold),
+        "DSGPROGEN107_MAGNIFYINGGLASS_GREEN_DO" => Some(GroundSpawnKind::Green),
         _ => None,
     }
 }
@@ -280,7 +278,7 @@ fn known_spawn_absence(error: &str) -> bool {
         error,
         "Unsupported ground spawn definition"
             | "Unsupported nearby collectible definition"
-            | "Unsupported exobyte definition package"
+            | "Unsupported pickup definition package"
             | "Nearby collectible hidden or deleted"
             | "Nearby collectible belongs to a different world"
     )
@@ -915,8 +913,8 @@ impl Reader {
         let definition_outer = self.object(definition_outer_address)?;
         let kind = ground_spawn_kind(&definition_name, &definition_outer.2)
             .ok_or("Unsupported ground spawn definition")?;
-        if kind == GroundSpawnKind::Exobyte && self.class_name(definition_outer.1)? != "Package" {
-            return Err("Unsupported exobyte definition package".into());
+        if self.class_name(definition_outer.1)? != "Package" {
+            return Err("Unsupported pickup definition package".into());
         }
         if self.class_name(actor_class)? != "DCServerPhysicsObject"
             || self.class_name(definition_class)? != "DCDamageableObject"
@@ -1370,6 +1368,7 @@ mod tests {
         assert!(pass.finish(Instant::now()).is_none());
         assert!(pass.finish(Instant::now()).unwrap().spawns.is_empty());
         assert!(known_spawn_absence("Nearby collectible hidden or deleted"));
+        assert!(known_spawn_absence("Unsupported pickup definition package"));
         assert!(!known_spawn_absence(
             "Experimental read outside readable mapping"
         ));
@@ -1528,22 +1527,20 @@ mod tests {
         assert_eq!(next_scan_cursor(249_999, false), 250_000);
     }
     #[test]
-    fn exobyte_requires_the_observed_definition_package_pair() {
-        assert_eq!(
-            ground_spawn_kind("FXSM103_DAMAGEABLEOBJECT", "DFXSM103"),
-            Some(GroundSpawnKind::Exobyte)
-        );
+    fn pickup_filter_rejects_shared_effects_props_and_unproven_variants() {
         for (name, package) in [
-            ("FXSM103_DAMAGEABLEOBJECT", ""),
-            ("FXSM103_DAMAGEABLEOBJECT", "OTHER_EFFECT"),
-            ("OTHER_DAMAGEABLEOBJECT", "DFXSM103"),
+            ("FXSM103_DAMAGEABLEOBJECT", "DFXSM103"),
+            ("FXSM103_DAMAGEABLEOBJECT", "DDSGPROGEN107"),
+            ("DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO", "OTHER_PACKAGE"),
+            ("DSGPROGEN107_MAGNIFYINGGLASS_GREY_DO", "DDSGPROGEN107"),
+            ("DSGPROGEN107_MAGNIFYINGGLASS_PURPLE_DO", "DDSGPROGEN107"),
+            ("DSGPROGEN107_QUESTIONMARK_PURPLE_DO", "DDSGPROGEN107"),
+            ("MAGNIFYINGGLASS_AFOOLS_DO", "DDSGPROGEN107"),
+            ("MAGNIFYINGGLASS_BLUE", "DDSGPROGEN107"),
+            ("", "DDSGPROGEN107"),
         ] {
-            assert_eq!(ground_spawn_kind(name, package), None);
+            assert_eq!(ground_spawn_kind(name, package), None, "{package}.{name}");
         }
-    }
-
-    #[test]
-    fn ground_spawn_allowlist_rejects_props_and_supports_all_proven_families() {
         for (name, kind) in [
             (
                 "DSGPROGEN107_MAGNIFYINGGLASS_BLUE_DO",
@@ -1557,32 +1554,12 @@ mod tests {
                 "DSGPROGEN107_MAGNIFYINGGLASS_GREEN_DO",
                 GroundSpawnKind::Green,
             ),
-            (
-                "DSGPROGEN107_MAGNIFYINGGLASS_GREY_DO",
-                GroundSpawnKind::Grey,
-            ),
-            (
-                "DSGPROGEN107_MAGNIFYINGGLASS_PURPLE_DO",
-                GroundSpawnKind::Purple,
-            ),
-            (
-                "DSGPROGEN107_QUESTIONMARK_PURPLE_DO",
-                GroundSpawnKind::Purple,
-            ),
-            ("MAGNIFYINGGLASS_AFOOLS_DO", GroundSpawnKind::Other),
         ] {
             assert_eq!(ground_spawn_kind(name, "DDSGPROGEN107"), Some(kind));
         }
-        for name in [
-            "FXSM103_DAMAGEABLEOBJECT",
-            "MAGNIFYINGGLASS_BLUE",
-            "DSGPROGEN107_MAGNIFYINGGLASS_RED_DO",
-            "",
-        ] {
-            assert_eq!(ground_spawn_kind(name, "DDSGPROGEN107"), None);
-        }
         assert!(Sample::synthetic(1).ground_spawns.is_empty());
     }
+
     #[test]
     fn collectible_requires_same_world_visible_lifetime_and_bounded_distance() {
         let mut bytes = vec![0; 0x3c0];

@@ -207,3 +207,15 @@ client changes. In MLOC136, seven cached markers remained through a missing
 sample and Pause. Toggling off/on while paused restored the exact map-region
 pixels without another scan. The two-miss expiry rule is covered with controlled
 synthetic scans; no game interactions were performed to force despawns.
+
+## Correction: generic effects are not exo identification
+
+The user reported many non-pickup orange markers. A bounded current-session
+inventory found 33 actors sharing FXSM103_DAMAGEABLEOBJECT / DFXSM103, while the
+explicit green collectible remained distinct. Replicated mesh pointers did not
+provide a distinguishing name. This supersedes the earlier broad exobyte rule:
+that definition/package pair is not sufficient evidence for an exo node.
+Automatic discovery now accepts only blue/green/gold magnifying-glass definitions
+in DDSGPROGEN107 with a Package outer; shared effects and unverified grey/purple/
+seasonal variants are rejected. Exo detection is unavailable pending paired
+positive/negative validation. Read-only memory and cache expiry rules are unchanged.

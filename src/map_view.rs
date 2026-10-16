@@ -734,7 +734,7 @@ impl MapView {
             .on_hover_text(&self.status);
         ui.add(
             egui::Label::new(
-                egui::RichText::new("Diamonds: Cached spawn locations / Orange: Exobytes")
+                egui::RichText::new("Diamonds: Cached pickups (blue, green, gold). Exo detection unavailable.")
                     .small()
                     .color(egui::Color32::from_rgb(180, 185, 195)),
             )
