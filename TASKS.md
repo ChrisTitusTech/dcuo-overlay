@@ -991,3 +991,80 @@ fix. Lead-installed validation confirms the final build loads completion data an
 retains the default hidden-completed filter; review did not independently verify
 live Census data or source accuracy. The published milestone is the usable partial
 checklist, not acceptance of the requested exhaustive all-solo feat catalog.
+
+## Live feat completion fallback (2026-10-16)
+
+Implemented read-only native feat completion and client definition decoding for
+the exact supported build. Live discovery established the native manager entity
+matches the controlled pawn. The native completed-ID set exactly matched a fresh
+Census result. Two user-supplied positive/negative examples independently matched
+the decoded title, reward and character-completion value. Personal observations,
+addresses, archive bytes and probes remain ignored local data.
+
+The bounded parser validates indexed trees, owner identity, serialized IDs, the
+archive type, linked-block lengths and stable rereads. Unknown serialized variants
+are omitted, never inferred incomplete. UI joins only unique exact title/reward
+matches or consistent sourced IDs and keeps live current-character completion
+separate from API references. Account completion does not set character completion.
+Live reads run serially on the existing session worker while Character is visible;
+Map does not schedule periodic feat scans. Source freshness and catalog coverage
+remain explicit. Remaining catalog gaps and ambiguous matches are not resolved.
+
+The first full live scan exceeded its two-second limit; consolidated cache-node
+reads retained masked structural rechecks and reduced the measured scan to about
+1.4 seconds on this workstation. The live fallback resolved both user examples.
+Synthetic codec, malformed-data, mutation, source-separation and filtering checks
+are implemented. Final application/UI validation, complete gates and independent
+review are being completed before publication.
+
+Final local gates pass: 178 workspace tests (3 opt-in private-asset checks ignored),
+133 headless tests, strict Clippy on Rust 1.96 and 1.95, formatting, workspace and
+release builds, 12 installer checks and both managed-X11 smoke launches. Installed
+live validation shows the user-confirmed incomplete example and hides the completed
+example by default; Show completed reveals its completed state and point reward.
+Restored default filters after inspection. The session still has unresolved
+catalog entries; the application reports them explicitly. Independent review is
+pending; no complete-catalog or all-build acceptance claim is made.
+
+Independent review found synchronous feat scans could expire the enclosing
+one-second physics sample. Fixed with cooperative fresh physics reads during the
+optional scan and a new physics read afterward, using the same session worker.
+No old coordinates are retimestamped. A live scan took 1.56 seconds and emitted
+six progress samples, with a maximum observed gap of 0.36 seconds and a final
+physics age below 4 ms. Added a session regression for fresh progress preserving
+location generation. Full affected gates and independent review are repeated.
+
+After the timing fix, 179 workspace and 134 headless tests pass, along with both
+strict lint versions, formatting, builds and both X11 smoke launches. The final
+independent Codex review found no actionable regressions across tracked changes
+and new modules. Lead live validation covers installed behavior; the reviewer did
+not independently operate the game. The installed final build retains the verified
+states and default filtering across refreshes.
+
+### Feat cache follow-up (2026-10-16)
+
+Added a bounded cache owned by the existing PID/build-bound native reader. It
+retains decoded definitions and proven character completions across tab switches.
+Confirmed completions never downgrade for the same owner. Unchanged completed
+rows and serialized definition payloads are not reread; active rows and cheap
+owner/archive/tree signatures remain validated. New completion trees are read and
+unioned with proven facts. Unsupported definition IDs are remembered to avoid
+repeated failed decoding. Cache changes publish only after stable rechecks; owner
+changes rebuild it and a shrinking completed tree fails closed. No native pointer
+or personal completion data is persisted across reconnects/app restarts.
+
+The gpt-6.1-sol parser worker added six synthetic cache regressions covering hot
+read avoidance, new completions, monotonic status, source/owner invalidation and
+failed-refresh rollback. Lead integrated the cache and measured the same live
+character at 1.52 seconds cold and 0.59 seconds warm (61% lower elapsed time),
+with identical catalog statuses and all confirmed completions retained across a
+tab toggle. Both user-confirmed example states remained correct.
+
+Local gates: 185 workspace tests pass (3 opt-in private asset checks ignored),
+140 headless tests, strict Clippy on Rust 1.96 and 1.95, formatting, workspace and
+release builds, and 12 installer checks. Managed-X11 smoke, installed UI and
+independent review are being finalized before updating PR #17.
+
+Both managed-X11 smoke launches pass. Installed live UI retains the expected
+24 completed / 106 incomplete / 38 unknown catalog status counts and default
+filtering. Independent Codex review completed with no actionable regressions.

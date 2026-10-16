@@ -99,6 +99,8 @@ pub struct GroundSpawnSweep {
 #[derive(Clone, Debug)]
 pub struct Sample {
     pub position: [f32; 3],
+    pub feats: Option<Arc<crate::feat_memory::Snapshot>>,
+    pub feats_status: String,
     /// Legacy nearby recognized spawn, with no collection-status claim.
     pub collectible: Option<Collectible>,
     pub ground_spawns: Vec<Collectible>,
@@ -121,6 +123,8 @@ impl Sample {
     pub(crate) fn synthetic(owner_index: u32) -> Self {
         Self {
             position: [1.0, 2.0, 3.0],
+            feats: None,
+            feats_status: "No synthetic feats".into(),
             collectible: None,
             ground_spawns: Vec::new(),
             ground_spawns_status: "Ground spawns off".into(),
@@ -388,6 +392,12 @@ fn next_scan_cursor(index: u32, interrupted: bool) -> usize {
     index as usize + usize::from(!interrupted)
 }
 pub struct Reader {
+    feats_enabled: bool,
+    feat_cache: crate::feat_memory::Cache,
+    feats: Option<Arc<crate::feat_memory::Snapshot>>,
+    feats_owner: Option<[(usize, u32); 4]>,
+    feats_attempt: Option<Instant>,
+    feats_status: String,
     ground_spawns_enabled: bool,
     ground_scan: GroundScan,
     candidate: process::Candidate,
@@ -545,6 +555,12 @@ impl Reader {
         }
         let candidate_pid = candidate.identity.pid;
         let mut reader = Self {
+            feats_enabled: false,
+            feat_cache: crate::feat_memory::Cache::default(),
+            feats: None,
+            feats_owner: None,
+            feats_attempt: None,
+            feats_status: "Waiting for live feats".into(),
             ground_spawns_enabled: false,
             ground_scan: GroundScan::default(),
             candidate,
@@ -849,6 +865,8 @@ impl Reader {
             (classes[0], "GamePlayers", "ArrayProperty", 0x6b4, 16),
             (classes[1], "Actor", "ObjectProperty", 0x64, 8),
             (classes[2], "Pawn", "ObjectProperty", 0x290, 8),
+            (classes[3], "m_DCClientEntity", "StructProperty", 0x5c, 8),
+            (classes[3], "m_esEntityID", "StructProperty", 0x68, 8),
             (classes[3], "Location", "StructProperty", 0xd0, 12),
             (classes[3], "MaxHealth", "FloatProperty", 0x5f4, 4),
             (classes[3], "CurHealth", "FloatProperty", 0x5f8, 4),
@@ -1518,15 +1536,134 @@ impl Reader {
         };
         Ok((result, status))
     }
+    pub fn set_feats_enabled(&mut self, enabled: bool) {
+        if self.feats_enabled != enabled {
+            self.feats_enabled = enabled;
+            self.feats = None;
+            self.feats_attempt = None;
+        }
+    }
+    fn bind_feats(&mut self, owner: &Ownership) -> bool {
+        let pawn = owner.objects[3].0;
+        let binding = (|| -> Result<(usize, u64), String> {
+            Ok((
+                self.ptr(add(pawn, 0x5c)?)?,
+                u64_at(&self.read(add(pawn, 0x68)?, 8)?, 0)?,
+            ))
+        })();
+        let changed = self.feats_owner != Some(owner.objects)
+            || self.feats.as_ref().is_some_and(|snapshot| {
+                binding.as_ref().ok() != Some(&(snapshot.entity, snapshot.entity_id))
+            });
+        if changed {
+            self.feats = None;
+            self.feats_attempt = None;
+            self.feats_owner = Some(owner.objects);
+        }
+        if binding.is_err() {
+            self.feats = None;
+            self.feats_status = "Live feats unavailable while the character is changing.".into();
+            return false;
+        }
+        true
+    }
+    fn refresh_feats(
+        &mut self,
+        owner: &Ownership,
+        progress: &mut impl FnMut(Result<Sample, String>),
+    ) -> bool {
+        if !self.bind_feats(owner) {
+            return false;
+        }
+        let pawn = owner.objects[3].0;
+        if self
+            .feats_attempt
+            .is_some_and(|last| last.elapsed() < std::time::Duration::from_secs(8))
+        {
+            return false;
+        }
+        self.feats_attempt = Some(Instant::now());
+        // Runs serially on the existing session reader, never on the UI thread.
+        // A separate bounded budget keeps this optional scan out of the map budget.
+        let started = Instant::now();
+        let mut bytes = 0usize;
+        let mut reads = 0usize;
+        let mut maps = self.maps.borrow().clone();
+        progress(self.sample_physics(false));
+        let mut last_progress = Instant::now();
+        let mut cache = std::mem::take(&mut self.feat_cache);
+        let result = crate::feat_memory::read_cached(
+            self.candidate.mapping.start,
+            pawn,
+            &mut cache,
+            |address, len| {
+                bytes = bytes.checked_add(len).ok_or("Feat read budget overflow")?;
+                if bytes > 12 * 1024 * 1024
+                    || started.elapsed() > std::time::Duration::from_secs(2)
+                    || self
+                        .cancel
+                        .as_ref()
+                        .is_some_and(|token| token.load(Ordering::Acquire))
+                {
+                    return Err("Live feat scan exceeded its budget or was cancelled".into());
+                }
+                // Cooperatively publish newly read physics while this larger
+                // optional snapshot runs. Never relabel old coordinates as fresh.
+                if last_progress.elapsed() >= std::time::Duration::from_millis(200) {
+                    progress(self.sample_physics(false));
+                    last_progress = Instant::now();
+                }
+                if reads != 0 && reads.is_multiple_of(128) {
+                    maps = process::mappings(self.candidate.identity.pid)
+                        .map_err(|e| e.to_string())?;
+                }
+                reads += 1;
+                let end = add(address, len)?;
+                let map = maps
+                    .iter()
+                    .find(|map| map.readable && address >= map.start && end <= map.end)
+                    .ok_or("Live feat data is no longer readable")?;
+                memory::read_discovery(&self.candidate.identity, map, address, len)
+                    .map_err(|e| e.to_string())
+            },
+        );
+        self.feat_cache = cache;
+        match result {
+            Ok(snapshot) => {
+                self.feats_status =
+                    format!("Live feat definitions matched: {}", snapshot.entries.len());
+                self.feats = Some(Arc::new(snapshot));
+            }
+            Err(error) => {
+                self.feats = None;
+                self.feats_status = format!("Live feats unavailable: {error}");
+            }
+        }
+        true
+    }
     pub fn sample(&mut self) -> Result<Sample, String> {
+        self.sample_with_progress(|_| {})
+    }
+    pub fn sample_with_progress(
+        &mut self,
+        mut progress: impl FnMut(Result<Sample, String>),
+    ) -> Result<Sample, String> {
+        let sample = self.sample_physics(true)?;
+        if self.feats_enabled && self.refresh_feats(&sample.owner, &mut progress) {
+            // The initial coordinates predate the optional scan; read them again.
+            return self.sample_physics(false);
+        }
+        Ok(sample)
+    }
+    fn sample_physics(&mut self, optional: bool) -> Result<Sample, String> {
         let saved = self.ground_scan.clone();
-        let result = self.sample_inner();
+        let result = self.sample_inner(optional);
         if result.is_err() {
             self.ground_scan = saved;
         }
         result
     }
-    fn sample_inner(&mut self) -> Result<Sample, String> {
+    fn sample_inner(&mut self, optional: bool) -> Result<Sample, String> {
         self.scope_start.set(Instant::now());
         self.scope_reads.set(0);
         self.scope_bytes.set(0);
@@ -1581,7 +1718,7 @@ impl Reader {
         ];
         validate_values(position, values)?;
         let collectible = None;
-        let (ground_spawns, ground_spawns_status) = if self.ground_spawns_enabled {
+        let (ground_spawns, ground_spawns_status) = if self.ground_spawns_enabled && optional {
             self.collectible_deadline
                 .set(Some(Instant::now() + std::time::Duration::from_millis(100)));
             let saved = self.ground_scan.clone();
@@ -1607,11 +1744,14 @@ impl Reader {
             return Err("Controlled object changed during sample; discarded".into());
         }
         self.ground_scan.accept_pending_sweep();
+        self.bind_feats(&before);
         Ok(Sample {
             ground_spawn_sweep: (self.ground_scan.owner.as_ref() == Some(&before))
                 .then(|| self.ground_scan.published_sweep.clone())
                 .flatten(),
             position,
+            feats: self.feats.clone(),
+            feats_status: self.feats_status.clone(),
             collectible,
             ground_spawns,
             ground_spawns_status,
@@ -2320,6 +2460,12 @@ mod tests {
             .unwrap()
             .remove(0);
         let mut reader = Reader {
+            feats_enabled: false,
+            feat_cache: crate::feat_memory::Cache::default(),
+            feats: None,
+            feats_owner: None,
+            feats_attempt: None,
+            feats_status: String::new(),
             ground_spawns_enabled: false,
             ground_scan: GroundScan::default(),
             candidate: process::Candidate {

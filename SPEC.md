@@ -439,9 +439,26 @@ excluded; missing or ambiguous evidence does not become an exo marker.
 The Character tab prioritizes solo On Duty deeds/feats, sorted by current Normal
 entry CR ascending (level-30 entries first). Show each feat's point reward and
 requirements. Completed feats are hidden by default with a Show completed toggle.
-Completion is joined only through sourced feat IDs and a fully fetched Census
-completion set for the selected API character. Missing IDs, failed retrieval and
-unidentified character state are unknown, not incomplete. API selection does not
-prove the currently controlled in-game character. Keep catalog coverage and source
+With a supported connected game, completion comes from character-owned native
+feat rows and client definitions. Bind the native manager's current entity to the
+controlled pawn, recheck entity identity and all structural/status evidence, and
+keep account-only completion distinct. Match catalog entries through a sourced ID
+or an unambiguous exact title and reward; ambiguous or unsupported definitions
+remain unknown. Refresh only while Character is visible, on the existing session
+reader, with byte/time limits and no game calls or writes. Cooperatively read and
+publish fresh physics during longer feat scans so the physics freshness deadline
+continues to apply; do not retimestamp old coordinates. Discard expired or
+changed-session evidence. The live list is explicitly for the current game
+character and never combines statuses with a separately selected API character.
+Cache decoded definitions and confirmed character completions within the
+PID/build-bound reader. Reuse definitions while their archive signature is stable
+and skip completed-row traversal while its tree signature is unchanged. Retain
+confirmed completions monotonically for the same native owner; validate dynamic
+unfinished rows and newly completed IDs. Commit cache updates only after stable
+rereads, invalidate on owner changes, and preserve the cache across tab switches.
+Do not persist native addresses or infer a Census identity from native entity IDs.
+Without live evidence, use sourced IDs and the fully fetched Census completion
+set for the selected API character. Missing IDs and failed retrieval are unknown,
+not incomplete. API selection does not prove the currently controlled character. Keep catalog coverage and source
 freshness explicit; an empty mission list must not imply no feats exist. This
 scope does not include spending skill points or performing game actions.

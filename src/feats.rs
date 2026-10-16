@@ -83,6 +83,24 @@ pub fn completion(
         _ => Completion::Unknown,
     }
 }
+/// Names and rewards must identify one client definition. Never use a fuzzy
+/// title match or treat absence from the client's partial catalog as incomplete.
+pub fn memory_entry<'a>(
+    feat: &Feat,
+    live: &'a crate::feat_memory::Snapshot,
+) -> Option<&'a crate::feat_memory::Entry> {
+    let mut matches = live.entries.iter().filter(|entry| {
+        feat.points == Some(entry.points)
+            && feat.name.eq_ignore_ascii_case(&entry.title)
+            && feat
+                .id
+                .as_ref()
+                .is_none_or(|id| id == &entry.id.to_string())
+    });
+    let entry = matches.next()?;
+    matches.next().is_none().then_some(entry)
+}
+
 impl Catalog {
     pub fn bundled() -> Result<Self, String> {
         Self::parse(include_str!("../assets/solo-feats.json"))
@@ -170,18 +188,42 @@ impl Mission {
         reference: Option<&CharacterReference>,
         progress: Option<&Progress>,
     ) -> Vec<(&'a Feat, Completion)> {
+        self.visible_feats_with_memory(query, show_completed, reference, progress, None)
+    }
+    pub fn visible_feats_with_memory<'a>(
+        &'a self,
+        query: &str,
+        show_completed: bool,
+        reference: Option<&CharacterReference>,
+        progress: Option<&Progress>,
+        live: Option<&crate::feat_memory::Snapshot>,
+    ) -> Vec<(&'a Feat, Completion)> {
         let query = query.trim().to_lowercase();
         self.feats
             .iter()
             .filter_map(|feat| {
-                if let (Some(character), Some(required)) = (
-                    reference.and_then(|r| faction(r.alignment.as_deref())),
-                    faction(feat.alignment.as_deref()),
-                ) && character != required
+                let memory = live.and_then(|live| memory_entry(feat, live));
+                if memory.is_some_and(|entry| !entry.eligible && !entry.completed) {
+                    return None;
+                }
+                if live.is_none()
+                    && let (Some(character), Some(required)) = (
+                        reference.and_then(|r| faction(r.alignment.as_deref())),
+                        faction(feat.alignment.as_deref()),
+                    )
+                    && character != required
                 {
                     return None;
                 }
-                let state = completion(feat, reference, progress);
+                let state = if live.is_some() {
+                    match memory {
+                        Some(entry) if entry.completed => Completion::Completed,
+                        Some(_) => Completion::Incomplete,
+                        None => Completion::Unknown,
+                    }
+                } else {
+                    completion(feat, reference, progress)
+                };
                 if !show_completed && state == Completion::Completed {
                     return None;
                 }
@@ -220,6 +262,77 @@ mod tests {
             power_max: None,
             league: None,
         }
+    }
+    fn live(entries: Vec<crate::feat_memory::Entry>) -> crate::feat_memory::Snapshot {
+        crate::feat_memory::Snapshot {
+            entity: 0x10000,
+            entity_id: 7,
+            entries,
+            observed_at: Instant::now(),
+        }
+    }
+    fn live_entry(id: u32, title: &str, completed: bool) -> crate::feat_memory::Entry {
+        crate::feat_memory::Entry {
+            id,
+            title: title.into(),
+            description: "Synthetic requirement".into(),
+            points: 10,
+            completed,
+            eligible: true,
+        }
+    }
+    #[test]
+    fn live_completion_requires_unique_definitions_and_ignores_other_api_character() {
+        let catalog = Catalog::parse(&fixture().to_string()).unwrap();
+        let mission = catalog.missions.iter().find(|m| m.key == "level").unwrap();
+        let mut feat: Feat =
+            serde_json::from_value(fixture()["missions"][3]["feats"][0].clone()).unwrap();
+        feat.id = None;
+        let snapshot = live(vec![live_entry(10, &feat.name, false)]);
+        assert!(!memory_entry(&feat, &snapshot).unwrap().completed);
+        let duplicate = live(vec![
+            live_entry(10, &feat.name, false),
+            live_entry(11, &feat.name, true),
+        ]);
+        assert!(memory_entry(&feat, &duplicate).is_none());
+        feat.id = Some("11".into());
+        assert!(memory_entry(&feat, &duplicate).unwrap().completed);
+        feat.points = Some(25);
+        assert!(memory_entry(&feat, &duplicate).is_none());
+
+        let mut character = character();
+        character.alignment = Some("Villain".into());
+        let progress = Progress {
+            character_id: character.id.clone(),
+            completed: ["1".into()].into(),
+            received_at: Instant::now(),
+        };
+        let snapshot = live(vec![live_entry(1, &mission.feats[0].name, false)]);
+        let rows = mission.visible_feats_with_memory(
+            "",
+            false,
+            Some(&character),
+            Some(&progress),
+            Some(&snapshot),
+        );
+        assert!(
+            rows.iter()
+                .any(|(f, s)| f.id.as_deref() == Some("1") && *s == Completion::Incomplete)
+        );
+        assert!(rows.iter().any(|(_, s)| *s == Completion::Unknown));
+        let completed = live(vec![live_entry(1, &mission.feats[0].name, true)]);
+        assert!(
+            !mission
+                .visible_feats_with_memory("", false, None, None, Some(&completed))
+                .iter()
+                .any(|(f, _)| f.id.as_deref() == Some("1"))
+        );
+        assert!(
+            mission
+                .visible_feats_with_memory("", true, None, None, Some(&completed))
+                .iter()
+                .any(|(f, s)| f.id.as_deref() == Some("1") && *s == Completion::Completed)
+        );
     }
     fn fixture() -> serde_json::Value {
         serde_json::json!({"reviewed_on":"2026-10-16","sources":["https://example.com/catalog"],"missions":[

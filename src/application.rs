@@ -491,6 +491,8 @@ impl eframe::App for Probe {
             });
             self.initialized = true;
         }
+        self.controller
+            .set_feats_enabled(matches!(self.tab, Tab::Character));
         self.controller.poll();
         self.feats
             .select(self.controller.view().api.as_ref().map(|r| r.id.as_str()));
@@ -610,7 +612,8 @@ impl Probe {
                             }
                         });
                         if view.api.is_none() { ui.label(&view.api_status); }
-                        if self.character.ui(ui, view.api.as_ref(), self.feats.progress.as_ref(), &self.feats.status) {
+                        if let Some(sample) = &view.native && sample.feats.is_none() { ui.small(&sample.feats_status); }
+                        if self.character.ui(ui, view.api.as_ref(), self.feats.progress.as_ref(), &self.feats.status, view.native.as_ref().and_then(|sample| sample.feats.as_deref()).filter(|snapshot| snapshot.observed_at.elapsed().as_secs() < 15)) {
                             self.feats.refresh();
                         }
                     }

@@ -5,6 +5,8 @@ pub mod api;
 pub mod character_view;
 pub mod discovery;
 pub mod feat_loader;
+pub mod feat_memory;
+mod feat_memory_codec;
 pub mod feat_progress;
 pub mod feats;
 pub mod memory;
