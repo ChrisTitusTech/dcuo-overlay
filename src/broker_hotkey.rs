@@ -72,7 +72,14 @@ pub fn arm(pid: i32, name: &str) -> Result<Hotkey, String> {
                 .into(),
         );
     }
-    arm_action(pid, name.to_owned(), true)
+    arm_action(pid, name.to_owned(), true, false)
+}
+/// Paste an item name, then await a fresh baseline acknowledgement; never Return.
+pub fn arm_text(pid: i32, name: &str) -> Result<Hotkey, String> {
+    if pid <= 0 || !valid_name(name) {
+        return Err("Invalid item name or game session".into());
+    }
+    arm_action(pid, name.to_owned(), false, true)
 }
 pub fn arm_price(pid: i32, price: u64) -> Result<Hotkey, String> {
     if pid <= 0 || price == 0 || price > u64::from(u32::MAX) {
@@ -80,9 +87,9 @@ pub fn arm_price(pid: i32, price: u64) -> Result<Hotkey, String> {
             "Price hotkey requires a selected game and price between 1 and 4294967295".into(),
         );
     }
-    arm_action(pid, price.to_string(), false)
+    arm_action(pid, price.to_string(), false, false)
 }
-fn arm_action(pid: i32, name: String, submit: bool) -> Result<Hotkey, String> {
+fn arm_action(pid: i32, name: String, submit: bool, settle_after: bool) -> Result<Hotkey, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = cancel.clone();
     let search_permit = Arc::new(AtomicBool::new(false));
@@ -95,7 +102,7 @@ fn arm_action(pid: i32, name: String, submit: bool) -> Result<Hotkey, String> {
             let result = run(
                 pid,
                 &name,
-                submit,
+                (submit, settle_after),
                 &worker_cancel,
                 &worker_permit,
                 started,
@@ -400,12 +407,13 @@ fn wait_for_search_permit(
 fn run(
     pid: i32,
     name: &str,
-    submit: bool,
+    behavior: (bool, bool),
     cancel: &AtomicBool,
     search_permit: &AtomicBool,
     started: Instant,
     events: &mpsc::Sender<Event>,
 ) -> Result<(), String> {
+    let (submit, settle_after) = behavior;
     budget(cancel, started)?;
     let candidate = process::candidate(pid).map_err(err)?;
     if process::executable_metadata(&candidate)
@@ -601,6 +609,13 @@ fn run(
         validate()?;
         no_modifiers(&c, root)?;
         thread::sleep(Duration::from_millis(35));
+    }
+    if settle_after {
+        search_permit.store(false, Ordering::Release);
+        events
+            .send(Event::ReadyToSearch(Instant::now()))
+            .map_err(err)?;
+        wait_for_search_permit(cancel, started, Instant::now(), search_permit)?;
     }
     budget(cancel, started)
 }

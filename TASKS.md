@@ -1289,3 +1289,31 @@ builds pass. Both managed-X11 startup/relaunch checks pass. Reused unchanged
 headless and installer evidence from the preceding hotkey implementation. Updated
 local install and relaunched the single companion. Live game acceptance remains
 pending, so no PR publication/merge acceptance is claimed for this workflow.
+
+## Automatic selected item (in progress)
+
+Removed manual arm/selection controls. Native research did not establish selected
+item fields, so the supported-layout fallback uses explicit screen evidence.
+Offline screenshot recognition matched the prior selection; three live OCR reads
+matched the user-changed selection. Personal names/screenshots remain ignored.
+Two consecutive names are required; a selection change clears prepared prices.
+Neither current hotkey action sends Return. Initial native Broker context is now
+published for correlation, while BrokerView suppresses baseline listings.
+
+Review fixes cover cancelled unfinished name workers, OCR restart, consecutive
+selection evidence, fresh memory and filter-token correlation. Market rows must
+have a single unambiguous item/quantity and quantity candidate one; selected
+inventory quantity remains unverified and is explicitly a single-item workflow.
+Installed Tesseract/English OCR runtime on this host. Live name recognition passes;
+full automatic paste/search/price field acceptance remains pending.
+
+Final validation: 240 workspace tests pass (four opt-in checks ignored), 168
+headless tests, both strict Clippy versions, workspace/release builds, focused
+Broker regressions and all six isolated Xvfb keyboard tests pass. Managed-X11
+startup and relaunch both show normal windows. Reused unchanged installer tests.
+Final independent review found no further actionable issues after filter token
+floor and OCR recovery fixes. The shared filter position is verified in both
+supported Broker panels. Updated the local install and relaunched the companion.
+Live recognition of the user's changed item succeeded on three consecutive reads.
+End-to-end field pasting/search/price verification remains a user live acceptance
+gate; no automatic transaction or injection occurred.

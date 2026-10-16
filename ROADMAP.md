@@ -379,3 +379,12 @@ Lead owns two-stage UI, fresh token correlation, clipboard, install and live
 acceptance. gpt-6.1-sol worker broker_search_keys owns only guarded name/search
 and price-only keyboard paths with isolated Xvfb tests. Worker search_fill_review
 independently reviews integration read-only. No worker operates the live game.
+
+## Automatic inventory selection
+
+Lead owns live screen probes, integration, state machine, baseline publication and
+installation. gpt-6.1-sol broker_selection_research investigated native UI state
+offline and found no proven selection field. broker_screen owns bounded OCR only;
+automatic_broker_review reviews integration independently. No worker operates
+the game. Acceptance includes changing selected items, no previous price reuse,
+fresh unfiltered response correlation, input isolation and live field checks.

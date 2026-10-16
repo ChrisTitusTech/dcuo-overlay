@@ -1601,7 +1601,9 @@ impl Reader {
                     .get_or_insert(snapshot.request_token);
                 if snapshot.request_token <= baseline {
                     self.broker_status = "Open My Wares or run a new Broker search to observe this session's listings".into();
-                    self.broker = None;
+                    // Publish baseline context for user-triggered search correlation;
+                    // BrokerView withholds its listings until a later token.
+                    self.broker = Some(Arc::new(snapshot));
                 } else {
                     self.broker_status = format!(
                         "{} listings in the client's observed page",

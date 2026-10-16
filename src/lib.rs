@@ -38,3 +38,6 @@ pub mod broker_hotkey;
 #[cfg(feature = "window")]
 pub mod broker_price;
 pub mod broker_scan;
+
+#[cfg(feature = "window")]
+pub mod broker_screen;

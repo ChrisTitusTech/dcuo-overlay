@@ -149,8 +149,9 @@ available. The cache clears on a confirmed area/character/session change and is
 not saved to disk. Turning the layer off hides cached locations without erasing
 them in the same context.
 
-Broker search/fill hotkey: choose an observed item in the Broker tab and arm
-**Ctrl+Alt+P**. Focus the game's Browse search field; the first press replaces its
-text and searches. Fresh matching results copy the lowest observed total minus $1.
-Focus the My Wares listing price field; the next press fills that same amount
-without submitting. See [Broker workflow](docs/broker.md) for setup and limits.
+Broker hotkey: selecting an item in the game's **Tradable Inventory** automatically
+loads its name into our Broker tab. **Ctrl+Alt+P** pastes that name into the focused
+search field. Run the search normally; fresh results prepare the lowest observed
+single-item price minus $1. Back on the same item, the next hotkey fills **Sell Price**
+without submitting. No arm button. Requires the supported 2560x1440 English layout
+and Tesseract; see [Broker workflow](docs/broker.md) for setup and limits.

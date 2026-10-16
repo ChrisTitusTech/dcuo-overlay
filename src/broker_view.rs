@@ -33,6 +33,14 @@ impl BrokerView {
             .retain(|_, row| now.saturating_duration_since(row.at) < MAX_AGE);
     }
     pub fn observe(&mut self, snapshot: &Snapshot) {
+        let owner = (snapshot.entity, snapshot.player_name.clone());
+        if self.owner.as_ref() != Some(&owner) {
+            self.clear();
+            self.owner = Some(owner);
+            self.last_token = Some(snapshot.request_token);
+            self.latest = Some(snapshot.clone());
+            return; // Baseline context only; do not expose old cached prices.
+        }
         self.observe_at(snapshot, Instant::now());
     }
     fn observe_at(&mut self, snapshot: &Snapshot, now: Instant) {
@@ -286,6 +294,23 @@ mod tests {
             observed_at: at,
             listings,
         }
+    }
+    #[test]
+    fn public_initial_snapshot_supplies_context_without_old_prices() {
+        let mut view = BrokerView::default();
+        let s = snapshot(Instant::now(), 5, vec![listing(1, "Other", false, 1, 100)]);
+        view.observe(&s);
+        assert!(view.rows.is_empty());
+        assert_eq!(view.latest.as_ref().unwrap().request_token, 5);
+        view.observe(&s);
+        assert!(view.rows.is_empty());
+        let mut fresh = s.clone();
+        fresh.request_token = 6;
+        view.observe(&fresh);
+        assert_eq!(view.rows.len(), 1);
+        fresh.entity += 1;
+        view.observe(&fresh);
+        assert!(view.rows.is_empty());
     }
     #[test]
     fn search_choices_include_wares_and_keep_stack_groups_separate() {

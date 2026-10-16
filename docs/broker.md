@@ -43,33 +43,37 @@ Private screenshots and probe output remain ignored, outside committed fixtures.
 Synthetic tests cover malformed/mutating data, bounds, ownership exclusion,
 response-token age retention, owner changes, partial pages and cache eviction.
 
-## Search then fill with Ctrl+Alt+P
+## Automatic selection and Ctrl+Alt+P
 
-1. Visit My Wares or Browse to observe the item. Choose its exact name and client
-   quantity in the companion. Check its stack against the item you intend to sell.
-2. Open the game's **Browse** tab: All categories, Price Ascending, **Usable by me
-   off**. Confirm this setup in the companion and arm the search.
-3. Click the **search item field**, then press and release **Ctrl+Alt+P**. The
-   shortcut replaces its text with the chosen name and presses Enter to search.
-4. Wait for the companion's **Copied** status. Only a fresh matching response
-   supplies the lowest observed total minus $1. This includes your own offers,
-   compares the selected client quantity, and does not prove whole-market coverage.
-5. On **My Wares**, add the item and click its **price field**. The next press of
-   **Ctrl+Alt+P** replaces that field with the copied amount. The $1 is subtracted
-   only once. This step does not press Enter or submit the listing. Review and
-   confirm the listing yourself.
+Keep the companion's Broker tab open. There is no arm button or item dropdown.
 
-Each hotkey stage is armed for 60 seconds; the response wait lasts 30 seconds.
-Watch the status to know which stage is armed: the app validates game-window focus
-but cannot detect which Broker widget has focus. It never clicks or moves focus.
-Cancel or changing the companion tab, selection, session, or pause stops the flow.
-If it expires, arm a fresh search. A failed/empty/mismatched search never copies an
-old cached price or arms price entry. Existing clipboard contents are not cleared.
+1. Open **Tradable Inventory** in the game and select an item. Its name appears
+   automatically in the companion after two matching screen reads.
+2. Turn **Usable by me off**; use **All** and **Price Ascending**. Focus the game's
+   search item field, then press/release **Ctrl+Alt+P** to replace its text with
+   the selected name. This does not press Enter.
+3. Wait for the companion to confirm the unfiltered baseline, then run the search
+   normally. A fresh matching response supplies the lowest observed total minus $1.
+4. Return to **Tradable Inventory**, selecting the same item. Focus **Sell Price**
+   and press/release **Ctrl+Alt+P**. It fills the prepared amount, without another
+   subtraction or submission. Review and submit yourself.
 
-Turn off Caps Lock, Num Lock and Sticky Keys modifiers. Printable ASCII names on
-verified keyboard mappings are supported; unsupported input fails before typing.
-If typing stops partway, inspect the field before trying again.
+Selection changes discard the previous prepared amount. Market price preparation
+currently supports single-item rows only. **Inventory stack quantity is not read**;
+list one item and check the amount. Different/unknown market variants or quantities
+are rejected. Coverage is the observed page, including your own offers, not a
+guaranteed global market minimum. Prepared prices expire after two minutes.
 
-Before submitting the search, the shortcut briefly waits for the existing reader
-to confirm a fresh settled Broker response. If another query intervenes, it stops
-instead of attributing that query's prices to this search.
+The current screen reader supports the English 2560x1440 Broker layout only. It
+reads small screen regions in memory; it does not save captures. It needs Tesseract
+and English language data (`tesseract` and `tesseract-langpack-eng` on Fedora;
+`tesseract-ocr` and `tesseract-ocr-eng` on Debian/Ubuntu). Without these, automatic
+selection is unavailable and the UI reports why. Prices still come from the
+existing read-only memory reader.
+
+Turn off Caps Lock, Num Lock and Sticky Keys. Focus the correct field yourself;
+the app identifies the panel but cannot prove which text widget is focused.
+Changing companion tabs, pausing, disconnecting or an uncertain screen stops input.
+If typing stops partway, inspect the field before retrying. Existing clipboard
+contents are not cleared when a new search fails. Neither hotkey phase presses
+Enter, clicks, switches focus, injects code or submits a listing.

@@ -1,11 +1,11 @@
-//! One-shot Browse search followed by a fresh, matching price copied to the clipboard.
+//! Screen-selected item workflow. Clipboard and keyboard prices are subtracted once.
 use crate::{
     broker_hotkey::{Event, Hotkey},
     broker_memory::Snapshot,
+    broker_screen::{Monitor, Panel, Screen},
 };
 use eframe::egui;
 use std::time::{Duration, Instant};
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ItemKey {
     pub id: u32,
@@ -13,195 +13,381 @@ pub struct ItemKey {
     pub quantity: u32,
 }
 struct Pending {
-    item: ItemKey,
+    name: String,
     owner: (usize, String),
     baseline: u64,
-    started: Option<Instant>,
-    finished_at: Option<Instant>,
     ready_at: Option<Instant>,
-    preflight: bool,
+    finished_at: Option<Instant>,
+    baseline_verified: bool,
+    unfiltered_after: Option<u64>,
+    began: Instant,
 }
 impl Pending {
-    fn price(&self, snapshot: &Snapshot, now: Instant) -> Result<Option<u64>, String> {
-        if self.owner != (snapshot.entity, snapshot.player_name.clone()) {
-            return Err("Character changed; search cancelled".into());
+    fn price(&self, s: &Snapshot, now: Instant) -> Result<Option<u64>, String> {
+        if (s.entity, s.player_name.clone()) != self.owner {
+            return Err("Character changed".into());
         }
-        let Some(started) = self.started else {
+        if now.saturating_duration_since(self.began) > Duration::from_secs(120) {
+            return Err("Search wait expired; press the item-name hotkey again".into());
+        }
+        if now.saturating_duration_since(s.observed_at) >= Duration::from_secs(5) {
             return Ok(None);
-        };
-        if now.saturating_duration_since(started) > Duration::from_secs(30) {
-            return Err(
-                "No verified matching search result within 30 seconds; nothing copied".into(),
-            );
         }
-        let expected = self
-            .baseline
-            .checked_add(1)
-            .ok_or("Broker counter overflow")?;
-        if snapshot.request_token > expected {
-            return Err("Another Broker query intervened; nothing copied".into());
-        }
-        if !self.preflight
-            || self.finished_at.is_none_or(|at| snapshot.observed_at < at)
-            || snapshot.request_token != expected
-            || snapshot.observed_at < started
+        if self
+            .unfiltered_after
+            .is_none_or(|token| s.request_token <= token)
         {
             return Ok(None);
         }
-        let rows: Vec<_> = snapshot
-            .listings
-            .iter()
-            .filter(|r| r.item_id == self.item.id && r.quantity_candidate == self.item.quantity)
-            .collect();
-        // Wait for late-loaded names rather than miss a lower unnamed matching offer.
-        if rows.iter().any(|r| r.name.is_none()) {
+        if !self.baseline_verified
+            || self.finished_at.is_none_or(|at| s.observed_at < at)
+            || s.request_token <= self.baseline
+        {
             return Ok(None);
         }
-        let lowest = rows
-            .into_iter()
-            .filter(|r| r.name.as_deref() == Some(&self.item.name))
-            .map(|r| r.total_price)
-            .min();
-        match lowest {
-            None => Ok(None),
-            Some(value) => suggested(value).map(Some).ok_or_else(|| {
-                "Lowest matching price cannot be undercut by $1; nothing copied".into()
-            }),
+        // User performs the search normally; intermediate filter/page queries are
+        // allowed, but only fresh exact-name, unambiguous item/quantity rows qualify.
+        let rows: Vec<_> = s
+            .listings
+            .iter()
+            .filter(|r| r.name.as_deref() == Some(self.name.as_str()))
+            .collect();
+        let Some(first) = rows.first() else {
+            return Ok(None);
+        };
+        if first.item_id == 0 || first.quantity_candidate != 1 {
+            return Err("Only single-item market prices are supported; no price prepared".into());
         }
+        if rows
+            .iter()
+            .any(|r| r.item_id != first.item_id || r.quantity_candidate != first.quantity_candidate)
+        {
+            return Err("Different item variants or stack sizes; no price prepared".into());
+        }
+        if s.listings.iter().any(|r| r.name.is_none()) {
+            return Ok(None);
+        }
+        let lowest = rows.iter().map(|r| r.total_price).min().unwrap();
+        lowest
+            .checked_sub(1)
+            .filter(|p| *p > 0 && *p <= u64::from(u32::MAX))
+            .map(Some)
+            .ok_or_else(|| "Cannot undercut this price by $1".into())
     }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Action {
+    Name(String),
+    Price(String, u64),
 }
 #[derive(Default)]
 pub struct PriceEntry {
-    selected: Option<ItemKey>,
-    confirmed: bool,
+    monitor: Option<Monitor>,
+    pid: Option<i32>,
+    screen: Option<Screen>,
+    candidate: Option<(String, u8)>,
+    selected: Option<String>,
     hotkey: Option<Hotkey>,
+    action: Option<Action>,
     pending: Option<Pending>,
-    armed_pid: Option<i32>,
-    copied: Option<(ItemKey, u64, Instant)>,
+    copied: Option<(String, u64, Instant)>,
+    retry_at: Option<Instant>,
     status: String,
 }
 impl PriceEntry {
-    pub fn cancel(&mut self) {
-        if self.hotkey.take().is_some() || self.pending.is_some() {
-            self.status = "Search cancelled; no new price copied".into();
+    fn stop_input(&mut self) {
+        if self.hotkey.is_some() && matches!(self.action, Some(Action::Name(_))) {
+            self.pending = None;
         }
+        self.hotkey = None;
+        self.action = None;
+    }
+    fn clear_flow(&mut self) {
+        self.stop_input();
         self.pending = None;
-        self.armed_pid = None;
+        self.copied = None;
+    }
+    pub fn cancel(&mut self) {
+        self.clear_flow();
+        self.monitor = None;
+        self.pid = None;
+        self.screen = None;
+        self.candidate = None;
+        self.selected = None;
     }
     pub fn reset(&mut self) {
         self.cancel();
         *self = Self::default();
     }
-    fn tick(&mut self, ctx: &egui::Context, pid: Option<i32>, snapshot: Option<&Snapshot>) {
+    fn observe_screen(&mut self, screen: Screen) {
+        // Both supported panels share the same verified left-side filter control.
+        if (screen.panel == Panel::Other || screen.usable_by_me != Some(false))
+            && let Some(p) = &mut self.pending
+        {
+            p.unfiltered_after = None;
+        }
+        match screen.panel {
+            Panel::Tradable => {
+                if let Some(name) = &screen.selected_name {
+                    let count = match &self.candidate {
+                        Some((old, n)) if old == name => n.saturating_add(1),
+                        _ => 1,
+                    };
+                    self.candidate = Some((name.clone(), count));
+                    if self.selected.as_ref() != Some(name) {
+                        self.clear_flow();
+                        self.selected = None;
+                        if count >= 2 {
+                            self.selected = Some(name.clone());
+                            self.status = format!("Selected in game: {name}");
+                        }
+                    }
+                } else {
+                    self.stop_input();
+                    self.candidate = None;
+                }
+            }
+            Panel::Browse => {
+                self.candidate = None;
+            }
+            Panel::Other => {
+                self.clear_flow();
+                self.selected = None;
+                self.candidate = None;
+            }
+        }
+        self.screen = Some(screen);
+    }
+    fn desired(&self) -> Option<Action> {
+        let screen = self
+            .screen
+            .as_ref()
+            .filter(|s| s.observed_at.elapsed() < Duration::from_secs(3))?;
+        let name = self.selected.as_ref()?;
+        if screen.panel == Panel::Tradable
+            && !self
+                .candidate
+                .as_ref()
+                .is_some_and(|(n, count)| n == name && *count >= 2)
+        {
+            return None;
+        }
+        if self.pending.is_some() {
+            return None;
+        }
+        if let Some((priced, value, at)) = &self.copied {
+            if priced == name
+                && at.elapsed() < Duration::from_secs(120)
+                && screen.panel == Panel::Tradable
+                && screen.selected_name.as_ref() == Some(name)
+            {
+                return Some(Action::Price(name.clone(), *value));
+            }
+            return None;
+        }
+        match screen.panel {
+            Panel::Tradable if screen.selected_name.as_ref() == Some(name) => {
+                Some(Action::Name(name.clone()))
+            }
+            Panel::Browse => Some(Action::Name(name.clone())),
+            _ => None,
+        }
+    }
+    fn tick(&mut self, ctx: &egui::Context, pid: i32, snapshot: Option<&Snapshot>) {
+        if self.pid != Some(pid) {
+            self.cancel();
+            self.pid = Some(pid);
+        }
+        if self.monitor.is_none() && self.retry_at.is_none_or(|at| Instant::now() >= at) {
+            match Monitor::start(pid) {
+                Ok(m) => self.monitor = Some(m),
+                Err(e) => {
+                    self.status = e;
+                    self.retry_at = Some(Instant::now() + Duration::from_secs(3));
+                }
+            }
+        }
+        if let Some(result) = self.monitor.as_ref().and_then(Monitor::poll) {
+            match result {
+                Ok(screen) => self.observe_screen(screen),
+                Err(error) => {
+                    self.screen = None;
+                    if let Some(p) = &mut self.pending {
+                        p.unfiltered_after = None;
+                    }
+                    self.candidate = None;
+                    self.stop_input();
+                    self.monitor = None;
+                    self.retry_at = Some(Instant::now() + Duration::from_secs(3));
+                    self.status = error;
+                }
+            }
+        }
+        let fresh = self.screen.as_ref().is_some_and(|s| {
+            s.observed_at.elapsed() < Duration::from_secs(3) && s.panel != Panel::Other
+        });
+        if !fresh {
+            if let Some(p) = &mut self.pending {
+                p.unfiltered_after = None;
+            }
+            self.candidate = None;
+            self.stop_input();
+            return;
+        }
+        // Cancel an in-progress price action immediately when its panel/selection changes.
+        if matches!(self.action, Some(Action::Price(..))) && self.desired() != self.action {
+            self.stop_input();
+        }
         while let Some(event) = self.hotkey.as_mut().and_then(Hotkey::poll) {
             match event {
                 Event::Started(at) => {
-                    if let Some(pending) = &mut self.pending {
-                        pending.started = Some(at);
-                        self.status = format!("Searching for {}...", pending.item.name);
-                    } else {
-                        self.status = "Filling the focused price field...".into();
+                    if let Some(Action::Name(name)) = &self.action {
+                        if let Some(s) =
+                            snapshot.filter(|s| s.observed_at.elapsed() < Duration::from_secs(5))
+                        {
+                            self.pending = Some(Pending {
+                                name: name.clone(),
+                                owner: (s.entity, s.player_name.clone()),
+                                baseline: s.request_token,
+                                ready_at: None,
+                                finished_at: None,
+                                baseline_verified: false,
+                                unfiltered_after: None,
+                                began: at,
+                            });
+                        } else {
+                            self.stop_input();
+                            self.status = "Waiting for a fresh Broker read".into();
+                        }
                     }
                 }
                 Event::ReadyToSearch(at) => {
-                    if let Some(pending) = &mut self.pending {
-                        pending.ready_at = Some(at);
-                        self.status =
-                            "Checking Broker response state before submitting search...".into();
+                    if let Some(p) = &mut self.pending {
+                        p.ready_at = Some(at);
                     }
                 }
                 Event::Finished(result) => {
                     self.hotkey = None;
+                    let action = self.action.take();
                     match result {
-                        Ok(()) => {
-                            if let Some(pending) = &mut self.pending {
-                                pending.finished_at = Some(Instant::now());
-                                self.status =
-                                    "Search entered; waiting for fresh matching prices...".into();
-                            } else {
-                                self.armed_pid = None;
-                                self.status = "Price typed once. Verify the amount before listing; no listing was submitted.".into();
+                        Ok(()) => match action {
+                            Some(Action::Name(_)) => {
+                                if let Some(p) = &mut self.pending {
+                                    p.finished_at = Some(Instant::now());
+                                }
+                                self.status = "Item name pasted. Run the Broker search normally; waiting for matching prices.".into();
+                            }
+                            Some(Action::Price(_, value)) => {
+                                self.status = format!(
+                                    "Sell Price filled with {value}. Review and submit yourself."
+                                );
+                            }
+                            None => {}
+                        },
+                        Err(error) => {
+                            self.pending = None;
+                            self.status = error;
+                            self.retry_at = Some(Instant::now() + Duration::from_secs(2));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(p) = &self.pending {
+            if p.began.elapsed() > Duration::from_secs(120) {
+                self.stop_input();
+                self.pending = None;
+                self.status = "Search wait expired".into();
+            } else if let Some(s) = snapshot {
+                if let Some(at) = p.ready_at
+                    && s.observed_at >= at
+                {
+                    if s.request_token != p.baseline || (s.entity, s.player_name.clone()) != p.owner
+                    {
+                        self.stop_input();
+                        self.pending = None;
+                        self.status = "Broker changed while typing; repeat the name hotkey".into();
+                    } else {
+                        if let Some(h) = &self.hotkey {
+                            h.confirm_search();
+                        }
+                        if let Some(p) = &mut self.pending {
+                            p.baseline_verified = true;
+                            p.ready_at = None;
+                        }
+                    }
+                }
+                if let Some(p) = &mut self.pending {
+                    let off = self.screen.as_ref().is_some_and(|screen| {
+                        matches!(screen.panel, Panel::Browse | Panel::Tradable)
+                            && screen.usable_by_me == Some(false)
+                    });
+                    if !off {
+                        p.unfiltered_after = None;
+                    } else if p.unfiltered_after.is_none()
+                        && self
+                            .screen
+                            .as_ref()
+                            .is_some_and(|screen| s.observed_at >= screen.observed_at)
+                    {
+                        p.unfiltered_after = Some(s.request_token);
+                        self.status =
+                            "Unfiltered baseline confirmed. Run the item search now.".into();
+                    }
+                }
+                if let Some(p) = &self.pending {
+                    let unfiltered_browse = self.screen.as_ref().is_some_and(|screen| {
+                        screen.panel == Panel::Browse
+                            && screen.usable_by_me == Some(false)
+                            && s.observed_at >= screen.observed_at
+                    });
+                    if unfiltered_browse {
+                        match p.price(s, Instant::now()) {
+                            Ok(Some(value)) => {
+                                let name = p.name.clone();
+                                ctx.copy_text(value.to_string());
+                                self.copied = Some((name.clone(), value, Instant::now()));
+                                self.pending = None;
+                                self.status = format!(
+                                    "Ready: {value} for {name}. Return to Tradable Inventory and focus Sell Price; Ctrl+Alt+P fills it."
+                                );
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                self.pending = None;
+                                self.status = error;
                             }
                         }
-                        Err(error) => {
-                            self.cancel();
-                            self.status = format!(
-                                "Hotkey stopped: {error}. Check the field before retrying."
-                            );
-                        }
                     }
                 }
             }
         }
-        let Some(pending) = &self.pending else {
-            return;
-        };
-        // A missing snapshot must still allow the response wait to expire.
-        if pending
-            .started
-            .is_some_and(|at| at.elapsed() > Duration::from_secs(30))
+        if self
+            .copied
+            .as_ref()
+            .is_some_and(|(_, _, at)| at.elapsed() >= Duration::from_secs(120))
         {
-            self.cancel();
-            self.status = "Search timed out; nothing copied".into();
-            return;
+            self.copied = None;
+            self.stop_input();
         }
-        let Some(snapshot) = snapshot else {
-            return;
-        };
-        if pending.finished_at.is_none() && snapshot.request_token != pending.baseline {
-            self.cancel();
-            self.status =
-                "Broker results changed before search completion. Arm the search again.".into();
-            return;
-        }
-        if let Some(at) = pending.ready_at
-            && snapshot.observed_at >= at
+        if self.hotkey.is_none()
+            && self.retry_at.is_none_or(|at| Instant::now() >= at)
+            && snapshot.is_some_and(|s| s.observed_at.elapsed() < Duration::from_secs(5))
+            && let Some(action) = self.desired()
         {
-            if snapshot.request_token != pending.baseline
-                || (snapshot.entity, snapshot.player_name.clone()) != pending.owner
-            {
-                self.cancel();
-                self.status = "Broker changed before submission; search cancelled".into();
-                return;
-            }
-            if let Some(hotkey) = &self.hotkey {
-                hotkey.confirm_search();
-            }
-            if let Some(pending) = &mut self.pending {
-                pending.preflight = true;
-                pending.ready_at = None;
-            }
-        }
-        let Some(pending) = &self.pending else {
-            return;
-        };
-        match pending.price(snapshot, Instant::now()) {
-            Ok(Some(price)) => {
-                let item = pending.item.clone();
-                ctx.copy_text(price.to_string());
-                self.copied = Some((item.clone(), price, Instant::now()));
-                self.cancel();
-                self.status = format!(
-                    "Copied {price} for {} (lowest matching observed total minus $1).",
-                    item.name
-                );
-                if let Some(pid) = pid {
-                    match crate::broker_hotkey::arm_price(pid, price) {
-                        Ok(hotkey) => {
-                            self.hotkey = Some(hotkey);
-                            self.armed_pid = Some(pid);
-                            self.status.push_str(" Next Ctrl+Alt+P fills this amount in your focused My Wares price field. Armed for 60 seconds; no further subtraction or submission.");
-                        }
-                        Err(error) => self
-                            .status
-                            .push_str(&format!(" Price hotkey unavailable: {error}")),
-                    }
+            let result = match &action {
+                Action::Name(name) => crate::broker_hotkey::arm_text(pid, name),
+                Action::Price(_, price) => crate::broker_hotkey::arm_price(pid, *price),
+            };
+            match result {
+                Ok(h) => {
+                    self.hotkey = Some(h);
+                    self.action = Some(action);
                 }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                self.cancel();
-                self.status = error;
+                Err(e) => {
+                    self.status = e;
+                    self.retry_at = Some(Instant::now() + Duration::from_secs(3));
+                }
             }
         }
     }
@@ -209,79 +395,45 @@ impl PriceEntry {
         &mut self,
         ui: &mut egui::Ui,
         pid: Option<i32>,
-        items: &[ItemKey],
+        _items: &[ItemKey],
         snapshot: Option<&Snapshot>,
     ) {
-        if (self.pending.is_some() || self.hotkey.is_some()) && self.armed_pid != pid {
+        if let Some(pid) = pid {
+            self.tick(ui.ctx(), pid, snapshot);
+        } else {
             self.cancel();
         }
-        let previous = self.selected.clone();
-        ui.strong("Search item and copy price");
-        egui::ComboBox::from_id_salt("broker-price-item")
-            .selected_text(
-                self.selected
-                    .as_ref()
-                    .map_or("Choose an observed item", |s| &s.name),
-            )
-            .show_ui(ui, |ui| {
-                for item in items {
-                    ui.selectable_value(
-                        &mut self.selected,
-                        Some(item.clone()),
-                        format!("{} (client quantity {})", item.name, item.quantity),
-                    );
-                }
-            });
-        if previous != self.selected {
-            self.cancel();
-            self.confirmed = false;
-            self.copied = None;
-            self.status.clear();
-        }
-        let selected_present = self.selected.as_ref().is_some_and(|s| items.contains(s));
-        if !selected_present {
-            self.cancel();
-            self.confirmed = false;
-        }
-        if ui.checkbox(&mut self.confirmed, "I will focus the Browse search field; All categories, Price Ascending, Usable by me OFF").changed() { self.cancel(); }
-        ui.small("Arm, then click the game's Browse search item field and press/release Ctrl+Alt+P. It replaces the text with the selected item and presses Enter to search. Once the new price is copied, the NEXT press replaces your focused My Wares price field with that amount, without Enter. Watch the status to know which step is armed. Turn off Caps Lock, Num Lock and Sticky Keys.");
-        ui.small("Fresh matching results copy the lowest observed total minus $1, including your own offers. Only the selected client quantity is compared; confirm the actual stack. Observed pages may not cover the whole market. No old cached price is copied on failure.");
-        self.tick(ui.ctx(), pid, snapshot);
-        ui.horizontal(|ui| {
-            let fresh = snapshot.is_some_and(|s| s.observed_at.elapsed() < Duration::from_secs(5));
-            if ui.add_enabled(self.pending.is_none() && self.hotkey.is_none() && pid.is_some() && selected_present && self.confirmed && fresh, egui::Button::new("Arm search: Ctrl+Alt+P (60 seconds)")).clicked() {
-                let item = self.selected.clone().unwrap();
-                let snapshot = snapshot.unwrap();
-                match crate::broker_hotkey::arm(pid.unwrap(), &item.name) {
-                    Ok(hotkey) => {
-                        self.hotkey = Some(hotkey);
-                        self.pending = Some(Pending { item, owner: (snapshot.entity, snapshot.player_name.clone()), baseline: snapshot.request_token, started: None, finished_at: None, ready_at: None, preflight: false });
-                        self.armed_pid = pid;
-                        self.copied = None;
-                        self.status = "Armed once. Focus the Browse search field, then press and release Ctrl+Alt+P.".into();
-                    }
-                    Err(error) => self.status = error,
-                }
+        ui.strong("Broker hotkey: Ctrl+Alt+P");
+        ui.label(
+            self.selected
+                .as_ref()
+                .map_or("Open Tradable Inventory and select an item".into(), |n| {
+                    format!("Selected in game: {n}")
+                }),
+        );
+        let action = match &self.action {
+            Some(Action::Name(_)) => "Next press: replace focused search text with the item name",
+            Some(Action::Price(_, value)) => {
+                ui.label(format!("Next press: fill Sell Price with {value}"));
+                "Price is lowest observed total minus $1, subtracted once"
             }
-            if ui.add_enabled(self.pending.is_some() || self.hotkey.is_some(), egui::Button::new("Cancel hotkey")).clicked() { self.cancel(); }
-        });
-        if let Some((item, price, at)) = &self.copied {
-            ui.label(format!(
-                "Copied: {price} for {} ({} seconds ago)",
-                item.name,
-                at.elapsed().as_secs()
-            ));
+            None => "Waiting for a verified screen or search response",
+        };
+        ui.label(action);
+        if self
+            .screen
+            .as_ref()
+            .is_some_and(|s| s.usable_by_me != Some(false))
+        {
+            ui.label("Turn Usable by me OFF before searching; filtered results will not prepare a price.");
         }
         if !self.status.is_empty() {
             ui.label(&self.status);
         }
+        ui.small("No arming button. Focus the intended field before pressing the hotkey. The first press pastes the item name; run the search yourself after the status says it is ready. On returning to the same selected item in Tradable Inventory, the next press fills Sell Price. Neither step presses Enter or submits a listing.");
+        ui.small("Selected item is read from the visible English game screen (2560 x 1440). Prices come from fresh memory observations, including your own offers. Set All and Price Ascending; single-item market prices only. The selected inventory quantity is not read: list one item and verify the final amount. Coverage is partial. Turn off Caps Lock, Num Lock and Sticky Keys.");
         ui.separator();
     }
-}
-fn suggested(total: u64) -> Option<u64> {
-    total
-        .checked_sub(1)
-        .filter(|v| *v > 0 && *v <= u64::from(u32::MAX))
 }
 #[cfg(test)]
 mod tests {
@@ -289,102 +441,122 @@ mod tests {
     use crate::broker_memory::Listing;
     fn fixture() -> (Pending, Snapshot) {
         let at = Instant::now();
-        let item = ItemKey {
-            id: 42,
-            name: "Synthetic Research".into(),
-            quantity: 1,
-        };
-        let pending = Pending {
-            item: item.clone(),
-            owner: (123, "Synthetic Player".into()),
-            baseline: 5,
-            started: Some(at),
-            finished_at: Some(at),
-            ready_at: None,
-            preflight: true,
-        };
-        let row = Listing {
-            id: 1,
-            item_id: item.id,
-            name: Some(item.name),
-            seller: "Other".into(),
-            total_price: 100,
-            quantity_candidate: 1,
-            is_own_candidate: false,
-        };
         (
-            pending,
+            Pending {
+                name: "Synthetic Item".into(),
+                owner: (42, "Player".into()),
+                baseline: 5,
+                ready_at: None,
+                finished_at: Some(at),
+                baseline_verified: true,
+                unfiltered_after: Some(5),
+                began: at,
+            },
             Snapshot {
-                entity: 123,
-                player_name: "Synthetic Player".into(),
-                listings: vec![row],
+                entity: 42,
+                player_name: "Player".into(),
                 request_token: 6,
                 response_count: 1,
                 observed_at: at,
+                listings: vec![Listing {
+                    id: 1,
+                    item_id: 7,
+                    name: Some("Synthetic Item".into()),
+                    seller: "Other".into(),
+                    total_price: 100,
+                    quantity_candidate: 1,
+                    is_own_candidate: false,
+                }],
             },
         )
     }
     #[test]
-    fn only_fresh_exact_response_after_typing_is_accepted() {
+    fn requires_fresh_verified_baseline_and_exact_unambiguous_rows() {
         let (mut p, mut s) = fixture();
         assert_eq!(p.price(&s, Instant::now()).unwrap(), Some(99));
-        p.preflight = false;
+        p.baseline_verified = false;
         assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        p.preflight = true;
-        p.finished_at = None;
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        p.finished_at = p.started;
+        p.baseline_verified = true;
         s.request_token = 5;
         assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        s.request_token = 7;
-        assert!(p.price(&s, Instant::now()).is_err());
         s.request_token = 6;
-        s.observed_at -= Duration::from_secs(1);
+        let mut other = s.listings[0].clone();
+        other.quantity_candidate = 2;
+        s.listings.push(other);
+        assert!(p.price(&s, Instant::now()).is_err());
+        s.listings.pop();
+        s.listings[0].name = None;
         assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        s.player_name = "Different".into();
+        s.player_name = "Another".into();
         assert!(p.price(&s, Instant::now()).is_err());
     }
     #[test]
-    fn response_during_typing_cannot_arm_price_fill() {
+    fn refreshed_filtered_response_is_not_a_new_unfiltered_query() {
         let (mut p, mut s) = fixture();
-        p.finished_at = Some(s.observed_at + Duration::from_millis(500));
+        p.unfiltered_after = Some(s.request_token);
+        s.observed_at = Instant::now();
         assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        s.observed_at = p.finished_at.unwrap();
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), Some(99));
         s.request_token += 1;
+        assert_eq!(p.price(&s, Instant::now()).unwrap(), Some(99));
+        p.unfiltered_after = None;
+        assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
+    }
+    #[test]
+    fn old_memory_and_non_single_stacks_never_prepare_a_price() {
+        let (p, mut s) = fixture();
+        assert_eq!(
+            p.price(&s, Instant::now() + Duration::from_secs(6))
+                .unwrap(),
+            None
+        );
+        s.listings[0].quantity_candidate = 16;
         assert!(p.price(&s, Instant::now()).is_err());
     }
     #[test]
-    fn exact_item_stack_and_all_loaded_names_required() {
+    fn undercuts_once_and_rejects_nonpositive_or_excessive_prices() {
         let (p, mut s) = fixture();
-        let mut cheaper = s.listings[0].clone();
-        cheaper.id = 2;
-        cheaper.total_price = 50;
-        cheaper.name = None;
-        s.listings.push(cheaper);
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        s.listings[1].name = Some(p.item.name.clone());
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), Some(49));
-        s.listings[1].quantity_candidate = 2;
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), Some(99));
-        s.listings[0].name = Some("Other item".into());
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        s.listings.clear();
-        assert_eq!(p.price(&s, Instant::now()).unwrap(), None);
-        assert!(
-            p.price(&s, Instant::now() + Duration::from_secs(31))
-                .is_err()
-        );
-    }
-    #[test]
-    fn lowest_includes_owned_offers_and_never_underflows() {
-        let (p, mut s) = fixture();
-        s.listings[0].seller = s.player_name.clone();
-        s.listings[0].is_own_candidate = true;
         assert_eq!(p.price(&s, Instant::now()).unwrap(), Some(99));
         for value in [0, 1, u64::MAX] {
             s.listings[0].total_price = value;
             assert!(p.price(&s, Instant::now()).is_err());
         }
+    }
+    fn screen(name: &str) -> Screen {
+        Screen {
+            panel: Panel::Tradable,
+            selected_name: Some(name.into()),
+            usable_by_me: Some(false),
+            observed_at: Instant::now(),
+        }
+    }
+    #[test]
+    fn selection_needs_two_observations_and_changes_clear_price() {
+        let mut p = PriceEntry::default();
+        p.observe_screen(screen("A"));
+        assert!(p.selected.is_none());
+        p.observe_screen(screen("A"));
+        assert_eq!(p.desired(), Some(Action::Name("A".into())));
+        p.copied = Some(("A".into(), 99, Instant::now()));
+        assert_eq!(p.desired(), Some(Action::Price("A".into(), 99)));
+        p.observe_screen(screen("B"));
+        assert!(p.copied.is_none());
+        assert!(p.desired().is_none());
+        p.observe_screen(screen("B"));
+        assert_eq!(p.desired(), Some(Action::Name("B".into())));
+    }
+    #[test]
+    fn price_only_in_matching_tradable_panel() {
+        let mut p = PriceEntry::default();
+        p.observe_screen(screen("A"));
+        p.observe_screen(screen("A"));
+        p.copied = Some(("A".into(), 99, Instant::now()));
+        let mut browse = screen("A");
+        browse.panel = Panel::Browse;
+        browse.selected_name = None;
+        p.observe_screen(browse);
+        assert!(p.desired().is_none());
+        p.observe_screen(screen("A"));
+        p.observe_screen(screen("A"));
+        assert_eq!(p.desired(), Some(Action::Price("A".into(), 99)));
     }
 }

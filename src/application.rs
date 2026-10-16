@@ -681,7 +681,7 @@ impl Probe {
                     }
                     Tab::Broker => {
                         let status = if view.paused { "Paused - showing previously observed listings" } else { view.native.as_ref().map(|s| s.broker_status.as_str()).unwrap_or("Connect to the game and open its Broker") };
-                        self.broker.ui(ui, status, if view.connected && !view.paused {view.selected_pid} else {None});
+                        self.broker.ui(ui, status, if view.connected && !view.paused && view.native.is_some() {view.selected_pid} else {None});
                     }
                     Tab::Map => {
                         let (sample, gate) = map_observation(view);

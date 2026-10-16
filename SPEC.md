@@ -513,19 +513,27 @@ no live injection is validated. Existing readers remain read-only. Prove the exa
 search ABI, owned arguments, lifetime and safe execution-thread context before any
 live injected call. Never invoke transaction actions or unrelated game functions.
 
-## Broker search/fill hotkey (current implementation scope)
+## Automatic Broker selection and paste hotkey
 
-The selected observed item may come from My Wares or Browse. User confirms All,
-Price Ascending and Usable by me off and focuses the Browse search item field.
-First Ctrl+Alt+P replaces its text with the exact selected name and submits search.
-Accept only the next fresh response token, same owner, exact item/name/quantity;
-wait for unresolved matching names. Copy the lowest observed matching total minus
-$1 (including owned offers); reject missing, zero/one or out-of-range prices.
-Auto-arm a second one-shot Ctrl+Alt+P: user focuses the My Wares price field and
-the shortcut replaces it with the copied amount, without another subtraction or
-Return. Never submit a listing. Each stage expires after 60 seconds; response wait
-after input begins is 30 seconds. No pointer movement, focus change or injection.
-The UI explains stage and widget focus requirements; native widget identity and
-stack semantics are not proven. Build/session/focus/keymap/modifier guards apply.
-Cancel on tab/pause/disconnect/owner/selection changes; do not reuse stale response
-prices on failure. Coverage remains observed-page only.
+No manual arm button or item dropdown. While the companion Broker tab is active,
+observe the supported English 2560x1440 game window. Exact high-confidence OCR
+of Tradable Inventory and two consecutive selected-name observations provide the
+selection; this is screen evidence, not a proven native UI pointer. Changes clear
+the previous item price. A bounded background monitor captures only small regions
+and does not persist pixels. Missing/ambiguous layout or stale screen disables input.
+
+Ctrl+Alt+P replaces the manually focused search field with the selected name, with
+no Return. After a settled memory baseline and confirmed Usable by me OFF baseline,
+the user runs the search normally. Require a newer response token, exact name,
+unique item/quantity, quantity candidate one, resolved names and fresh memory. Copy
+lowest observed total minus $1 once (including own offers). Only on returning to
+the same selected item in Tradable Inventory does Ctrl+Alt+P replace Sell Price
+with that stored amount, without Return. Never submit a listing or move focus.
+
+Selected inventory quantity is not read: this supports single-item pricing only,
+with final user verification. All/Price Ascending remain user setup requirements.
+Response waits and prepared price expire after 120 seconds. Input workers remain
+bounded and automatically renewed while eligible, not manually armed. Pausing,
+disconnecting, changing companion tabs, owner changes or uncertain screen stop
+input. Existing exact build/session/focus/keymap/modifier guards remain. Runtime
+screen reading requires Tesseract with English data; OCR failures are explicit.
