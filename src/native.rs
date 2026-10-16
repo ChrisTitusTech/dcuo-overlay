@@ -26,6 +26,52 @@ pub enum GroundSpawnKind {
     Other,
     Exobyte,
 }
+fn exo_definition(name: &str, package: &str) -> bool {
+    name == "FXSM103_DAMAGEABLEOBJECT" && package == "DFXSM103"
+}
+fn exo_effect(
+    class: &str,
+    owner: u64,
+    actor: usize,
+    template: &str,
+    package: &str,
+    template_number: u32,
+    package_number: u32,
+) -> bool {
+    class == "ParticleSystemComponent"
+        && owner == actor as u64
+        && template == "FXGEN109_FX_BAUBLE_CRAFTING"
+        && package == "DFXGEN109"
+        && template_number == 0
+        && package_number == 0
+}
+fn component_array(header: &[u8]) -> Result<(usize, usize), String> {
+    let count = u32_at(header, 8)? as usize;
+    let capacity = u32_at(header, 12)? as usize;
+    if count > capacity || capacity > 64 {
+        return Err("Exo component array bound exceeded".into());
+    }
+    let data = u64_at(header, 0)?;
+    if data == 0 && count == 0 && capacity == 0 {
+        return Ok((0, 0));
+    }
+    Ok((pointer(data)?, count))
+}
+// Capture only object identity and linkage, never mutable particle state.
+#[derive(Default)]
+struct ExoProof(Vec<(usize, Vec<u8>)>);
+fn validate_exo_proof(
+    proof: &ExoProof,
+    mut read: impl FnMut(usize, usize) -> Result<Vec<u8>, String>,
+) -> Result<(), String> {
+    for (address, before) in &proof.0 {
+        if read(*address, before.len())? != *before {
+            return Err("Exo effect linkage changed during sample".into());
+        }
+    }
+    Ok(())
+}
+
 fn ground_spawn_kind(name: &str, package: &str) -> Option<GroundSpawnKind> {
     // Shared effect/prop definitions do not establish a harvestable exo node.
     // Accept only the explicit investigation, briefing and collection definitions.
@@ -330,6 +376,7 @@ fn known_spawn_absence(error: &str) -> bool {
         "Unsupported ground spawn definition"
             | "Unsupported nearby collectible definition"
             | "Unsupported pickup definition package"
+            | "No owned exo crafting effect"
             | "Nearby collectible hidden or deleted"
             | "Nearby collectible belongs to a different world"
     )
@@ -985,6 +1032,120 @@ impl Reader {
             world_chain,
         })
     }
+    fn exo_capture(
+        &self,
+        proof: &mut ExoProof,
+        address: usize,
+        size: usize,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = self.read(address, size)?;
+        proof.0.push((address, bytes.clone()));
+        Ok(bytes)
+    }
+    fn exo_identity(&self, proof: &mut ExoProof, address: usize) -> Result<Vec<u8>, String> {
+        let mut bytes = vec![0; 0x54];
+        for (offset, size) in [(8, 4), (0x3c, 24)] {
+            bytes[offset..offset + size].copy_from_slice(&self.exo_capture(
+                proof,
+                add(address, offset)?,
+                size,
+            )?);
+        }
+        // Bind class generation as well as the object's class pointer.
+        let class = pointer(u64_at(&bytes, 0x4c)?)?;
+        self.exo_capture(proof, add(class, 8)?, 4)?;
+        self.exo_capture(proof, add(class, 0x3c)?, 24)?;
+        Ok(bytes)
+    }
+    fn recheck_exo(&self, proof: &ExoProof) -> Result<(), String> {
+        validate_exo_proof(proof, |address, size| self.read(address, size))
+    }
+
+    fn owned_exo_effect(&self, actor: usize, actor_class: usize) -> Result<ExoProof, String> {
+        let array_property = self.field(actor_class, "AllComponents", "ArrayProperty", 0xc0, 16)?;
+        let mut proof = ExoProof::default();
+        self.exo_identity(&mut proof, array_property)?;
+        let inner = pointer(u64_at(
+            &self.exo_capture(&mut proof, add(array_property, 0xcc)?, 8)?,
+            0,
+        )?)?;
+        let inner_identity = self.exo_identity(&mut proof, inner)?;
+        let inner_layout = self.exo_capture(&mut proof, add(inner, 0x6c)?, 8)?;
+        let component_class = pointer(u64_at(
+            &self.exo_capture(&mut proof, add(inner, 0xcc)?, 8)?,
+            0,
+        )?)?;
+        let component_identity = self.exo_identity(&mut proof, component_class)?;
+        if self.class_name(pointer(u64_at(&inner_identity, 0x4c)?)?)? != "ComponentProperty"
+            || self.name(u32_at(&inner_identity, 0x44)?)? != "AllComponents"
+            || u64_at(&inner_identity, 0x3c)? != array_property as u64
+            || u32_at(&inner_layout, 0)? != 1
+            || u32_at(&inner_layout, 4)? != 8
+            || self.name(u32_at(&component_identity, 0x44)?)? != "ActorComponent"
+            || self.class_name(pointer(u64_at(&component_identity, 0x4c)?)?)? != "Class"
+        {
+            return Err("Reflection schema mismatch for AllComponents inner".into());
+        }
+        self.exo_identity(&mut proof, actor)?;
+        let header = self.exo_capture(&mut proof, add(actor, 0xc0)?, 16)?;
+        let (data, count) = component_array(&header)?;
+        let members = if count == 0 {
+            Vec::new()
+        } else {
+            self.exo_capture(&mut proof, data, count * 8)?
+        };
+        let mut found = false;
+        let mut seen = HashSet::new();
+        for slot in members.chunks_exact(8) {
+            let value = u64_at(slot, 0)?;
+            if value == 0 {
+                continue;
+            }
+            let component = pointer(value)?;
+            if !seen.insert(component) {
+                return Err("Duplicate exo component membership".into());
+            }
+            let identity = self.exo_identity(&mut proof, component)?;
+            let class = pointer(u64_at(&identity, 0x4c)?)?;
+            let class_name = self.class_name(class)?;
+            if class_name != "ParticleSystemComponent" {
+                continue;
+            }
+            self.field(class, "Owner", "ObjectProperty", 0x74, 8)?;
+            self.field(class, "Template", "ObjectProperty", 0x224, 8)?;
+            let owner = u64_at(&self.exo_capture(&mut proof, add(component, 0x74)?, 8)?, 0)?;
+            let template = u64_at(&self.exo_capture(&mut proof, add(component, 0x224)?, 8)?, 0)?;
+            if owner != actor as u64 || template == 0 {
+                continue;
+            }
+            let template = self.exo_identity(&mut proof, pointer(template)?)?;
+            let template_class = pointer(u64_at(&template, 0x4c)?)?;
+            if self.class_name(template_class)? != "ParticleSystem" {
+                continue;
+            }
+            let package = self.exo_identity(&mut proof, pointer(u64_at(&template, 0x3c)?)?)?;
+            if self.class_name(pointer(u64_at(&package, 0x4c)?)?)? != "Package" {
+                continue;
+            }
+            if u64_at(&package, 0x3c)? != 0 {
+                continue;
+            }
+            found |= exo_effect(
+                &class_name,
+                owner,
+                actor,
+                &self.name(u32_at(&template, 0x44)?)?,
+                &self.name(u32_at(&package, 0x44)?)?,
+                u32_at(&template, 0x48)?,
+                u32_at(&package, 0x48)?,
+            );
+        }
+        self.recheck_exo(&proof)?;
+        if !found {
+            return Err("No owned exo crafting effect".into());
+        }
+        Ok(proof)
+    }
     fn collectible_actor(
         &self,
         owner: &Ownership,
@@ -1012,8 +1173,13 @@ impl Reader {
         let definition_name = self.name(u32_at(&definition_before, 0x44)?)?;
         let definition_outer_address = pointer(u64_at(&definition_before, 0x3c)?)?;
         let definition_outer = self.object(definition_outer_address)?;
-        let kind = ground_spawn_kind(&definition_name, &definition_outer.2)
-            .ok_or("Unsupported ground spawn definition")?;
+        let is_exo = exo_definition(&definition_name, &definition_outer.2);
+        let kind = if is_exo {
+            GroundSpawnKind::Exobyte
+        } else {
+            ground_spawn_kind(&definition_name, &definition_outer.2)
+                .ok_or("Unsupported ground spawn definition")?
+        };
         if self.class_name(definition_outer.1)? != "Package" {
             return Err("Unsupported pickup definition package".into());
         }
@@ -1023,6 +1189,20 @@ impl Reader {
         {
             return Err("Unsupported nearby collectible definition".into());
         }
+        let exo_proof = if is_exo {
+            // Asset package names must be unnumbered as well as the definition.
+            if u32_at(&self.read(definition_outer_address, 0x54)?, 0x48)? != 0 {
+                return Err("Unsupported pickup definition package".into());
+            }
+            let mut proof = self.owned_exo_effect(actor, actor_class)?;
+            let package = self.exo_identity(&mut proof, definition_outer_address)?;
+            if u32_at(&package, 0x48)? != 0 {
+                return Err("Unsupported pickup definition package".into());
+            }
+            Some(proof)
+        } else {
+            None
+        };
         let cached_flags = self.collectible_schemas.borrow().get(&identities).cloned();
         let flags = if let Some(flags) = cached_flags {
             flags
@@ -1081,6 +1261,9 @@ impl Reader {
             if self.object(class)?.0 != identity {
                 return Err("Collectible class identity changed".into());
             }
+        }
+        if let Some(proof) = exo_proof {
+            self.recheck_exo(&proof)?;
         }
         Ok(Collectible { position, kind })
     }
@@ -1627,6 +1810,126 @@ mod tests {
         assert_eq!(cursor, 54);
         assert_eq!(next_scan_cursor(cursor as u32, true), 54);
         assert_eq!(next_scan_cursor(249_999, false), 250_000);
+    }
+    #[test]
+    fn exo_requires_exact_owned_effect_assets() {
+        assert!(exo_definition("FXSM103_DAMAGEABLEOBJECT", "DFXSM103"));
+        assert!(!exo_definition("FXSM103_DAMAGEABLEOBJECT", "OTHER"));
+        let matches = |class, owner, template, package, tn, pn| {
+            exo_effect(class, owner, 0x10000, template, package, tn, pn)
+        };
+        assert!(matches(
+            "ParticleSystemComponent",
+            0x10000,
+            "FXGEN109_FX_BAUBLE_CRAFTING",
+            "DFXGEN109",
+            0,
+            0
+        ));
+        for (class, owner, template, package, tn, pn) in [
+            (
+                "Other",
+                0x10000,
+                "FXGEN109_FX_BAUBLE_CRAFTING",
+                "DFXGEN109",
+                0,
+                0,
+            ),
+            (
+                "ParticleSystemComponent",
+                0x20000,
+                "FXGEN109_FX_BAUBLE_CRAFTING",
+                "DFXGEN109",
+                0,
+                0,
+            ),
+            (
+                "ParticleSystemComponent",
+                0x10000,
+                "OTHER",
+                "DFXGEN109",
+                0,
+                0,
+            ),
+            (
+                "ParticleSystemComponent",
+                0x10000,
+                "FXGEN109_FX_BAUBLE_CRAFTING",
+                "OTHER",
+                0,
+                0,
+            ),
+            (
+                "ParticleSystemComponent",
+                0x10000,
+                "FXGEN109_FX_BAUBLE_CRAFTING",
+                "DFXGEN109",
+                1,
+                0,
+            ),
+            (
+                "ParticleSystemComponent",
+                0x10000,
+                "FXGEN109_FX_BAUBLE_CRAFTING",
+                "DFXGEN109",
+                0,
+                1,
+            ),
+        ] {
+            assert!(!matches(class, owner, template, package, tn, pn));
+        }
+        assert!(known_spawn_absence("No owned exo crafting effect"));
+        assert!(!known_spawn_absence(
+            "Exo effect linkage changed during sample"
+        ));
+        assert!(!known_spawn_absence("Exo component array bound exceeded"));
+    }
+    #[test]
+    fn exo_proof_detects_identity_membership_and_linkage_changes() {
+        // Minimal captured identity, array header, membership, owner and template.
+        let proof = ExoProof(vec![
+            (0x10008, vec![1; 4]),
+            (0x1003c, vec![2; 24]),
+            (0x100c0, vec![3; 16]),
+            (0x20000, vec![4; 32]),
+            (0x30074, vec![5; 8]),
+            (0x30224, vec![6; 8]),
+        ]);
+        let read = |address, size| -> Result<Vec<u8>, String> {
+            let value = &proof.0.iter().find(|(a, _)| *a == address).unwrap().1;
+            assert_eq!(size, value.len());
+            Ok(value.clone())
+        };
+        assert!(validate_exo_proof(&proof, read).is_ok());
+        for (changed, _) in &proof.0 {
+            assert!(
+                validate_exo_proof(&proof, |address, size| {
+                    let mut value = read(address, size)?;
+                    if address == *changed {
+                        value[0] ^= 1;
+                    }
+                    Ok(value)
+                })
+                .is_err()
+            );
+        }
+        assert!(validate_exo_proof(&proof, |_, _| Err("unreadable".into())).is_err());
+    }
+    #[test]
+    fn exo_component_membership_is_bounded() {
+        let mut header = vec![0; 16];
+        assert_eq!(component_array(&header).unwrap(), (0, 0));
+        header[..8].copy_from_slice(&0x10000u64.to_le_bytes());
+        header[8..12].copy_from_slice(&4u32.to_le_bytes());
+        header[12..16].copy_from_slice(&64u32.to_le_bytes());
+        assert_eq!(component_array(&header).unwrap(), (0x10000, 4));
+        header[12..16].copy_from_slice(&65u32.to_le_bytes());
+        assert!(component_array(&header).is_err());
+        header[12..16].copy_from_slice(&3u32.to_le_bytes());
+        assert!(component_array(&header).is_err());
+        header[..8].fill(0);
+        header[12..16].copy_from_slice(&4u32.to_le_bytes());
+        assert!(component_array(&header).is_err());
     }
     #[test]
     fn pickup_filter_rejects_shared_effects_props_and_unproven_variants() {

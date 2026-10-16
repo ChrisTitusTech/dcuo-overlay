@@ -425,3 +425,11 @@ last-known rather than implying they are current.
 
 Map loading preserves the current in-session zoom and enables Follow player on
 successful image load. Fit and manual panning remain explicit user controls.
+
+## Exo-material effect evidence
+
+Exo-material discovery additionally requires an actor-owned ParticleSystemComponent
+using FXGEN109_FX_BAUBLE_CRAFTING in package DFXGEN109, along with the observed
+FXSM103 definition/package. Validate reflected component links, asset identity,
+bounded membership and read stability. The generic effect definition alone stays
+excluded; missing or ambiguous evidence does not become an exo marker.

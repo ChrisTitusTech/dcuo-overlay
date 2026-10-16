@@ -586,7 +586,7 @@ impl MapView {
                     egui::Sense::hover(),
                 )
                 .on_hover_text(format!("{} location last seen {}s ago. Removed after two complete scans miss it; availability is unknown.",
-                    if ground_spawns[index].kind == crate::native::GroundSpawnKind::Exobyte { "Exobyte" } else { "Ground spawn" },
+                    if ground_spawns[index].kind == crate::native::GroundSpawnKind::Exobyte { "Exo-material" } else { "Ground spawn" },
                     now.saturating_duration_since(ground_spawns[index].last_seen).as_secs()));
             }
             if let Some(point) = marker {
@@ -733,7 +733,7 @@ impl MapView {
             .on_hover_text(&self.status);
         ui.add(
             egui::Label::new(
-                egui::RichText::new("Diamonds: Cached pickups (blue, green, gold). Exo detection unavailable.")
+                egui::RichText::new("Diamonds: Cached pickups / Orange: Exo-material")
                     .small()
                     .color(egui::Color32::from_rgb(180, 185, 195)),
             )

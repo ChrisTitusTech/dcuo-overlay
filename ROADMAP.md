@@ -293,3 +293,6 @@ map import plus marker presentation live. Label retained maps honestly on gaps.
 
 Map-view preference follow-up: retain zoom across map loads and automatically
 follow the player after successful loads, while ignoring obsolete loader results.
+
+Exo-material refinement: validate the user-confirmed node's owned crafting effect,
+add guarded discovery and cache regressions, and verify its map marker live.

@@ -233,3 +233,16 @@ normalized or guessed. Chain identity is resampled and included in the sample
 context. Historical cache survives missing chain evidence but rejects a changed
 known chain. A retained background now explicitly says Last-known map when its
 current context cannot be established.
+
+## Exo-material crafting-effect discriminator
+
+The user provided a new nearby exo-material node. Bounded read-only inspection
+confirmed the generic FXSM103 definition again, but also identified an owned
+ParticleSystemComponent in AllComponents using ParticleSystem asset
+FXGEN109_FX_BAUBLE_CRAFTING in package DFXGEN109. Template and package name
+instances are zero, and the package has no outer. Reflected fields are
+AllComponents (ArrayProperty, 0xc0, 16), Owner (ObjectProperty, 0x74, 8), and
+Template (ObjectProperty, 0x224, 8). A bounded current-area inventory found two
+actors with that owned crafting effect, including the user-confirmed nearby node.
+This supplies a narrower signal than the shared definition alone; absence of
+this effect remains unsupported rather than inferring pickup semantics.
