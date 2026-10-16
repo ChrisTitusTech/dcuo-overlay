@@ -104,7 +104,13 @@ impl Sample {
             && self.owner.world_pointer == other.owner.world_pointer
             && self.area_key == other.area_key
             && match (&self.owner.area, &other.owner.area) {
-                (Some(current), Some(previous)) => current.world == previous.world,
+                (Some(current), Some(previous)) => {
+                    current.world == previous.world
+                        && match (&current.world_chain, &previous.world_chain) {
+                            (Some(current), Some(previous)) => current == previous,
+                            _ => true,
+                        }
+                }
                 _ => true,
             }
     }
@@ -118,7 +124,7 @@ struct Ownership {
     classes: [usize; 4],
     outers: Vec<(usize, u32)>,
     package: String,
-    area: Option<AreaContext>,
+    area: Option<Box<AreaContext>>,
     world_pointer: u64,
 }
 
@@ -129,7 +135,8 @@ impl Ownership {
             && self.world_pointer == other.world_pointer
             && self.area.as_ref().and_then(|a| a.key.as_ref())
                 == other.area.as_ref().and_then(|a| a.key.as_ref())
-            && self.area.as_ref().map(|a| a.world) == other.area.as_ref().map(|a| a.world)
+            && self.area.as_ref().map(|a| (&a.world, &a.world_chain))
+                == other.area.as_ref().map(|a| (&a.world, &a.world_chain))
     }
 }
 
@@ -140,6 +147,17 @@ struct AreaContext {
     members: Vec<usize>,
     signals: Vec<(usize, u32, usize, String)>,
     key: Option<String>,
+    world_chain: Option<Vec<AreaAncestor>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AreaAncestor {
+    address: usize,
+    index: u32,
+    class: (usize, u32),
+    name: String,
+    number: u32,
+    outer: u64,
 }
 fn area_signal(package: &str, number: u32) -> Result<bool, String> {
     let relevant = package.ends_with("_AUDIO") || package.ends_with("_DESIGNERDATA");
@@ -191,6 +209,39 @@ fn supported_area(packages: &[String]) -> Option<String> {
         return None;
     }
     Some(key.into())
+}
+
+// FName instances are part of the observed alias contract, not a suffix guess.
+fn supported_world_ancestor(depth: usize, name: &str, class: &str, number: u32) -> bool {
+    let expected = [
+        (Some("WorldInfo"), "WorldInfo", 1),
+        (Some("PersistentLevel"), "Level", 0),
+        (Some("TheWorld"), "World", 0),
+        (Some("MGOT103_ALT_US"), "Package", 0),
+    ];
+    expected
+        .get(depth)
+        .is_some_and(|(expected_name, expected_class, expected_number)| {
+            class == *expected_class
+                && number == *expected_number
+                && expected_name.is_none_or(|expected| name == expected)
+        })
+}
+
+// Only this observed alias has paired world-package and visible designer evidence.
+// Any audio signal keeps the existing audio/designer ambiguity rules authoritative.
+fn supported_world_alias(packages: &[String], package: &str) -> Option<String> {
+    if packages.len() > 2048 || package != "MGOT103_ALT_US" {
+        return None;
+    }
+    if packages.iter().any(|name| name.ends_with("_AUDIO")) {
+        return None;
+    }
+    let designers: Vec<_> = packages
+        .iter()
+        .filter(|name| name.ends_with("_DESIGNERDATA"))
+        .collect();
+    (designers.len() == 1 && designers[0] == "MGOT103_DESIGNERDATA").then(|| "MGOT103".into())
 }
 
 type CollectibleSchemas = HashMap<[(usize, u32); 3], Vec<(usize, u32)>>;
@@ -802,6 +853,43 @@ impl Reader {
         self.area_schemas.borrow_mut().insert(identity);
         Ok(())
     }
+    fn world_package_chain(&self, world: usize) -> Result<Vec<AreaAncestor>, String> {
+        let mut address = world;
+        let mut chain = Vec::with_capacity(4);
+        let mut seen = HashSet::new();
+        for depth in 0..4 {
+            if !seen.insert(address) {
+                return Err("Cyclic world package ownership".into());
+            }
+            let bytes = self.read(address, 0x54)?;
+            let class = pointer(u64_at(&bytes, 0x4c)?)?;
+            let name = self.name(u32_at(&bytes, 0x44)?)?;
+            let number = u32_at(&bytes, 0x48)?;
+            let class_object = self.object(class)?;
+            if !supported_world_ancestor(depth, &name, &class_object.2, number)
+                || self.class_name(class_object.1)? != "Class"
+            {
+                return Err("Unsupported world package ownership".into());
+            }
+            let outer = u64_at(&bytes, 0x3c)?;
+            chain.push(AreaAncestor {
+                address,
+                index: u32_at(&bytes, 8)?,
+                class: (class, class_object.0),
+                name,
+                number,
+                outer,
+            });
+            if depth == 3 {
+                if outer != 0 {
+                    return Err("World package has unexpected outer".into());
+                }
+            } else {
+                address = pointer(outer)?;
+            }
+        }
+        Ok(chain)
+    }
     fn area_context(&self, pawn: usize) -> Result<AreaContext, String> {
         let (_, pawn_class, _) = self.object(pawn)?;
         let pawn_schema = (pawn_class, self.object(pawn_class)?.0);
@@ -876,12 +964,25 @@ impl Reader {
                 }
             }
         }
+        let mut key = supported_area(&packages);
+        let mut world_chain = None;
+        if key.is_none() && supported_world_alias(&packages, "MGOT103_ALT_US").is_some() {
+            let chain = self.world_package_chain(world)?;
+            key = supported_world_alias(&packages, &chain[3].name);
+            if key.is_some() {
+                if self.world_package_chain(world)? != chain {
+                    return Err("World package ownership changed during context read".into());
+                }
+                world_chain = Some(chain);
+            }
+        }
         Ok(AreaContext {
             world: (world, world_index),
             array: (data, count, capacity),
             members,
             signals,
-            key: supported_area(&packages),
+            key,
+            world_chain,
         })
     }
     fn collectible_actor(
@@ -1284,7 +1385,7 @@ impl Reader {
             Ok(_) => "No unique supported streaming area".into(),
             Err(error) => error.clone(),
         };
-        before.area = area.ok();
+        before.area = area.ok().map(Box::new);
         let observed_at = Instant::now();
         let bytes = self.read(add(pawn, 0xd0)?, 12)?;
         let position = [float(&bytes, 0)?, float(&bytes, 4)?, float(&bytes, 8)?];
@@ -1312,7 +1413,7 @@ impl Reader {
             (Vec::new(), "Ground spawns off".into())
         };
         let mut after = self.ownership()?;
-        after.area = self.area_context(after.objects[3].0).ok();
+        after.area = self.area_context(after.objects[3].0).ok().map(Box::new);
         if self.read(self.rva(NAMES_RVA)?, 16)? != name_header {
             self.ground_scan.class_names.clear();
             return Err("Name table changed during sample; discarded".into());
@@ -1426,13 +1527,14 @@ mod tests {
     #[test]
     fn streaming_membership_does_not_restart_scan_but_zone_or_player_changes_do() {
         let mut owner = Sample::synthetic(1).owner;
-        owner.area = Some(AreaContext {
+        owner.area = Some(Box::new(AreaContext {
             world: (0x50000, 7),
             array: (0x60000, 1, 2),
             members: vec![0x70000],
             signals: Vec::new(),
             key: Some("TEST01".into()),
-        });
+            world_chain: None,
+        }));
         let mut scan = GroundScan::default();
         scan.bind_owner(&owner, 0x80000);
         scan.cursor = 500;
@@ -1699,6 +1801,100 @@ mod tests {
         }
     }
     #[test]
+    fn fallback_world_ancestor_instances_match_observed_chain_only() {
+        for (depth, name, class, number) in [
+            (0, "WorldInfo", "WorldInfo", 1),
+            (1, "PersistentLevel", "Level", 0),
+            (2, "TheWorld", "World", 0),
+            (3, "MGOT103_ALT_US", "Package", 0),
+        ] {
+            assert!(supported_world_ancestor(depth, name, class, number));
+            assert!(!supported_world_ancestor(depth, name, class, number + 1));
+            assert!(!supported_world_ancestor(depth, "Other", class, number));
+            assert!(!supported_world_ancestor(depth, name, "Other", number));
+        }
+        assert!(!supported_world_ancestor(0, "WorldInfo", "WorldInfo", 0));
+        assert!(!supported_world_ancestor(4, "MGOT103_ALT_US", "Package", 0));
+    }
+    #[test]
+    fn observed_world_alias_requires_exact_single_designer_and_no_audio() {
+        let choose = |names: &[&str], package| {
+            supported_world_alias(
+                &names.iter().map(|name| (*name).into()).collect::<Vec<_>>(),
+                package,
+            )
+        };
+        assert_eq!(
+            choose(&["MGOT103_DESIGNERDATA"], "MGOT103_ALT_US"),
+            Some("MGOT103".into())
+        );
+        for names in [
+            vec![],
+            vec!["MGOT103_BL_DESIGNERDATA"],
+            vec!["MGOT103_DESIGNERDATA", "OTHER_DESIGNERDATA"],
+            vec!["MGOT103_DESIGNERDATA", "MGOT103_DESIGNERDATA"],
+            vec!["MGOT103_DESIGNERDATA", "MGOT103_AUDIO"],
+            vec!["MGOT103_DESIGNERDATA", "MGOT103_AUDIO", "OTHER_AUDIO"],
+        ] {
+            assert_eq!(choose(&names, "MGOT103_ALT_US"), None);
+        }
+        for package in [
+            "MGOT103",
+            "MGOT103_ALT_EU",
+            "OTHER_ALT_US",
+            "MGOT103_ALT_US_1",
+        ] {
+            assert_eq!(choose(&["MGOT103_DESIGNERDATA"], package), None);
+        }
+        assert!(
+            supported_world_alias(&vec!["MGOT103_DESIGNERDATA".into(); 2049], "MGOT103_ALT_US")
+                .is_none()
+        );
+    }
+    #[test]
+    fn fallback_chain_identity_invalidates_area_and_spawn_context() {
+        let mut original = Sample::synthetic(1);
+        original.area_key = Some("MGOT103".into());
+        original.owner.area = Some(Box::new(AreaContext {
+            world: (0x40000, 1),
+            array: (0x50000, 1, 1),
+            members: vec![0x60000],
+            signals: vec![],
+            key: Some("MGOT103".into()),
+            world_chain: Some(vec![AreaAncestor {
+                address: 0x70000,
+                index: 5,
+                class: (0x80000, 6),
+                name: "MGOT103_ALT_US".into(),
+                number: 0,
+                outer: 0,
+            }]),
+        }));
+        let mut changed = original.clone();
+        changed.owner.area.as_mut().unwrap().members.push(0x90000);
+        assert!(original.same_spawn_context(&changed));
+        assert!(original.owner.same_spawn_identity(&changed.owner));
+        let mut unknown = original.clone();
+        unknown.owner.area.as_mut().unwrap().world_chain = None;
+        unknown.owner.area.as_mut().unwrap().key = None;
+        // The public cache retains its last known area key across an unknown gap.
+        assert!(original.same_spawn_context(&unknown));
+        assert!(unknown.same_spawn_context(&original));
+        assert!(!original.owner.same_spawn_identity(&unknown.owner));
+        changed
+            .owner
+            .area
+            .as_mut()
+            .unwrap()
+            .world_chain
+            .as_mut()
+            .unwrap()[0]
+            .index += 1;
+        assert_ne!(original.owner.area, changed.owner.area);
+        assert!(!original.same_spawn_context(&changed));
+        assert!(!original.owner.same_spawn_identity(&changed.owner));
+    }
+    #[test]
     fn malformed_or_ambiguous_unlisted_area_signals_are_rejected() {
         for key in [
             "",
@@ -1893,13 +2089,14 @@ mod tests {
     fn cached_spawn_context_ignores_streaming_but_rejects_reused_world() {
         let mut original = Sample::synthetic(1);
         original.area_key = Some("MGOT101".into());
-        original.owner.area = Some(AreaContext {
+        original.owner.area = Some(Box::new(AreaContext {
             world: (0x40000, 1),
             array: (0x50000, 1, 1),
             members: vec![0x60000],
             signals: vec![],
             key: Some("MGOT101".into()),
-        });
+            world_chain: None,
+        }));
         let mut streamed = original.clone();
         streamed.owner.area.as_mut().unwrap().members.push(0x70000);
         assert!(original.same_spawn_context(&streamed));
@@ -1929,13 +2126,14 @@ mod tests {
         replaced.world_pointer = 0x40000;
         assert_ne!(original, replaced);
         replaced = original.clone();
-        replaced.area = Some(AreaContext {
+        replaced.area = Some(Box::new(AreaContext {
             world: (0x40000, 1),
             array: (0x50000, 1, 1),
             members: vec![0x60000],
             signals: vec![],
             key: Some("MGOT101".into()),
-        });
+            world_chain: None,
+        }));
         assert_ne!(original, replaced);
     }
 }

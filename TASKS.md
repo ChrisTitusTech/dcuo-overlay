@@ -817,3 +817,27 @@ user acceptance claimed; private captures/inventory remain ignored locally.
 
 Final independent Codex review found no actionable regressions. The corrected
 build is installed and running on Map; no false orange markers are retained.
+
+## Repair current area without audio stream
+
+Live bounded inspection identifies a current MGOT103_ALT_US world with sole
+visible MGOT103_DESIGNERDATA and no audio signal, explaining the unresolved area.
+Added an explicit alias guarded by exact WorldInfo/Level/World/Package ancestry,
+observed name instances, generations, terminal ownership, resnapshot and designer
+corroboration. Unknown aliases and audio conflicts retain rejection. Historical
+cache tolerates temporarily unavailable chain evidence, while known identity
+changes invalidate it. Last-known map status now makes retained backgrounds clear.
+
+Validation: 144 workspace tests passed, 3 opt-in private-asset tests ignored;
+104 headless tests passed. Format, strict lint on Rust 1.96/1.95, workspace and
+release builds passed. New regressions cover aliases, ambiguity, wrong ancestor
+contracts, fallback generation/cache gaps and retained-map status. Area context
+is boxed to keep worker messages compact. The corrected build is installed.
+
+Live installed validation: the app automatically loaded MGOT103, displayed
+"Live location" and rendered the yellow player marker on the imported map.
+The stale MLOC136 background is no longer shown. The actual managed X11 window
+remains responsive; private screenshot is kept under ignored local-data. This is
+lead-observed rendering/area evidence, not new user alignment acceptance.
+
+Independent Codex review completed with no actionable regressions.

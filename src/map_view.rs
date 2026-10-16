@@ -499,13 +499,12 @@ impl MapView {
             .filter(|_| self.texture.is_some())
             .map(|entry| projected_ground_spawns(entry, ground_spawns, gate))
             .unwrap_or_default();
-        let location_status = if self.browse_other_maps {
-            "Manual browsing"
-        } else if marker.is_none() {
-            "Location unavailable"
-        } else {
-            "Live location"
-        };
+        let location_status = map_location_status(
+            self.browse_other_maps,
+            self.texture.is_some(),
+            current_index == Some(self.selected),
+            marker.is_some(),
+        );
         ui.horizontal(|ui| {
             if ui.button("-").clicked() {
                 self.zoom = (self.zoom / 1.25).max(0.25);
@@ -842,6 +841,23 @@ fn fresh_auto_context(
         session: sample.session_generation,
         zone: sample.zone_generation,
     })
+}
+
+fn map_location_status(
+    browsing: bool,
+    has_texture: bool,
+    current_map_matches: bool,
+    has_marker: bool,
+) -> &'static str {
+    if browsing {
+        "Manual browsing"
+    } else if has_texture && !current_map_matches {
+        "Last-known map - current area unavailable"
+    } else if has_marker {
+        "Live location"
+    } else {
+        "Location unavailable"
+    }
 }
 
 fn current_map_index(
@@ -1292,6 +1308,10 @@ mod tests {
                 )
                 .is_none()
             );
+            assert_eq!(
+                map_location_status(false, view.texture.is_some(), false, false),
+                "Last-known map - current area unavailable"
+            );
             assert_eq!(view.texture.as_ref().unwrap().id(), id);
             assert_eq!(view.zoom, 2.0);
             assert_eq!(view.pan, egui::vec2(13., 17.));
@@ -1301,6 +1321,29 @@ mod tests {
         view.update_current_context(Some(&sample), Some(gate));
         assert!(view.texture.is_none());
         assert!(matches!(view.pending, Some(Request::ImportArea(..))));
+    }
+    #[test]
+    fn map_status_distinguishes_retained_current_and_browsed_maps() {
+        assert_eq!(
+            map_location_status(false, true, false, false),
+            "Last-known map - current area unavailable"
+        );
+        assert_eq!(
+            map_location_status(false, true, true, false),
+            "Location unavailable"
+        );
+        assert_eq!(
+            map_location_status(false, true, true, true),
+            "Live location"
+        );
+        assert_eq!(
+            map_location_status(false, false, false, false),
+            "Location unavailable"
+        );
+        assert_eq!(
+            map_location_status(true, true, false, false),
+            "Manual browsing"
+        );
     }
     #[test]
     fn collectible_projection_uses_current_context_and_hides_unusable_samples() {
