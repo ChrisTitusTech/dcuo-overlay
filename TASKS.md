@@ -939,3 +939,55 @@ window matching 550.98 ms, optimized finder 13.72 ms, both eight hits. This
 approximately 40x local matching improvement excludes remote reads, metadata
 checks and decoding; it is not an end-to-end detection-speed claim. Independent
 Codex review found no actionable regressions in the final implementation.
+
+## Character solo-feat checklist
+
+User requests all solo On Duty feats ordered by CR, feat-point rewards (clarified,
+not allocated skill points), and completed feats hidden with an unhide option.
+Workers: solo_feat_catalog (catalog/source research), feat_api_research (completion
+client), player_detection_review (model/view), all gpt-6.1-sol. Lead owns wiring,
+background lifecycle, dependency/contracts, live operator, review and publication.
+
+Acceptance includes lowest-CR first, level-30 entries first, completed toggle,
+faction filtering where known, unknown status for missing IDs/data, cancellation
+and stale-result rejection on character changes, full bounded Census pagination,
+and visible catalog gaps. Public sources currently expose incomplete feat/ID
+coverage; comprehensive current-game acceptance remains blocked until gaps are
+resolved. No personal snapshots or raw research are included in published data.
+
+Source audit delivered 40 current Normal-entry solo missions, 171 documented
+mission-feat entries and 25 public/archived exact-ID mappings with provenance.
+Nekron's Lair and Summit of Sorrow have no published feat lists in retrieved
+sources; all other mission coverage remains partial. The public ToonData catalog
+and bounded metadata research did not resolve remaining IDs. Unmapped feats stay
+unknown and visible. Removed unrelated exploration/open-world feats and reconciled
+mission/faction aliases rather than treating string matches as sufficient proof.
+
+Implementation uses one bounded background completion worker, complete Census
+pagination, cancellation and generation-based stale-result rejection. Refresh or
+character changes clear previous completion evidence; errors never turn unknown
+into incomplete. Character details remain accessible, while experimental resource
+and name-scan information moved to Log. No game memory or map behavior changed.
+
+Validation: 164 workspace tests pass (3 opt-in private-asset checks ignored),
+121 headless tests pass, formatting, strict Clippy on Rust 1.96/1.95 and workspace/
+release builds pass. All 12 installer tests and both managed-X11 startup/relaunch
+checks pass. The installed app fetched the selected character and a complete
+Census completion set. Searching a known completed Catwoman feat showed no row
+with the default filter; enabling Show completed displayed its completed label
+and 10-point reward. Restored hidden-completed/default search afterward. Initial
+API timeout recovered on explicit retry; unavailable completion remained unknown.
+Private captures and personal responses remain ignored. Comprehensive all-feat
+coverage is explicitly not achieved; the remaining blocker is missing reliable
+public feat definitions/IDs, not a hidden claim of incompletion.
+
+Independent review caught hidden connection errors on Character after the layout
+change. Restored connection progress/failure feedback beside the controls and
+added a rendered-text regression. Updated gates pass: 165 workspace tests, 121
+headless tests (unchanged core), both strict lints and workspace/release builds.
+Final independent review follows the fix; source coverage remains partial.
+Final independent Codex review found no actionable regressions after the feedback
+fix. Lead-installed validation confirms the final build loads completion data and
+retains the default hidden-completed filter; review did not independently verify
+live Census data or source accuracy. The published milestone is the usable partial
+checklist, not acceptance of the requested exhaustive all-solo feat catalog.

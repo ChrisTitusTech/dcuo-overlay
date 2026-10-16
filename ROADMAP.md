@@ -296,3 +296,13 @@ follow the player after successful loads, while ignoring obsolete loader results
 
 Exo-material refinement: validate the user-confirmed node's owned crafting effect,
 add guarded discovery and cache regressions, and verify its map marker live.
+
+### Character solo-feat follow-up
+
+Build the CR-ordered Character checklist with feat-point rewards, default hiding
+of completed entries, source-linked catalog coverage and character-bound Census
+completion reads. Lead owns application wiring, lifecycle, integration and checks;
+solo_feat_catalog owns sourced catalog; feat_api_research owns bounded completion
+client; player_detection_review owns catalog model and view (all gpt-6.1-sol).
+Public catalog/ID gaps block an exhaustive acceptance claim. Preserve unknown
+status and make unavailable mission catalogs visible while documenting coverage.

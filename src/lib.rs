@@ -1,7 +1,12 @@
 //! Bounded Linux feasibility primitives. No game memory profiles are supported yet.
 
 pub mod api;
+#[cfg(feature = "window")]
+pub mod character_view;
 pub mod discovery;
+pub mod feat_loader;
+pub mod feat_progress;
+pub mod feats;
 pub mod memory;
 pub mod process;
 pub mod session;

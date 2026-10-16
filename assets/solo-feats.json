@@ -1,0 +1,1980 @@
+{
+  "reviewed_on": "2026-10-16",
+  "sources": [
+    "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity",
+    "https://dcuniverseonline.fandom.com/wiki/Challenges",
+    "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum",
+    "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village",
+    "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater",
+    "https://dcuniverseonline.fandom.com/wiki/Shadows_Over_Argo_Feats",
+    "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam",
+    "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+    "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero",
+    "https://toondata-census.brandonjoea3.workers.dev/feat-catalog",
+    "https://www.zonexus.ca/"
+  ],
+  "missions": [
+    {
+      "key": "8th-precinct",
+      "name": "8th Precinct",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/8th_Precinct",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "8th-precinct-sinnomore",
+          "id": "890848",
+          "name": "Sin No More",
+          "points": 10,
+          "requirement": "8th Precinct Solo: Defeat all of Trigon's demons",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "8th-precinct-smashingscience",
+          "id": null,
+          "name": "Smashing Science",
+          "points": 10,
+          "requirement": "8th Precinct Solo: Defeat 25 Science Police Officers",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "8th-precinct-arcaneluck",
+          "id": "976601",
+          "name": "Arcane Luck",
+          "points": 10,
+          "requirement": "8th Precinct Solo: Finish without a knockout",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "8th-precinct-thepowertolive",
+          "id": null,
+          "name": "The Power to Live",
+          "points": 10,
+          "requirement": "8th Precinct Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "8th-precinct-schoolofhardknocksraven",
+          "id": null,
+          "name": "School of Hard Knocks: Raven",
+          "points": 10,
+          "requirement": "8th Precinct Solo: Defeat Raven without using any consumable items or Supercharge abilities",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "mannheim-s-chinese-theater",
+      "name": "Mannheim's Chinese Theater",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Mannheim%27s_Chinese_Theater",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "mannheim-s-chinese-theater-soulsaver",
+          "id": "953376",
+          "name": "Soul Saver",
+          "points": 10,
+          "requirement": "Mannheim's Chinese Theater Solo: Smash every soul globe before engaging Faust",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "mannheim-s-chinese-theater-gooddeal",
+          "id": "976347",
+          "name": "Good Deal",
+          "points": 10,
+          "requirement": "Mannheim's Chinese Theater Solo: Finish without a knockout",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "mannheim-s-chinese-theater-schoolofhardknocksfelixfaust",
+          "id": null,
+          "name": "School of Hard Knocks: Felix Faust",
+          "points": 10,
+          "requirement": "Mannheim's Chinese Theater Solo: Defeat Felix Faust without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "meta-research-wing",
+      "name": "Meta Research Wing",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Meta_Research_Wing",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "meta-research-wing-greenmachine",
+          "id": "898131",
+          "name": "Green Machine",
+          "points": 10,
+          "requirement": "Meta Research Wing Solo: Incinerate dangerous bio-hazardous materials strewn around",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "meta-research-wing-evidencewhatevidence",
+          "id": null,
+          "name": "Evidence? What Evidence?",
+          "points": 10,
+          "requirement": "Meta Research Wing Solo: Burn evidence of LexCorp's activities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "meta-research-wing-schoolofhardknocksdoctorpsycho",
+          "id": null,
+          "name": "School of Hard Knocks: Doctor Psycho",
+          "points": 10,
+          "requirement": "Meta Research Wing Walk-In Solo: Defeat Doctor Psycho in your final battle without using any consumable items or Supercharge abilities (Metropolis, Meta Research Wing)",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "meta-research-wing-schoolofhardknockssupergirl",
+          "id": null,
+          "name": "School of Hard Knocks: Supergirl",
+          "points": 10,
+          "requirement": "Meta Research Wing Walk-In Solo: Defeat Supergirl without using any consumable items or Supercharge abilities (Metropolis, Meta Research Wing)",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "lair-of-the-spectre",
+      "name": "Lair of the Spectre",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Lair_of_the_Spectre",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "lair-of-the-spectre-shadowpacked",
+          "id": "890855",
+          "name": "Shadow-Packed",
+          "points": 10,
+          "requirement": "Lair of the Spectre Solo: Defeat 30 Ghosts",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "lair-of-the-spectre-itsnotjudgmenttimeyet",
+          "id": "977617",
+          "name": "It's Not Judgment Time Yet",
+          "points": 10,
+          "requirement": "Lair of the Spectre Solo: Finish without a knockout",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "lair-of-the-spectre-schoolofhardknocksspectre",
+          "id": null,
+          "name": "School of Hard Knocks: Spectre",
+          "points": 10,
+          "requirement": "Lair of the Spectre Solo: Defeat The Spectre without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "the-joker-s-funhouse",
+      "name": "The Joker's Funhouse",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Joker%27s_Funhouse",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "the-joker-s-funhouse-nomorefunnybusiness",
+          "id": "890852",
+          "name": "No More Funny Business",
+          "points": 10,
+          "requirement": "Joker's Funhouse Solo: Defeat 30 Joker clowns",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "the-joker-s-funhouse-misterjsspecialbbqrecipe",
+          "id": null,
+          "name": "Mister J's Special BBQ Recipe",
+          "points": 10,
+          "requirement": "Joker's Funhouse Solo: Set 30 police officers on fire",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "the-joker-s-funhouse-funtimes",
+          "id": "1001305",
+          "name": "Fun Times",
+          "points": 10,
+          "requirement": "Joker's Funhouse Solo: Finish without a knockout",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "the-joker-s-funhouse-schoolofhardknocksharleyquinn",
+          "id": null,
+          "name": "School of Hard Knocks: Harley Quinn",
+          "points": 10,
+          "requirement": "Joker's Funhouse Solo: Defeat Harley Quinn without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "the-joker-s-funhouse-schoolofhardknocksrobin",
+          "id": null,
+          "name": "School of Hard Knocks: Robin",
+          "points": 10,
+          "requirement": "Joker's Funhouse Solo: Defeat Robin without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "the-greenhouse",
+      "name": "The Greenhouse",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/The_Greenhouse",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "the-greenhouse-peasofficer",
+          "id": null,
+          "name": "Peas Officer",
+          "points": 10,
+          "requirement": "The Greenhouse Solo: Free every GPCD officer from Poison Ivy's pods",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "the-greenhouse-resistancetohercharm",
+          "id": null,
+          "name": "Resistance to Her Charm",
+          "points": 10,
+          "requirement": "The Greenhouse Solo: Complete the Solo instance without getting Knocked Out",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "the-greenhouse-schoolofhardknockspoisonivy",
+          "id": null,
+          "name": "School of Hard Knocks: Poison Ivy",
+          "points": 10,
+          "requirement": "The Greenhouse Solo: Defeat Poison Ivy without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "gotham-warehouse",
+      "name": "Gotham Warehouse",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Gotham_Warehouse",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "gotham-warehouse-favorforthefamily",
+          "id": null,
+          "name": "Favor for the Family",
+          "points": 10,
+          "requirement": "Gotham Warehouse Solo: Free 13 Falcone Mobsters",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "gotham-warehouse-thecatsmeow",
+          "id": null,
+          "name": "The Cat's Meow",
+          "points": 10,
+          "requirement": "Gotham Warehouse Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "gotham-warehouse-schoolofhardknockshuntress",
+          "id": null,
+          "name": "School of Hard Knocks: Huntress",
+          "points": 10,
+          "requirement": "Gotham Warehouse Solo: Defeat The Huntress without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "gotham-university-warehouse",
+      "name": "Gotham University Warehouse",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Gotham_University_Warehouse",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "gotham-university-warehouse-fumigator",
+          "id": null,
+          "name": "Fumigator",
+          "points": 10,
+          "requirement": "Gotham University Warehouse Solo: Secure the 4 pressure valves in under 80 seconds",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "gotham-university-warehouse-leaderofthepride",
+          "id": null,
+          "name": "Leader of the Pride",
+          "points": 10,
+          "requirement": "Gotham University Warehouse Solo: Save every Lion Cub",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "gotham-university-warehouse-brainintact",
+          "id": "941555",
+          "name": "Brain Intact",
+          "points": 10,
+          "requirement": "Gotham University Warehouse Solo: Defeat the waves of zombies without getting Knocked Out",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/characters_completed_feat"
+        },
+        {
+          "key": "gotham-university-warehouse-eightlivesleftover",
+          "id": "1106375",
+          "name": "Eight Lives Left Over",
+          "points": 10,
+          "requirement": "Gotham University Warehouse Solo: Finish without a knockout",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/characters_completed_feat"
+        },
+        {
+          "key": "gotham-university-warehouse-schoolofhardknockscatwoman",
+          "id": "1106920",
+          "name": "School of Hard Knocks: Catwoman",
+          "points": 10,
+          "requirement": "Gotham University Warehouse Solo: Defeat Catwoman without using any consumable items or Supercharge abilities",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/characters_active_feat"
+        }
+      ]
+    },
+    {
+      "key": "gotham-old-subway",
+      "name": "Gotham Old Subway",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Gotham_Old_Subway",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "gotham-old-subway-extremebirdwatching",
+          "id": "1168855",
+          "name": "Extreme Birdwatching",
+          "points": 10,
+          "requirement": "Old Gotham Subway Solo: Investigate every bird statue",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/characters_completed_feat"
+        },
+        {
+          "key": "gotham-old-subway-avoidedthethirdrail",
+          "id": null,
+          "name": "Avoided the Third Rail",
+          "points": 10,
+          "requirement": "Old Gotham Subway Solo: Finish without a knockout",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "gotham-old-subway-cantgetenoughofthatjustice",
+          "id": null,
+          "name": "Can't Get Enough of That Justice",
+          "points": 10,
+          "requirement": "Old Gotham Subway Solo: Defeat both Bane and Hush",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "gotham-old-subway-schoolofhardknocksthepenguin",
+          "id": "1165912",
+          "name": "School of Hard Knocks: The Penguin",
+          "points": 10,
+          "requirement": "Old Gotham Subway Solo: Defeat Penguin without using any consumable items or Supercharge abilities",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/characters_active_feat"
+        }
+      ]
+    },
+    {
+      "key": "gotham-city-sewers",
+      "name": "Gotham City Sewers",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Gotham_City_Sewers",
+      "coverage": "Partial: documented mission-specific feats; exhaustive coverage and Census IDs unverified.",
+      "feats": [
+        {
+          "key": "gotham-city-sewers-aintgoingdown",
+          "id": null,
+          "name": "Ain't Going Down",
+          "points": 10,
+          "requirement": "Complete the Gotham Sewers solo instance without being knocked out",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "gotham-city-sewers-thecrochunter",
+          "id": null,
+          "name": "The Croc Hunter",
+          "points": 10,
+          "requirement": "Complete the Scarecrow boss fight in the Gotham Sewer without allowing any Killer Croc hallucinations to rise",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "metropolis-university",
+      "name": "Metropolis University",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Metropolis_University",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "metropolis-university-nowyouseeme",
+          "id": null,
+          "name": "Now You See Me...",
+          "points": 10,
+          "requirement": "Metropolis University Solo: Disable every security camera and console",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "metropolis-university-toocoolforschool",
+          "id": null,
+          "name": "Too Cool for School",
+          "points": 10,
+          "requirement": "Metropolis University Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "metropolis-university-schoolofhardknockspowergirl",
+          "id": null,
+          "name": "School of Hard Knocks: Power Girl",
+          "points": 10,
+          "requirement": "Metropolis University Solo: Defeat Power Girl without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "old-star-labs",
+      "name": "Old STAR Labs",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Old_STAR_Labs",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "old-star-labs-arewenotmen",
+          "id": null,
+          "name": "Are We Not Men?",
+          "points": 10,
+          "requirement": "Old STAR Labs Solo: Complete the Solo without devolving into a super gorilla",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "old-star-labs-toughlikegorilla",
+          "id": null,
+          "name": "Tough Like Gorilla",
+          "points": 10,
+          "requirement": "Old STAR Labs Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "old-star-labs-schoolofhardknockstheflash",
+          "id": null,
+          "name": "School of Hard Knocks: The Flash",
+          "points": 10,
+          "requirement": "Old STAR Labs Solo: Defeat The Flash without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "monarch-playing-card-company",
+      "name": "Monarch Playing Card Company",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Monarch_Playing_Card_Company",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "monarch-playing-card-company-evadingdeathstroke",
+          "id": null,
+          "name": "Evading Death... Stroke",
+          "points": 10,
+          "requirement": "Monarch Playing Card Factory Solo: Finish without a knockout",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "monarch-playing-card-company-outofservice",
+          "id": null,
+          "name": "Out of Service",
+          "points": 10,
+          "requirement": "Monarch Playing Card Factory Solo: Stop the disabled J1N1 from reactivating",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "monarch-playing-card-company-schoolofhardknocksdeathstroke",
+          "id": null,
+          "name": "School of Hard Knocks: Deathstroke",
+          "points": 10,
+          "requirement": "Monarch Playing Card Factory Solo: Defeat Deathstroke without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "sentinels-of-magic-citadel",
+      "name": "Sentinels of Magic Citadel",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Sentinels_of_Magic_Citadel",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "sentinels-of-magic-citadel-thatwhichcannotbekilled",
+          "id": null,
+          "name": "That Which Cannot Be Killed",
+          "points": 10,
+          "requirement": "Sentinels of Magic Citadel Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "sentinels-of-magic-citadel-schoolofhardknocksdoctorfate",
+          "id": null,
+          "name": "School of Hard Knocks: Doctor Fate",
+          "points": 10,
+          "requirement": "Sentinels of Magic Citadel Solo: Defeat Doctor Fate without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "sentinels-of-magic-citadel-informationwarfare",
+          "id": null,
+          "name": "Information Warfare",
+          "points": 10,
+          "requirement": "Sentinels of Magic Citadel Walk-In Solo: Burn every bookcase (Metropolis, Sentinels of Magic Citadel)",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "sentinels-of-magic-base-midtown",
+      "name": "Sentinels of Magic Base (Midtown)",
+      "min_cr": null,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Sentinels_of_Magic_Base_(Midtown",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "sentinels-of-magic-base-midtown-byherwill",
+          "id": null,
+          "name": "By Her Will",
+          "points": 10,
+          "requirement": "Sentinels of Magic Base Solo: Finish without a knockout (Chinatown, Sentinels of Magic Base)",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "sentinels-of-magic-base-midtown-lookmanohands",
+          "id": null,
+          "name": "Look Ma, No Hands",
+          "points": 10,
+          "requirement": "Sentinels of Magic Base Solo: Free Eclipso without securing the Hands of Shadow",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "sentinels-of-magic-base-midtown-watchyourstep",
+          "id": null,
+          "name": "Watch Your Step",
+          "points": 10,
+          "requirement": "Sentinels of Magic Base Walk-In Solo: Redirect every portal to Hades (Metropolis Chinatown, Sentinels of Magic Base)",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "sentinels-of-magic-base-midtown-schoolofhardknockszatanna",
+          "id": null,
+          "name": "School of Hard Knocks: Zatanna",
+          "points": 10,
+          "requirement": "Sentinels of Magic Base Walk-In Solo: Defeat Zatanna without using any consumable items or Supercharge abilities (Mentor: Circe) (Metropolis, Cain Street Mall area, Sentinels of Magic Base)",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "iconic-anomaly-the-hunt",
+      "name": "Iconic Anomaly: The Hunt",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Iconic_Anomaly:_The_Hunt",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "iconic-anomaly-the-hunt-dealbreaker",
+          "id": "1825402",
+          "name": "Deal Breaker",
+          "points": 10,
+          "requirement": "Defeat each of the random iconics that appear in the Iconic Anomaly: The Hunt",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "iconic-anomaly-the-hunt-silenthunter",
+          "id": null,
+          "name": "Silent Hunter",
+          "points": 10,
+          "requirement": "Disable three control panels without alerting mobsters.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "iconic-anomaly-test-subject-1",
+      "name": "Iconic Anomaly: Test Subject #1",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Iconic_Anomaly:_Test_Subject_No._1",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "iconic-anomaly-test-subject-1-controlledcollateraldamage",
+          "id": "1819607",
+          "name": "Controlled Collateral Damage",
+          "points": 25,
+          "requirement": "Complete the Iconic Anomaly: Test Subject #1 without any scientists getting knocked out",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "iconic-anomaly-test-subject-1-therecanbeonly1",
+          "id": "1864358",
+          "name": "There Can Be Only #1",
+          "points": 10,
+          "requirement": "Defeat each of the failed Superman clones in the Iconic Anomaly: Test Subject #1",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        }
+      ]
+    },
+    {
+      "key": "aegis-of-truth",
+      "name": "Aegis of Truth",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Iconic_Vision:_Aegis_of_Truth",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "aegis-of-truth-igotthis",
+          "id": "2260949",
+          "name": "I Got This",
+          "points": 25,
+          "requirement": "In final fight in the Iconic Vision: Aegis of Truth, allow your Amazon allies to rest and do not rally them",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "aegis-of-truth-templeofboom",
+          "id": "2261026",
+          "name": "Temple of Boom",
+          "points": 10,
+          "requirement": "Defeat each of the Temple Guardians in the Iconic Vision: Aegis of Truth",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        }
+      ]
+    },
+    {
+      "key": "circe-s-trial",
+      "name": "Circe\u2019s Trial",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Iconic_Vision:_Circe%27s_Trial",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "circe-s-trial-onewomanarmy",
+          "id": "2253070",
+          "name": "One Woman Army",
+          "points": 50,
+          "requirement": "Complete the Iconic Vision: Circe's Trial without using her Legends loadout pet powers: Summon: Bestiamorph Berserker, Mirror Image",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "circe-s-trial-witchtrial",
+          "id": "2253331",
+          "name": "Witch Trial",
+          "points": 25,
+          "requirement": "Complete the Iconic Vision: Circe's Trial once without activating her deceptions, and once after activating all of them",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "circe-s-trial-happyhippolyta",
+          "id": "2431373",
+          "name": "Happy, Hippolyta?",
+          "points": 25,
+          "requirement": "Without letting your ally get knocked out, complete the Iconic Vision: Circe's Trial with every combination of Daring Statues and allies",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        }
+      ]
+    },
+    {
+      "key": "east-end-regal-hotel",
+      "name": "East End Regal Hotel",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/East_End_Regal_Hotel",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "east-end-regal-hotel-popquizhotshot",
+          "id": null,
+          "name": "Pop Quiz, Hotshot!",
+          "points": 10,
+          "requirement": "East End Regal Hotel Solo: Diffuse every bomb to save the police officers",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "east-end-regal-hotel-ringmaster",
+          "id": null,
+          "name": "Ringmaster",
+          "points": 10,
+          "requirement": "East End Regal Hotel Solo: Complete the Solo without losing a single clown",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "east-end-regal-hotel-unflappable",
+          "id": null,
+          "name": "Unflappable",
+          "points": 10,
+          "requirement": "East End Regal Hotel Solo: Finish without a knockout",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "east-end-regal-hotel-nojokingmatter",
+          "id": null,
+          "name": "No Joking Matter",
+          "points": 10,
+          "requirement": "East End Regal Hotel Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "east-end-regal-hotel-schoolofhardknocksjoker",
+          "id": null,
+          "name": "School of Hard Knocks: Joker",
+          "points": 10,
+          "requirement": "East End Regal Hotel Solo: Defeat The Joker without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "east-end-regal-hotel-schoolofhardknocksbatman",
+          "id": null,
+          "name": "School of Hard Knocks: Batman",
+          "points": 10,
+          "requirement": "East End Regal Hotel Solo: Defeat Batman without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "s-t-a-r-labs-facility",
+      "name": "S.T.A.R. Labs Facility",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/S.T.A.R._Labs_Facility",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "s-t-a-r-labs-facility-bruteforce",
+          "id": null,
+          "name": "Brute Force",
+          "points": 10,
+          "requirement": "STAR Labs Facility Solo: Complete the Solo without activating any turrets",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "s-t-a-r-labs-facility-mandown",
+          "id": null,
+          "name": "Man Down!",
+          "points": 10,
+          "requirement": "STAR Labs Facility Solo: Reach the final confrontation without losing any allied attackers",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "s-t-a-r-labs-facility-starpower",
+          "id": null,
+          "name": "STAR Power",
+          "points": 10,
+          "requirement": "STAR Labs Facility Solo: Finish without a knockout",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "s-t-a-r-labs-facility-mightisright",
+          "id": null,
+          "name": "Might Is Right",
+          "points": 10,
+          "requirement": "STAR Labs Facility Solo: Finish without a knockout",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "s-t-a-r-labs-facility-schoolofhardknockslexluthor",
+          "id": null,
+          "name": "School of Hard Knocks: Lex Luthor",
+          "points": 10,
+          "requirement": "STAR Labs Facility Solo: Defeat Lex Luthor without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "s-t-a-r-labs-facility-schoolofhardknockssuperman",
+          "id": null,
+          "name": "School of Hard Knocks: Superman",
+          "points": 10,
+          "requirement": "STAR Labs Facility Solo: Defeat Superman without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "circe-s-stronghold",
+      "name": "Circe\u2019s Stronghold",
+      "min_cr": 60,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Circe%E2%80%99s_Stronghold",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "circe-s-stronghold-wewillnotfalter",
+          "id": null,
+          "name": "We Will Not Falter",
+          "points": 10,
+          "requirement": "Circe's Stronghold Solo: Complete the Solo without being Knocked Out",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "circe-s-stronghold-thepowerofthequeen",
+          "id": null,
+          "name": "The Power of the Queen",
+          "points": 10,
+          "requirement": "Circe's Stronghold Solo: Complete the Solo without being Knocked Out",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "circe-s-stronghold-counselor",
+          "id": null,
+          "name": "Counselor",
+          "points": 10,
+          "requirement": "Circe's Stronghold Solo: Break Circe's control over the bewitched Amazons",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "circe-s-stronghold-bestiamorphethics",
+          "id": null,
+          "name": "Bestiamorph Ethics",
+          "points": 10,
+          "requirement": "Circe's Stronghold Solo: Free all of the captured Bestiamorphs",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "circe-s-stronghold-schoolofhardknockscirce",
+          "id": null,
+          "name": "School of Hard Knocks: Circe",
+          "points": 10,
+          "requirement": "Circe's Stronghold Solo: Defeat Circe without using any consumable items or Supercharge abilities",
+          "alignment": "hero",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        },
+        {
+          "key": "circe-s-stronghold-schoolofhardknockswonderwoman",
+          "id": null,
+          "name": "School of Hard Knocks: Wonder Woman",
+          "points": 10,
+          "requirement": "Circe's Stronghold Solo: Defeat Wonder Woman without using any consumable items or Supercharge abilities",
+          "alignment": "villain",
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
+        }
+      ]
+    },
+    {
+      "key": "deep-desires",
+      "name": "Deep Desires",
+      "min_cr": 100,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Deep_Desires",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "deep-desires-schoolofhardknocksdeepdesires",
+          "id": null,
+          "name": "School of Hard Knocks: Deep Desires",
+          "points": 25,
+          "requirement": "Finish without consumables or supercharge.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "deep-desires-nothungry",
+          "id": null,
+          "name": "Not Hungry",
+          "points": 25,
+          "requirement": "Finish without a knockout.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "deep-desires-gluttonforpunishment",
+          "id": null,
+          "name": "Glutton for Punishment",
+          "points": 10,
+          "requirement": "Defeat Julius in the Deep Desires without destroying his Font of Gluttony",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "science-spire",
+      "name": "Science Spire",
+      "min_cr": 100,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/The_Science_Spire",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "science-spire-kryptonspite",
+          "id": null,
+          "name": "Krypton-Spite",
+          "points": 25,
+          "requirement": "In Science Spire challenge, defeat the first boss without him using Unyielding Intolerance after he attempts it at least 4 times",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "science-spire-energizer",
+          "id": null,
+          "name": "Energizer",
+          "points": 25,
+          "requirement": "In Science Spire challenge, energize the Central Power Conduit with no more than 4 energy spheres",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "science-spire-insecuritydevices",
+          "id": null,
+          "name": "Insecurity Devices",
+          "points": 25,
+          "requirement": "In Science Spire challenge, defeat the final boss without allowing any LexCorp Security Devices from detonating and after destroying at least 4 of them",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "spark-of-parallax",
+      "name": "Spark of Parallax",
+      "min_cr": 100,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Spark_of_Parallax",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "spark-of-parallax-anywhichwaybutlose",
+          "id": "2582513",
+          "name": "Any Which Way But Lose",
+          "points": 25,
+          "requirement": "Defeat Bleez, Furious Metallo, and Vice in every possible order during the Spark of Parallax",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "spark-of-parallax-fearme",
+          "id": "2582625",
+          "name": "Fear Me!",
+          "points": 10,
+          "requirement": "Finish without a knockout.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        },
+        {
+          "key": "spark-of-parallax-doubletrouble",
+          "id": "2582672",
+          "name": "Double Trouble",
+          "points": 25,
+          "requirement": "Defeat any two of Bleez, Furious Metallo, or Vice within 15 seconds of one another in the Spark of Parallax",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/",
+          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+        }
+      ]
+    },
+    {
+      "key": "the-last-son-of-krypton",
+      "name": "The Last Son of Krypton",
+      "min_cr": 150,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/The_Last_Son_of_Krypton",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "the-last-son-of-krypton-lightsout",
+          "id": null,
+          "name": "Lights Out",
+          "points": 10,
+          "requirement": "In the Last Son of Krypton Solo Mission, turn off all of the Yellow Sun Projectors to weaken Xa-Du before defeating him.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "the-last-son-of-krypton-shineonyoucrazyphantom",
+          "id": null,
+          "name": "Shine On, You Crazy Phantom",
+          "points": 25,
+          "requirement": "In the Last Son of Krypton Solo Mission, leave on all of the Yellow Sun Projectors to defeat Xa-Du at Full Strongth.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "the-last-son-of-krypton-phantomzoneenforcer",
+          "id": null,
+          "name": "Phantom Zone Enforcer",
+          "points": 25,
+          "requirement": "In the Last Son of Krypton Solo Mission, defeat 111 Kryptonian Phantom Zone prisoners over multiple runs.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "iceberg-lounge",
+      "name": "Iceberg Lounge",
+      "min_cr": 150,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Iceberg_Lounge",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "iceberg-lounge-schoolofhardknocksiceberglounge",
+          "id": null,
+          "name": "School of Hard Knocks: Iceberg Lounge",
+          "points": 25,
+          "requirement": "Finish without consumables or supercharge.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "iceberg-lounge-chillinlikeavillain",
+          "id": null,
+          "name": "Chillin' Like a Villain",
+          "points": 25,
+          "requirement": "Finish without a knockout.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "iceberg-lounge-waddlingdoom",
+          "id": null,
+          "name": "Waddling Doom",
+          "points": 10,
+          "requirement": "Defeat Penguin on the first attempt without setting off an exploding Pengbot in the Iceberg Lounge",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "iceberg-lounge-lifeoftheparty",
+          "id": null,
+          "name": "Life of the Party",
+          "points": 10,
+          "requirement": "Experience all of the social activities in the new Iceberg Lounge",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "stemming-the-tide",
+      "name": "Stemming the Tide",
+      "min_cr": 210,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide",
+      "coverage": "Partial: documented mission-specific feats; exhaustive coverage and Census IDs unverified.",
+      "feats": [
+        {
+          "key": "stemming-the-tide-manualoverride",
+          "id": null,
+          "name": "Manual Override",
+          "points": 25,
+          "requirement": "In CCPD portion of the Story Mission (Normal), shut off the power on all cell doors while the Starro spores are feeding off the energy grid",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero"
+        },
+        {
+          "key": "stemming-the-tide-patienceisavirtue",
+          "id": null,
+          "name": "Patience is a Virtue",
+          "points": 50,
+          "requirement": "In CCPD portion of Story Mission (Normal), defeat all four Supercharged Starro in a single instance, after they have completely drained the energy on the cell doors",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero"
+        },
+        {
+          "key": "stemming-the-tide-plugthepool",
+          "id": null,
+          "name": "Plug the Pool",
+          "points": 25,
+          "requirement": "In Atlantean Temple portion of the Story Mission (Normal), plug each of the moon pools within 15 seconds each",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero"
+        },
+        {
+          "key": "stemming-the-tide-sparklesparklelittlestarro",
+          "id": null,
+          "name": "Sparkle, Sparkle, Little Starro",
+          "points": 10,
+          "requirement": "In CCPD portion of the Story Mission (Normal), destroy each of the smallest Starro spores feeding on the energy grid before it grows in size",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero"
+        },
+        {
+          "key": "stemming-the-tide-templethrowdown",
+          "id": null,
+          "name": "Temple Throwdown",
+          "points": 25,
+          "requirement": "In Atlantean Temple portion of the Story Mission (Normal), defeat at least 30 enemies that emerge from the moonpools",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero"
+        },
+        {
+          "key": "stemming-the-tide-stompastarro",
+          "id": null,
+          "name": "Stomp-A-Starro",
+          "points": 25,
+          "requirement": "In CCPD portion of the Story Mission (Normal), stomp on all the Starro spores before defeating Controlled Flash.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/ ; mission association: https://www.youtube.com/watch?v=wswWCFYYDY8"
+        }
+      ]
+    },
+    {
+      "key": "atlantis-royal-palace",
+      "name": "Atlantis: Royal Palace",
+      "min_cr": 210,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Atlantis:_Royal_Palace",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "atlantis-royal-palace-driftdestruction",
+          "id": null,
+          "name": "Drift Destruction",
+          "points": 10,
+          "requirement": "In Crown of Thorns chase in the Atlantis: Royal Palace (Normal) Solo, defeat all of the Drift Guards in one run.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "atlantis-royal-palace-royalflush",
+          "id": null,
+          "name": "Royal Flush",
+          "points": 10,
+          "requirement": "Complete the Atlantis: Royal Palace (Normal) Solo 5 times.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "atlantis-royal-palace-fortheking",
+          "id": null,
+          "name": "For the King",
+          "points": 10,
+          "requirement": "Finish without a knockout.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "atlantis-royal-palace-skilledswimmer",
+          "id": null,
+          "name": "Skilled Swimmer",
+          "points": 10,
+          "requirement": "In Atlantis: Royal Palace (Normal) Solo, complete the Crown of Thorns chase in under 10 minutes.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "atlantis-royal-palace-reefracer",
+          "id": null,
+          "name": "Reef Racer",
+          "points": 25,
+          "requirement": "In Atlantis: Royal Palace (Normal) Solo, complete the Crown of Thorns chase in under 5 minutes.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "atlantis-royal-palace-tidetorpedo",
+          "id": null,
+          "name": "Tide Torpedo",
+          "points": 50,
+          "requirement": "In Atlantis: Royal Palace (Normal) Solo, complete the Crown of Thorns chase in under 2 minutes.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "metal-pt-i-scarlet-speedster",
+      "name": "Metal Pt. I: Scarlet Speedster",
+      "min_cr": 210,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Metal_Pt._I:_Scarlet_Speedster",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "metal-pt-i-scarlet-speedster-galaxybrain",
+          "id": null,
+          "name": "Galaxy Brain",
+          "points": 10,
+          "requirement": "In Flash Museum instance of the Scarlet Speedster Solo (Normal) solve the portrait puzzle in the Flash Museum without any errors.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "metal-pt-i-scarlet-speedster-idorsuperego",
+          "id": null,
+          "name": "Id or Super-Ego?",
+          "points": 10,
+          "requirement": "In the Central City instance of the Scarlet Speedster Solo (Normal) Help or harm injured civilians in Central City as a Hero or Villain.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "metal-pt-i-scarlet-speedster-15yearsbadluck",
+          "id": null,
+          "name": "15 Years Bad Luck",
+          "points": 10,
+          "requirement": "In the Central City instance of the Scarlet Speedster Solo (Normal) fight against Mirror Master, never break more than 15 of his mirrors before defeating him.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "metal-pt-i-scarlet-speedster-scrapmetal",
+          "id": null,
+          "name": "Scrap Metal",
+          "points": 10,
+          "requirement": "In Flash Museum instance of the Scarlet Speedster Solo (Normal) defeat all of the metal enemies.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "metal-pt-i-scarlet-speedster-goingrogue",
+          "id": null,
+          "name": "Going Rogue",
+          "points": 25,
+          "requirement": "In Flash Museum instance of the Scarlet Speedster Solo (Normal) defeat Red Death one time each with the different Rogues' Tech powers.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "metal-pt-i-scarlet-speedster-schoolofhardknocksscarletspeedsterflashmuseum",
+          "id": null,
+          "name": "School of Hard Knocks: Scarlet Speedster: Flash Museum",
+          "points": 10,
+          "requirement": "Finish without consumables or supercharge.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "bop-lexcorp-tower",
+      "name": "BoP: LexCorp Tower",
+      "min_cr": 210,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/BoP:_LexCorp_Tower",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "bop-lexcorp-tower-schoolofhardknockslexcorptower",
+          "id": null,
+          "name": "School of Hard Knocks: Lexcorp Tower",
+          "points": 25,
+          "requirement": "Finish without consumables or supercharge.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "bop-lexcorp-tower-busywork",
+          "id": null,
+          "name": "Busy Work",
+          "points": 25,
+          "requirement": "In LexCorp Tower (Event or Normal) Solo, defeat 63 enemies in one run.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "bop-lexcorp-tower-saveyourbacon",
+          "id": null,
+          "name": "Save Your Bacon",
+          "points": 10,
+          "requirement": "Defeat Lobo in the LexCorp Tower (Normal) Solo without taking damage from his Spacehog.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "wonderverse-temples-of-source-power",
+      "name": "Wonderverse: Temples of Source Power",
+      "min_cr": 280,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Wonderverse:_Temples_of_Source_Power",
+      "coverage": "Partial: documented mission-specific matches; no proof of exhaustive coverage or Census IDs.",
+      "feats": [
+        {
+          "key": "wonderverse-temples-of-source-power-schoolofhardknockstemplesofsourcepower",
+          "id": null,
+          "name": "School of Hard Knocks: Temples of Source Power",
+          "points": 25,
+          "requirement": "Finish without consumables or supercharge.",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "wonderverse-temples-of-source-power-brickbygreenbrick",
+          "id": null,
+          "name": "Brick by Green Brick",
+          "points": 10,
+          "requirement": "Collect 78 Green Source Wall fragments in the Temples of Source Power Solo [Temple of Aphrodite]",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "wonderverse-temples-of-source-power-brickbybluebrick",
+          "id": null,
+          "name": "Brick by Blue Brick",
+          "points": 10,
+          "requirement": "Collect 78 Blue Source Wall fragments in the Temples of Source Power Solo [Temple of Athena]",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "wonderverse-temples-of-source-power-brickbyyellowbrick",
+          "id": null,
+          "name": "Brick by Yellow Brick",
+          "points": 10,
+          "requirement": "Collect 78 Yellow Source Wall fragments in the Temples of Source Power Solo [Temple of Hippolyta]",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "wonderverse-temples-of-source-power-brickbyredbrick",
+          "id": null,
+          "name": "Brick by Red Brick",
+          "points": 10,
+          "requirement": "Collect 78 Red Source Wall fragments in the Temples of Source Power Solo [Temple of Hera]",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        },
+        {
+          "key": "wonderverse-temples-of-source-power-rainbowspackling",
+          "id": null,
+          "name": "Rainbow Spackling",
+          "points": 50,
+          "requirement": "Complete the following feats in the Temples of Source Power Solos:",
+          "alignment": null,
+          "source": "https://www.zonexus.ca/"
+        }
+      ]
+    },
+    {
+      "key": "soba-the-treachery-of-black-adam",
+      "name": "SoBA: The Treachery of Black Adam",
+      "min_cr": 280,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam",
+      "coverage": "Partial: 8 documented mission-page feats; IDs and exhaustiveness unverified.",
+      "feats": [
+        {
+          "key": "soba-the-treachery-of-black-adam-cannedheat",
+          "id": null,
+          "name": "Canned Heat",
+          "points": 25,
+          "requirement": "Defeat Neron while 4 lava fields are active in SoBA: The Treachery of Black Adam solo.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-startingwiththemaninthemirror",
+          "id": null,
+          "name": "Starting with the Man in the Mirror",
+          "points": 25,
+          "requirement": "Defeat Neron while correctly identifying him when he duplicates himself in SoBA: The Treachery of Black Adam solo.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-betrayalasizzlingblondeandsuspense",
+          "id": null,
+          "name": "Betrayal, a Sizzling Blonde, and Suspense!",
+          "points": 10,
+          "requirement": "Listen to every recording from Billy Batson, boy reporter in SoBA: The Treachery of Black Adam solo.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-kickdetat",
+          "id": null,
+          "name": "Kick D'etat",
+          "points": 10,
+          "requirement": "Kick Greed while he's down in SoBA: The Treachery of Black Adam solo.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-thriceisnotnice",
+          "id": null,
+          "name": "Thrice is Not Nice",
+          "points": 10,
+          "requirement": "Kick Greed while he's down three times in SoBA: The Treachery of Black Adam solo.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-nowthatsboxing",
+          "id": null,
+          "name": "Now That's Boxing!",
+          "points": 10,
+          "requirement": "Defeat Greed while he has stolen your powers in SoBA: The Treachery of Black Adam solo.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-asinoftheheartelite",
+          "id": null,
+          "name": "A Sin of The Heart (Elite)",
+          "points": 25,
+          "requirement": "Complete SoBA: The Treachery of Black Adam without getting knocked out (Elite).",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        },
+        {
+          "key": "soba-the-treachery-of-black-adam-flareforthedramaticelite",
+          "id": null,
+          "name": "Flare for the Dramatic (Elite)",
+          "points": 25,
+          "requirement": "Defeat Neron while 8 lava fields are active in SoBA: The Treachery of Black Adam solo (Elite).",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/SoBA:_The_Treachery_of_Black_Adam"
+        }
+      ]
+    },
+    {
+      "key": "jldc-town-square-theater",
+      "name": "JLDC: Town Square Theater",
+      "min_cr": 280,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater",
+      "coverage": "10 feats documented in mission page, including Elite; Census IDs unknown; exhaustiveness unverified.",
+      "feats": [
+        {
+          "key": "jldc-town-square-theater-guestservices",
+          "id": null,
+          "name": "Guest Services",
+          "points": 25,
+          "requirement": "(Casual or Normal): Defeat 100 Cursed Ghosts",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-krakow",
+          "id": null,
+          "name": "Kra-Kow!",
+          "points": 10,
+          "requirement": "(Casual or Normal): Defeat Cursed Wonder Girl after blocking her Ground Smash attack at least one time",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-blockparty",
+          "id": null,
+          "name": "Block Party",
+          "points": 25,
+          "requirement": "(Casual or Normal): Defeat Cursed Wonder Girl after blocking her Lunge Tackle attack at least one time",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-shockingperformance",
+          "id": null,
+          "name": "Shocking Performance",
+          "points": 25,
+          "requirement": "(Normal): Defeat Cursed Wonder Girl without taking any damage from her Ball Lightning attack",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-bulletcatch",
+          "id": null,
+          "name": "Bullet Catch",
+          "points": 10,
+          "requirement": "(Casual or Normal): Defeat Cursed Zatanna after blocking her Aerial Blasters attack at least one time",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-absorbtheorb",
+          "id": null,
+          "name": "Absorb the Orb",
+          "points": 25,
+          "requirement": "(Normal): Defeat Cursed Zatanna without taking any damage from her Cursed Glitter Ball attack",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-cloudywithachanceoflightning",
+          "id": null,
+          "name": "Cloudy with a Chance of Lightning",
+          "points": 25,
+          "requirement": "(Normal or Elite): Defeat Cursed Zatanna without taking any damage from her Magical Orbital attack",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-neutralized",
+          "id": null,
+          "name": "Neutralized",
+          "points": 50,
+          "requirement": "(Elite): Defeat 150 Cursed Ghosts",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-blocksolid",
+          "id": null,
+          "name": "Block Solid",
+          "points": 50,
+          "requirement": "(Elite): Defeat Cursed Wonder Girl without taking any damage from her Lunge Tackle attack",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        },
+        {
+          "key": "jldc-town-square-theater-stageyoulater",
+          "id": null,
+          "name": "Stage You Later!",
+          "points": 50,
+          "requirement": "(Elite): Defeat Cursed Zatanna without taking any damage from her Aerial Blaster attack",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/JLDC:_Town_Square_Theater"
+        }
+      ]
+    },
+    {
+      "key": "apokolips-new-genesis-undercity",
+      "name": "Apokolips: New Genesis Undercity",
+      "min_cr": 440,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity",
+      "coverage": "Partial: 7 documented mission-page feats; IDs and exhaustiveness unverified.",
+      "feats": [
+        {
+          "key": "apokolips-new-genesis-undercity-bestestbuds",
+          "id": null,
+          "name": "Bestest Buds",
+          "points": 25,
+          "requirement": "New Genesis Undercity Solo (Casual or Normal): Complete the instance without being knocked out, or letting Red Tool get knocked out",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        },
+        {
+          "key": "apokolips-new-genesis-undercity-focuscommitmentsheerwill",
+          "id": null,
+          "name": "Focus, Commitment, Sheer Will",
+          "points": 25,
+          "requirement": "New Genesis Undercity Solo (Casual or Normal): Defeat all of Lashina's Parademons before defeating her",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        },
+        {
+          "key": "apokolips-new-genesis-undercity-thewalkingbrain",
+          "id": null,
+          "name": "The Walking Brain",
+          "points": 25,
+          "requirement": "New Genesis Undercity Solo (Casual or Normal): Complete the Motherbox Calibration without any failures",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        },
+        {
+          "key": "apokolips-new-genesis-undercity-anathletenotamathlete",
+          "id": null,
+          "name": "An Athlete, Not a Mathlete",
+          "points": 10,
+          "requirement": "New Genesis Undercity Solo (Normal): Complete the Motherbox Calibration by failing every time",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        },
+        {
+          "key": "apokolips-new-genesis-undercity-sickmoveskid",
+          "id": null,
+          "name": "Sick Moves, Kid",
+          "points": 25,
+          "requirement": "New Genesis Undercity Solo (Casual or Normal): Defeat Hammer Harleen without being hit by her Grand Slam attack once",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        },
+        {
+          "key": "apokolips-new-genesis-undercity-hammeredharleen",
+          "id": null,
+          "name": "Hammered Harleen",
+          "points": 25,
+          "requirement": "New Genesis Undercity Solo (Casual or Normal): Defeat Hammer Harleen 10 times",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        },
+        {
+          "key": "apokolips-new-genesis-undercity-norestforthequicked",
+          "id": null,
+          "name": "No Rest for the Quick-ed",
+          "points": 25,
+          "requirement": "New Genesis Undercity Solo (Elite): Defeat Hammer Harleen without being hit by her Grand Slam attack once",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Apokolips:_New_Genesis_Undercity"
+        }
+      ]
+    },
+    {
+      "key": "dor-desecrated-mausoleum",
+      "name": "DoR: Desecrated Mausoleum",
+      "min_cr": 440,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum",
+      "coverage": "Partial: 13 documented mission-page feats; IDs and exhaustiveness unverified.",
+      "feats": [
+        {
+          "key": "dor-desecrated-mausoleum-snapthattrap",
+          "id": null,
+          "name": "Snap That Trap",
+          "points": 10,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Normal or Elite): Spring every trap in one run",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-hiddentreasures",
+          "id": null,
+          "name": "Hidden Treasures",
+          "points": 10,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Normal or Elite): Investigate every treasure",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-defuseanddestroy",
+          "id": null,
+          "name": "Defuse and Destroy",
+          "points": 25,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Normal or Elite): Defuse 10 of the Explosive Demon's bombs in one fight.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-demonstrial",
+          "id": null,
+          "name": "Demon's Trial",
+          "points": 10,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Casual, Normal or Elite): Defeat 100 Demons.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-demonswoe",
+          "id": null,
+          "name": "Demon's Woe",
+          "points": 10,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Casual, Normal or Elite): Defeat 350 Demons.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-demonstorment",
+          "id": null,
+          "name": "Demon's Torment",
+          "points": 25,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo: Defeat 1500 Demons.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-demonsbane",
+          "id": null,
+          "name": "Demon's Bane",
+          "points": 50,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo: Defeat 3000 Demons.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-readingisoverrated",
+          "id": null,
+          "name": "Reading is Overrated",
+          "points": 25,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Casual or Normal): Destroy 15 Demonic Tomes in one attempt.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-exorcisethosedemons",
+          "id": null,
+          "name": "Exorcise those Demons",
+          "points": 10,
+          "requirement": "Desecrated Mausoleum (Normal or Elite): Complete the Desecrated Mausoleum once.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-hearyehearye",
+          "id": null,
+          "name": "Hear Ye, Hear Ye!",
+          "points": 25,
+          "requirement": "Desecrated Mausoleum or Reckoning's Hideout Solo (Normal or Elite): Face the Music",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-poltergeistperfectionist",
+          "id": null,
+          "name": "Poltergeist Perfectionist",
+          "points": 10,
+          "requirement": "Reckoning's Hideout Solo: Return all 3 items to the Spirit in the same run",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-constantineschmonstantine",
+          "id": null,
+          "name": "Constantine Schmonstantine",
+          "points": 25,
+          "requirement": "Reckoning's Hideout Solo: Ignore Constantine's Advice",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        },
+        {
+          "key": "dor-desecrated-mausoleum-faceyourreckoning",
+          "id": null,
+          "name": "Face Your Reckoning",
+          "points": 10,
+          "requirement": "Reckoning's Hideout Solo: Complete the Reckoning's Hideout Solo once.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/DoR:_Desecrated_Mausoleum"
+        }
+      ]
+    },
+    {
+      "key": "fd-hidden-lantern-village",
+      "name": "FD: Hidden Lantern Village",
+      "min_cr": 440,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village",
+      "coverage": "Partial: 8 documented mission-page feats; IDs and exhaustiveness unverified.",
+      "feats": [
+        {
+          "key": "fd-hidden-lantern-village-defendersofmogo",
+          "id": null,
+          "name": "Defenders of Mogo",
+          "points": 10,
+          "requirement": "Defeat 300 Qwardians or Yellow Lanterns across Mogo, Power Core, or Hidden Village.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        },
+        {
+          "key": "fd-hidden-lantern-village-guardiansofmogo",
+          "id": null,
+          "name": "Guardians of Mogo",
+          "points": 10,
+          "requirement": "Fearful Day: Eliminate 1500 Qwardians or Yellow Lanterns on Mogo, in Mogo's Power Core, or in the Hidden Village.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        },
+        {
+          "key": "fd-hidden-lantern-village-championsofmogo",
+          "id": null,
+          "name": "Champions of Mogo",
+          "points": 25,
+          "requirement": "Fearful Day: Eliminate 5000 Qwardians or Yellow Lanterns on Mogo, in Mogo's Power Core, or in the Hidden Village.",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        },
+        {
+          "key": "fd-hidden-lantern-village-cuttothechase",
+          "id": null,
+          "name": "Cut to the Chase",
+          "points": 10,
+          "requirement": "Hidden Lantern Village On Duty: Complete the Solo",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        },
+        {
+          "key": "fd-hidden-lantern-village-callback",
+          "id": null,
+          "name": "Call Back",
+          "points": 10,
+          "requirement": "Hidden Lantern Village Solo: Defeat 60 Kaznian Zombies",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        },
+        {
+          "key": "fd-hidden-lantern-village-turningthetables",
+          "id": null,
+          "name": "Turning the Tables",
+          "points": 10,
+          "requirement": "Hidden Lantern Village Solo: Defeat 180 Kaznian Zombies",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        },
+        {
+          "key": "fd-hidden-lantern-village-completestability",
+          "id": null,
+          "name": "Complete Stability",
+          "points": 25,
+          "requirement": "Hidden Lantern Village Solo: Defeat Lyssa Drak without hitting any Skull Bumper Construct",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/FD:_Hidden_Lantern_Village"
+        }
+      ]
+    },
+    {
+      "key": "rn-nekron-s-lair",
+      "name": "RN: Nekron's Lair",
+      "min_cr": 471,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/RN:_Nekron%27s_Lair",
+      "coverage": "Unknown: no mission-specific feat records retrieved; this does not mean no feats exist.",
+      "feats": []
+    },
+    {
+      "key": "hbb-summit-of-sorrow",
+      "name": "HBB: Summit of Sorrow",
+      "min_cr": 489,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/HBB:_Summit_of_Sorrow",
+      "coverage": "Unknown: no mission-specific feat records retrieved; this does not mean no feats exist.",
+      "feats": []
+    },
+    {
+      "key": "soa-kryb-s-lab",
+      "name": "SoA: Kryb's Lab",
+      "min_cr": 494,
+      "min_level": 30,
+      "source": "https://dcuniverseonline.fandom.com/wiki/Challenges",
+      "coverage": "Partial: episode-page Kryb's Lab matches; IDs and exhaustiveness unverified.",
+      "feats": [
+        {
+          "key": "soa-kryb-s-lab-atarmslength",
+          "id": null,
+          "name": "At Arm's Length",
+          "points": 25,
+          "requirement": "Kryb's Lab (Normal or Elite): Drain the flood without walking into any trench spawn eggs",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Shadows_Over_Argo_Feats"
+        },
+        {
+          "key": "soa-kryb-s-lab-itseemstohavelife",
+          "id": null,
+          "name": "It seems to have life",
+          "points": 25,
+          "requirement": "Kryb's Lab (Elite): Drain the flood after walking into every available egg",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Shadows_Over_Argo_Feats"
+        },
+        {
+          "key": "soa-kryb-s-lab-roundandroundwego",
+          "id": null,
+          "name": "Round and Round We Go",
+          "points": 25,
+          "requirement": "Kryb's Lab: Defeat 120 Terror Constructs",
+          "alignment": null,
+          "source": "https://dcuniverseonline.fandom.com/wiki/Shadows_Over_Argo_Feats"
+        }
+      ]
+    }
+  ]
+}

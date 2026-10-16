@@ -433,3 +433,15 @@ using FXGEN109_FX_BAUBLE_CRAFTING in package DFXGEN109, along with the observed
 FXSM103 definition/package. Validate reflected component links, asset identity,
 bounded membership and read stability. The generic effect definition alone stays
 excluded; missing or ambiguous evidence does not become an exo marker.
+
+## Character solo-feat checklist
+
+The Character tab prioritizes solo On Duty deeds/feats, sorted by current Normal
+entry CR ascending (level-30 entries first). Show each feat's point reward and
+requirements. Completed feats are hidden by default with a Show completed toggle.
+Completion is joined only through sourced feat IDs and a fully fetched Census
+completion set for the selected API character. Missing IDs, failed retrieval and
+unidentified character state are unknown, not incomplete. API selection does not
+prove the currently controlled in-game character. Keep catalog coverage and source
+freshness explicit; an empty mission list must not imply no feats exist. This
+scope does not include spending skill points or performing game actions.
