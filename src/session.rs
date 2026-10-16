@@ -146,6 +146,7 @@ pub struct Controller {
     api_request: u64,
     api_pending: bool,
     last_native_owner: Option<native::Sample>,
+    feats_enabled: Arc<AtomicBool>,
     ground_spawns_enabled: Arc<AtomicBool>,
     ground_spawns_enabled_since: Option<Instant>,
     auto_reconnect: bool,
@@ -171,6 +172,8 @@ impl Controller {
         let worker_stop = stopping.clone();
         let ground_spawns_enabled = Arc::new(AtomicBool::new(false));
         let worker_ground_spawns = ground_spawns_enabled.clone();
+        let feats_enabled = Arc::new(AtomicBool::new(false));
+        let worker_feats = feats_enabled.clone();
         let api_events = events.clone();
         let api_generation = generation.clone();
         let api_stop = stopping.clone();
@@ -182,6 +185,7 @@ impl Controller {
                 events,
                 worker_generation,
                 worker_stop,
+                worker_feats,
                 worker_ground_spawns,
             )
         });
@@ -199,6 +203,7 @@ impl Controller {
             api_request: 0,
             api_pending: false,
             last_native_owner: None,
+            feats_enabled,
             ground_spawns_enabled,
             ground_spawns_enabled_since: None,
             auto_reconnect: false,
@@ -209,6 +214,10 @@ impl Controller {
     }
     pub fn view(&self) -> &View {
         &self.view
+    }
+    /// Feat scans run only while their view is visible.
+    pub fn set_feats_enabled(&self, enabled: bool) {
+        self.feats_enabled.store(enabled, Ordering::Release);
     }
     /// Optional world traversal never resets the player or map session.
     pub fn set_ground_spawns_enabled(&mut self, enabled: bool) {
@@ -755,6 +764,7 @@ fn worker_loop(
     events: SyncSender<Event>,
     generation: Arc<AtomicU64>,
     stopping: Arc<AtomicBool>,
+    feats_enabled: Arc<AtomicBool>,
     ground_spawns_enabled: Arc<AtomicBool>,
 ) {
     let mut attached: Option<process::Candidate> = None;
@@ -954,8 +964,19 @@ fn worker_loop(
         {
             last_sample = Instant::now();
             let result = if let Some(reader) = reader.as_mut() {
+                reader.set_feats_enabled(feats_enabled.load(Ordering::Acquire));
                 reader.set_ground_spawns_enabled(ground_spawns_enabled.load(Ordering::Acquire));
-                reader.sample()
+                reader.sample_with_progress(|sample| {
+                    deliver(
+                        &events,
+                        Event {
+                            generation: attached_generation,
+                            update: Update::Native(sample),
+                        },
+                        &generation,
+                        &stopping,
+                    );
+                })
             } else {
                 Err(native_attach_error
                     .clone()
@@ -1364,6 +1385,7 @@ mod tests {
                 api_request: 2,
                 api_pending: false,
                 last_native_owner: None,
+                feats_enabled: Arc::new(AtomicBool::new(false)),
                 ground_spawns_enabled: Arc::new(AtomicBool::new(false)),
                 ground_spawns_enabled_since: None,
                 auto_reconnect: false,
@@ -1371,6 +1393,29 @@ mod tests {
             },
             events,
         )
+    }
+    #[test]
+    fn fresh_progress_during_feat_scan_preserves_location_generation() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.location_generation = 9;
+        let mut previous = native::Sample::synthetic(1);
+        previous.observed_at = Instant::now() - Duration::from_secs(2);
+        controller.last_native_owner = Some(previous.clone());
+        controller.view.native = Some(previous);
+        for x in [2.0, 3.0, 4.0] {
+            let mut fresh = native::Sample::synthetic(1);
+            fresh.position[0] = x;
+            events
+                .send(Event {
+                    generation: 1,
+                    update: Update::Native(Ok(fresh)),
+                })
+                .unwrap();
+            controller.poll();
+            assert_eq!(controller.view.location_generation, 9);
+            assert_eq!(controller.view.native.as_ref().unwrap().position[0], x);
+        }
     }
     #[test]
     fn ground_spawn_toggle_rejects_queued_markers_without_resetting_player() {

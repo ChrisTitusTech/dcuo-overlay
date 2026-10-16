@@ -16,14 +16,20 @@ profiles and full release acceptance remain incomplete. See
 [live map evidence](docs/live-map-preview.md).
 
 The Character tab includes a solo On Duty feat checklist. Look up an exact
-character name/world to load completion data, then use Refresh feats when needed.
+character name/world to load API completion data, then use Refresh feats when
+needed. With the supported game connected, the tab automatically uses live
+completion for the current in-game character and refreshes about every eight
+seconds while visible. It reads the client's feat definitions without needing the
+in-game Feats menu open. API character details remain a separate reference.
 Missions are ordered by Normal-entry CR (level-30 missions first); each documented
 feat shows its reward points. Completed feats are hidden unless Show completed is
 checked. Search matches mission names, feat names and requirements. Character
 details and experimental Log remain available.
 
 **Catalog coverage is partial:** 40 missions, 171 documented feat entries and 25
-sourced completion-ID mappings. Unknown completion remains visible. Nekron's Lair
+bundled completion-ID mappings. Live client definitions can resolve additional
+entries by an unambiguous exact title and reward. Account-only unlocks do not count
+as completed by the current character. Unknown completion remains visible. Nekron's Lair
 and Summit of Sorrow currently lack documented feat lists. Census retrieval time
 does not establish in-game freshness, and the selected API character is not
 automatically verified against the controlled player. Sources and coverage are

@@ -306,3 +306,14 @@ solo_feat_catalog owns sourced catalog; feat_api_research owns bounded completio
 client; player_detection_review owns catalog model and view (all gpt-6.1-sol).
 Public catalog/ID gaps block an exhaustive acceptance claim. Preserve unknown
 status and make unavailable mission catalogs visible while documenting coverage.
+
+### Live feat completion fallback
+
+Use read-only native character-owned feat state and serialized definitions to
+resolve catalog entries unavailable through the public definition API. Lead owns
+live experiments, native/session integration, view/source separation and gates.
+The gpt-6.1-sol exo_effect_reader worker owns the bounded pure codec; the
+player_detection_review worker owns the bounded snapshot parser and synthetic
+mutation tests. No worker operates the game. User-provided completed/incomplete
+examples are the live gate. Unknown/ambiguous definitions and remaining catalog
+coverage gaps stay visible; no exhaustive coverage claim follows this phase.

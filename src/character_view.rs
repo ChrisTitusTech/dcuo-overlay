@@ -27,10 +27,13 @@ impl CharacterView {
         reference: Option<&CharacterReference>,
         progress: Option<&Progress>,
         status: &str,
+        live: Option<&crate::feat_memory::Snapshot>,
     ) -> bool {
         let mut refresh = false;
         ui.horizontal_wrapped(|ui| {
-            if let Some(character) = reference {
+            if live.is_some() {
+                ui.strong("Current in-game character");
+            } else if let Some(character) = reference {
                 ui.strong(&character.name);
                 ui.label(format!(
                     "CR {}  |  Total SP {}",
@@ -40,15 +43,24 @@ impl CharacterView {
             } else {
                 ui.label("Look up a character to see completion status.");
             }
-            refresh = ui
-                .add_enabled(reference.is_some(), egui::Button::new("Refresh feats"))
-                .clicked();
+            if live.is_none() {
+                refresh = ui
+                    .add_enabled(reference.is_some(), egui::Button::new("Refresh feats"))
+                    .clicked();
+            }
         });
-        if reference.is_some() {
+        if reference.is_some() && live.is_none() {
             ui.small("API character reference; not proof of the currently controlled character.");
         }
         if let Some(character) = reference {
-            ui.collapsing("Character details", |ui| {
+            ui.collapsing("API character details", |ui| {
+                ui.label(format!(
+                    "Reference: {} | CR {} | SP {}",
+                    character.name,
+                    number(character.combat_rating),
+                    number(character.skill_points)
+                ));
+                ui.small("This reference is separate from the current in-game character.");
                 egui::Grid::new("character-reference-details").show(ui, |ui| {
                     for (label, value) in [
                         ("Power", character.power.as_deref()),
@@ -77,19 +89,28 @@ impl CharacterView {
                 });
             });
         }
-        match (reference, progress) {
-            (Some(character), Some(progress)) if progress.character_id == character.id => {
-                ui.small(format!(
-                    "Completion received {}s ago. Source freshness unknown.",
-                    progress.received_at.elapsed().as_secs()
-                ));
+        if let Some(live) = live {
+            ui.label("Completion from game memory for the current character.");
+            ui.small("Updates every 8 seconds while this tab is open.");
+            ui.small(format!(
+                "Read {}s ago. Account-only completions do not count as completed here.",
+                live.observed_at.elapsed().as_secs()
+            ));
+        } else {
+            match (reference, progress) {
+                (Some(character), Some(progress)) if progress.character_id == character.id => {
+                    ui.small(format!(
+                        "Completion received {}s ago. Source freshness unknown.",
+                        progress.received_at.elapsed().as_secs()
+                    ));
+                }
+                _ => {
+                    ui.small("Completion unavailable. Source freshness unknown.");
+                }
             }
-            _ => {
-                ui.small("Completion unavailable. Source freshness unknown.");
+            if !status.is_empty() {
+                ui.label(status);
             }
-        }
-        if !status.is_empty() {
-            ui.label(status);
         }
         ui.separator();
         ui.heading("Solo On Duty feats");
@@ -115,7 +136,12 @@ impl CharacterView {
             .missions
             .iter()
             .flat_map(|mission| &mission.feats)
-            .filter(|feat| feat.id.is_some())
+            .filter(|feat| {
+                live.map_or_else(
+                    || feat.id.is_some(),
+                    |live| crate::feats::memory_entry(feat, live).is_some(),
+                )
+            })
             .count();
         ui.small(format!(
             "Catalog incomplete: {} missions, {} documented feats. Completion available for {} feats. Reviewed {}.",
@@ -123,7 +149,8 @@ impl CharacterView {
         ));
         let mut counts = [0usize; 3];
         for mission in &catalog.missions {
-            for (_, state) in mission.visible_feats("", true, reference, progress) {
+            for (_, state) in mission.visible_feats_with_memory("", true, reference, progress, live)
+            {
                 counts[match state {
                     Completion::Incomplete => 0,
                     Completion::Completed => 1,
@@ -145,11 +172,12 @@ impl CharacterView {
             .show(ui, |ui| {
                 let mut count = 0;
                 for mission in catalog.sorted_missions() {
-                    let feats = mission.visible_feats(
+                    let feats = mission.visible_feats_with_memory(
                         &self.search,
                         self.show_completed,
                         reference,
                         progress,
+                        live,
                     );
                     let coverage_gap = mission.feats.is_empty()
                         && (self.search.trim().is_empty()
@@ -240,11 +268,52 @@ mod tests {
         let context = egui::Context::default();
         let mut refresh = false;
         let mut output = context.run_ui(egui::RawInput::default(), |ui| {
-            refresh = view.ui(ui, None, None, "Offline");
+            refresh = view.ui(ui, None, None, "Offline", None);
         });
         assert!(!refresh);
         assert!(!output.shapes.is_empty());
         output.textures_delta.clear();
+    }
+    #[test]
+    fn live_source_is_explicit_and_completed_rows_are_hidden() {
+        let catalog = Catalog::parse(r#"{"reviewed_on":"2026-10-16","sources":["https://example.com"],"missions":[{"key":"solo","name":"Synthetic Solo","min_cr":null,"min_level":30,"source":"https://example.com","coverage":"Partial","feats":[{"key":"f","id":null,"name":"Synthetic Feat","points":10,"requirement":"Finish","alignment":null,"source":"https://example.com"}]}]}"#).unwrap();
+        let mut view = CharacterView {
+            show_completed: false,
+            search: String::new(),
+            catalog: Ok(catalog),
+        };
+        let live = crate::feat_memory::Snapshot {
+            entity: 0x10000,
+            entity_id: 1,
+            observed_at: std::time::Instant::now(),
+            entries: vec![crate::feat_memory::Entry {
+                id: 1,
+                title: "Synthetic Feat".into(),
+                description: "Finish".into(),
+                points: 10,
+                completed: true,
+                eligible: true,
+            }],
+        };
+        for show in [false, true] {
+            view.show_completed = show;
+            let mut output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
+                view.ui(ui, None, None, "API unavailable", Some(&live));
+            });
+            let text = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) => Some(text.galley.text()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(text.contains("Completion from game memory"));
+            assert!(!text.contains("API unavailable"));
+            output.textures_delta.clear();
+            assert_eq!(text.contains("Synthetic Feat"), show);
+        }
     }
     #[test]
     fn coverage_gap_stays_visible_when_mission_matches_search() {
@@ -255,7 +324,7 @@ mod tests {
             catalog: Ok(catalog),
         };
         let mut output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
-            view.ui(ui, None, None, "");
+            view.ui(ui, None, None, "", None);
         });
         let rendered = output
             .shapes
