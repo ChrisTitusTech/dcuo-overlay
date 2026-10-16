@@ -841,3 +841,24 @@ remains responsive; private screenshot is kept under ignored local-data. This is
 lead-observed rendering/area evidence, not new user alignment acceptance.
 
 Independent Codex review completed with no actionable regressions.
+
+## Preserve zoom and follow on map load
+
+All asset loads retain the in-session zoom instead of resetting manual map
+selections to 1x. Successful current-generation images enable Follow and reset
+pan for centering on the next valid player position. Initial Follow defaults on;
+Fit and dragging still disable Follow explicitly, and ordinary polling does not
+re-enable it. Obsolete completions cannot alter the view.
+
+Validation: 145 workspace tests passed (3 opt-in private-asset tests ignored),
+104 headless tests passed, formatting, strict Clippy on Rust 1.96/1.95 and
+workspace/release builds passed. A loader-result regression covers automatic and
+manual selections, zoom adjustments during loading, stale results, and manual
+Follow overrides after load. The updated application is installed.
+
+Live installed validation on Fedora/DWM: increased zoom three steps, disabled
+Follow, and used Retry current map. The reloaded map retained the enlarged scale,
+Follow was checked again, and the live player marker was centered. Private
+before/after captures remain under ignored local-data; no game input was used.
+
+Independent Codex review completed without actionable findings.

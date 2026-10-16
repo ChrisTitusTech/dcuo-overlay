@@ -290,3 +290,6 @@ identifier; do not extrapolate one nearby interaction to every shared prop.
 Current-area repair: validate the observed audio-free alternate Gotham world
 against its designer stream, retain conservative rejection elsewhere, and verify
 map import plus marker presentation live. Label retained maps honestly on gaps.
+
+Map-view preference follow-up: retain zoom across map loads and automatically
+follow the player after successful loads, while ignoring obsolete loader results.
