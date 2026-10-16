@@ -206,12 +206,12 @@ impl Mission {
                 if memory.is_some_and(|entry| !entry.eligible && !entry.completed) {
                     return None;
                 }
-                if live.is_none()
-                    && let (Some(character), Some(required)) = (
-                        reference.and_then(|r| faction(r.alignment.as_deref())),
-                        faction(feat.alignment.as_deref()),
-                    )
-                    && character != required
+                // Faction comes from the cached API reference in both display
+                // modes. Live memory supplies completion, not API identity.
+                if let (Some(character), Some(required)) = (
+                    reference.and_then(|r| faction(r.alignment.as_deref())),
+                    faction(feat.alignment.as_deref()),
+                ) && character != required
                 {
                     return None;
                 }
@@ -301,7 +301,7 @@ mod tests {
         assert!(memory_entry(&feat, &duplicate).is_none());
 
         let mut character = character();
-        character.alignment = Some("Villain".into());
+        character.alignment = Some("Hero".into());
         let progress = Progress {
             character_id: character.id.clone(),
             completed: ["1".into()].into(),
@@ -333,6 +333,61 @@ mod tests {
                 .iter()
                 .any(|(f, s)| f.id.as_deref() == Some("1") && *s == Completion::Completed)
         );
+    }
+    #[test]
+    fn cached_reference_faction_filter_is_stable_with_or_without_live_memory() {
+        let catalog = Catalog::parse(&fixture().to_string()).unwrap();
+        let mission = &catalog.missions[3];
+        let mut villain = live_entry(2, &mission.feats[1].name, false);
+        villain.points = 25;
+        let snapshot = live(vec![live_entry(1, &mission.feats[0].name, false), villain]);
+        for (alignment, expected) in [
+            ("hero", vec!["f1", "f3"]),
+            ("VILLAIN", vec!["f2", "f3"]),
+            ("Unproven", vec!["f1", "f2", "f3"]),
+        ] {
+            let mut reference = character();
+            reference.alignment = Some(alignment.into());
+            for memory in [None, Some(&snapshot)] {
+                let rows =
+                    mission.visible_feats_with_memory("", true, Some(&reference), None, memory);
+                assert_eq!(
+                    rows.iter()
+                        .map(|(feat, _)| feat.key.as_str())
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "{alignment}, live={}",
+                    memory.is_some()
+                );
+            }
+        }
+    }
+    #[test]
+    fn api_completion_never_overrides_live_for_matching_or_different_api_character() {
+        let catalog = Catalog::parse(&fixture().to_string()).unwrap();
+        let mission = &catalog.missions[3];
+        let reference = character();
+        let snapshot = live(vec![live_entry(1, &mission.feats[0].name, false)]);
+        for character_id in ["123", "999"] {
+            let progress = Progress {
+                character_id: character_id.into(),
+                completed: HashSet::from(["1".into(), "2".into()]),
+                received_at: Instant::now(),
+            };
+            let rows = mission.visible_feats_with_memory(
+                "",
+                false,
+                Some(&reference),
+                Some(&progress),
+                Some(&snapshot),
+            );
+            assert_eq!(
+                rows.iter()
+                    .map(|(feat, state)| (feat.key.as_str(), *state))
+                    .collect::<Vec<_>>(),
+                [("f1", Completion::Incomplete), ("f3", Completion::Unknown)]
+            );
+        }
     }
     fn fixture() -> serde_json::Value {
         serde_json::json!({"reviewed_on":"2026-10-16","sources":["https://example.com/catalog"],"missions":[

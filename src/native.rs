@@ -100,6 +100,7 @@ pub struct GroundSpawnSweep {
 pub struct Sample {
     pub position: [f32; 3],
     pub feats: Option<Arc<crate::feat_memory::Snapshot>>,
+    pub feats_binding: Option<(usize, u64)>,
     pub feats_status: String,
     /// Legacy nearby recognized spawn, with no collection-status claim.
     pub collectible: Option<Collectible>,
@@ -124,6 +125,7 @@ impl Sample {
         Self {
             position: [1.0, 2.0, 3.0],
             feats: None,
+            feats_binding: None,
             feats_status: "No synthetic feats".into(),
             collectible: None,
             ground_spawns: Vec::new(),
@@ -163,6 +165,14 @@ impl Sample {
                 }
                 _ => true,
             }
+    }
+    pub(crate) fn same_character_owner(&self, other: &Self) -> bool {
+        self.owner.objects == other.owner.objects && self.owner.classes == other.owner.classes
+    }
+    #[cfg(test)]
+    pub(crate) fn with_changed_streaming(mut self) -> Self {
+        self.owner.package = "Another streaming package".into();
+        self
     }
     pub fn same_owner(&self, other: &Self) -> bool {
         self.owner == other.owner
@@ -395,6 +405,7 @@ pub struct Reader {
     feats_enabled: bool,
     feat_cache: crate::feat_memory::Cache,
     feats: Option<Arc<crate::feat_memory::Snapshot>>,
+    feats_binding: Option<(usize, u64)>,
     feats_owner: Option<[(usize, u32); 4]>,
     feats_attempt: Option<Instant>,
     feats_status: String,
@@ -558,6 +569,7 @@ impl Reader {
             feats_enabled: false,
             feat_cache: crate::feat_memory::Cache::default(),
             feats: None,
+            feats_binding: None,
             feats_owner: None,
             feats_attempt: None,
             feats_status: "Waiting for live feats".into(),
@@ -1551,6 +1563,7 @@ impl Reader {
                 u64_at(&self.read(add(pawn, 0x68)?, 8)?, 0)?,
             ))
         })();
+        self.feats_binding = binding.as_ref().ok().copied();
         let changed = self.feats_owner != Some(owner.objects)
             || self.feats.as_ref().is_some_and(|snapshot| {
                 binding.as_ref().ok() != Some(&(snapshot.entity, snapshot.entity_id))
@@ -1751,6 +1764,7 @@ impl Reader {
                 .flatten(),
             position,
             feats: self.feats.clone(),
+            feats_binding: self.feats_binding,
             feats_status: self.feats_status.clone(),
             collectible,
             ground_spawns,
@@ -2463,6 +2477,7 @@ mod tests {
             feats_enabled: false,
             feat_cache: crate::feat_memory::Cache::default(),
             feats: None,
+            feats_binding: None,
             feats_owner: None,
             feats_attempt: None,
             feats_status: String::new(),

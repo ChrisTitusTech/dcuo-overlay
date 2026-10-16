@@ -322,3 +322,7 @@ Cache follow-up: player_detection_review owns the bounded session cache and
 synthetic reuse/invalidation tests; lead owns native-reader integration, live
 cold/warm measurements and final gates. Confirmed completions are monotonic for
 the same native owner. No persistent native pointers or cross-character reuse.
+
+Character stability follow-up: lead owns session-retained feat knowledge and view
+wiring; gpt-6.1-sol player_detection_review owns consistent faction filtering and
+API completion refresh retention. Validate scan gaps, owner resets and live UI.
