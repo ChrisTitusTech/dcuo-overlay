@@ -470,3 +470,17 @@ set for the selected API character. Missing IDs and failed retrieval are unknown
 not incomplete. API selection does not prove the currently controlled character. Keep catalog coverage and source
 freshness explicit; an empty mission list must not imply no feats exist. This
 scope does not include spending skill points or performing game actions.
+
+## Broker extension
+
+Add a Broker tab comparing observed own listings against other sellers for the
+same proven item identity. Public Census and dcuobot-api currently expose no
+verified broker listing or price endpoint. Read the supported client's active
+listing cache using the existing single read-only session worker. Never automate
+searches, purchases, cancellations, or sales.
+
+Retain observed listings within the bound session and character; show observation
+age and partial coverage. Absence from a page is not evidence a listing sold.
+Prove ownership from the controlled character and native seller fields. Show total
+asking prices; unit comparisons require independently proven stack quantities.
+Do not claim complete market coverage or complete My Wares from an active query.

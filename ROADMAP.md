@@ -335,3 +335,17 @@ does not establish exhaustive catalog coverage or validate other factions/builds
 Ordinary-launch faction follow-up: lead owns saved preference, API-reference
 lifecycle, installation and live restart/connection evidence. gpt-6.1-sol
 player_detection_review owns explicit faction selection and filtering tests.
+
+## Broker extension (active)
+
+1. Verify API capabilities and paired native My Wares/search observations.
+2. Add bounded snapshot parser and synthetic corruption/mutation coverage.
+3. Integrate one worker, session-bound observed-listing cache and Broker tab;
+   preserve partial coverage, unknown quantities and observation ages.
+4. Validate installed UI, lifecycle isolation, local gates and independent review
+   before authorized publication and merge.
+
+Worker assignments: player_detection_review owns the pure native Broker parser;
+exo_effect_reader owns offline item-name/ownership research. Both use gpt-6.1-sol,
+with no live reads. Lead owns live experiments, shared interfaces, UI integration,
+status, commits and acceptance. No worker may spawn another worker.

@@ -288,6 +288,7 @@ fn prepare_x11_window(
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Character,
+    Broker,
     Map,
     Diagnostics,
 }
@@ -313,6 +314,8 @@ struct Probe {
     character: crate::character_view::CharacterView,
     faction_reference_id: Option<String>,
     feats: crate::feat_loader::Loader,
+    broker: crate::broker_view::BrokerView,
+    broker_owner: Option<(i32, u64, usize, u64)>,
     initialized: bool,
     detected_map_source_for: Option<(i32, u64)>,
 }
@@ -366,6 +369,8 @@ impl Probe {
             base: preferences.api_base.clone(),
             scale: preferences.ui_scale,
             tab: Tab::Character,
+            broker: crate::broker_view::BrokerView::default(),
+            broker_owner: None,
             settings: false,
             about: false,
             show_log: false,
@@ -506,7 +511,28 @@ impl eframe::App for Probe {
         }
         self.controller
             .set_feats_enabled(matches!(self.tab, Tab::Character));
+        self.controller.set_broker_enabled(self.tab == Tab::Broker);
         self.controller.poll();
+        let view = self.controller.view();
+        if !view.connected {
+            self.broker.clear();
+            self.broker_owner = None;
+        } else if let Some(sample) = &view.native {
+            let owner = view
+                .build
+                .as_ref()
+                .zip(sample.feats_binding)
+                .map(|(build, (entity, id))| (build.pid, build.start_ticks, entity, id));
+            if self.broker_owner != owner {
+                self.broker.clear();
+                self.broker_owner = owner;
+            }
+            if owner.is_some()
+                && let Some(snapshot) = &sample.broker
+            {
+                self.broker.observe(snapshot);
+            }
+        }
         if let Some(reference) = self.controller.view().api.as_ref()
             && self.faction_reference_id.as_deref() != Some(reference.id.as_str())
         {
@@ -598,7 +624,7 @@ impl Probe {
     fn draw(&mut self, ui: &mut egui::Ui, view: &crate::session::View) {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
-            egui::ScrollArea::vertical().id_salt(match self.tab { Tab::Map => "map-page", Tab::Character => "character-page", Tab::Diagnostics => "diagnostics-page" }).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(match self.tab { Tab::Broker => "broker-page", Tab::Map => "map-page", Tab::Character => "character-page", Tab::Diagnostics => "diagnostics-page" }).show(ui, |ui| {
                 if self.tab == Tab::Diagnostics {
                     ui.heading(TITLE);
                     ui.label(egui::RichText::new("READ-ONLY VERIFICATION").color(egui::Color32::from_rgb(120, 195, 235)));
@@ -622,7 +648,7 @@ impl Probe {
                 }
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
-                    for (tab, label) in [(Tab::Character, "Character"), (Tab::Map, "Map"), (Tab::Diagnostics, "Diagnostics")] { ui.selectable_value(&mut self.tab, tab, label); }
+                    for (tab, label) in [(Tab::Character, "Character"), (Tab::Map, "Map"), (Tab::Broker, "Broker"), (Tab::Diagnostics, "Diagnostics")] { ui.selectable_value(&mut self.tab, tab, label); }
                     ui.toggle_value(&mut self.show_log, "Log");
                     if ui.button("Settings").clicked() { self.settings = !self.settings; }
                     if ui.button("About").clicked() { self.about = !self.about; }
@@ -646,6 +672,10 @@ impl Probe {
                             self.feats.refresh();
                         }
                         if previous_faction != self.character.faction { self.save_feat_faction(); }
+                    }
+                    Tab::Broker => {
+                        let status = if view.paused { "Paused - showing previously observed listings" } else { view.native.as_ref().map(|s| s.broker_status.as_str()).unwrap_or("Connect to the game and open its Broker") };
+                        self.broker.ui(ui, status);
                     }
                     Tab::Map => {
                         let (sample, gate) = map_observation(view);
@@ -1005,7 +1035,7 @@ mod tests {
             let ctx = egui::Context::default();
             ctx.set_zoom_factor(scale);
             for view in &states {
-                for tab in [Tab::Character, Tab::Map, Tab::Diagnostics] {
+                for tab in [Tab::Character, Tab::Map, Tab::Broker, Tab::Diagnostics] {
                     app.tab = tab;
                     let mut output = ctx.run_ui(
                         egui::RawInput {
