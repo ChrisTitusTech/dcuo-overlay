@@ -414,3 +414,11 @@ definitions in their expected package. Shared FXSM103 damageable effects and
 unverified event variants are excluded. Exo-material detection remains unavailable
 until an exo-specific discriminator is validated; a generic effect is insufficient.
 Keep the two-complete-miss cache rule for accepted pickups.
+
+## Audio-free area identification
+
+The observed MGOT103_ALT_US world may omit the audio stream. Resolve it to the
+installed MGOT103 map only with a validated world ownership chain and matching
+visible designer data. Reject conflicts, unknown aliases and changing ownership.
+Retained map backgrounds during unavailable area evidence must be labeled
+last-known rather than implying they are current.

@@ -219,3 +219,17 @@ Automatic discovery now accepts only blue/green/gold magnifying-glass definition
 in DDSGPROGEN107 with a Package outer; shared effects and unverified grey/purple/
 seasonal variants are rejected. Exo detection is unavailable pending paired
 positive/negative validation. Read-only memory and cache expiry rules are unchanged.
+
+## Audio-free alternate Gotham area
+
+A current-world observation found MGOT103_ALT_US with visible
+MGOT103_DESIGNERDATA but no audio stream. The prior audio/designer pair rule
+could never identify it. The bounded world ownership chain resolves WorldInfo
+(instance 1), PersistentLevel, TheWorld and the package (remaining instances 0).
+The exact observed package alias now selects the installed MGOT103 map only
+when that validated chain and sole matching designer signal agree. Conflicting
+or present audio signals retain the original rules; unknown aliases are not
+normalized or guessed. Chain identity is resampled and included in the sample
+context. Historical cache survives missing chain evidence but rejects a changed
+known chain. A retained background now explicitly says Last-known map when its
+current context cannot be established.
