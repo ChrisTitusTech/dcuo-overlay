@@ -32,9 +32,10 @@ feat shows its reward points. Completed feats are hidden unless Show completed i
 checked. Search matches mission names, feat names and requirements. Character
 details and experimental Log remain available.
 
-**Catalog coverage is partial:** 40 missions, 171 documented feat entries and 25
+**Catalog coverage is partial:** 40 missions, 171 documented feat entries and 24
 bundled completion-ID mappings. Live client definitions can resolve additional
-entries by an unambiguous exact title and reward. Account-only unlocks do not count
+entries by an exact trimmed title and reward. Duplicate titles require a unique
+exact mission-requirement match. Unsupported or ambiguous matches remain unknown. Account-only unlocks do not count
 as completed by the current character. Unknown completion remains visible. Nekron's Lair
 and Summit of Sorrow currently lack documented feat lists. Census retrieval time
 does not establish in-game freshness, and the selected API character is not

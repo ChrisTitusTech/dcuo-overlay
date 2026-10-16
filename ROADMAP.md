@@ -326,3 +326,8 @@ the same native owner. No persistent native pointers or cross-character reuse.
 Character stability follow-up: lead owns session-retained feat knowledge and view
 wiring; gpt-6.1-sol player_detection_review owns consistent faction filtering and
 API completion refresh retention. Validate scan gaps, owner resets and live UI.
+
+Remaining-unknown follow-up: gpt-6.1-sol player_detection_review owns bounded exact
+match disambiguation and synthetic tests. Lead owns catalog/source reconciliation,
+private live validation and integration. Zero unknown for a validated character
+does not establish exhaustive catalog coverage or validate other factions/builds.
