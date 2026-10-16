@@ -282,3 +282,7 @@ cache worker owns expiry tests and integration.
 
 Map presentation follow-up: prioritize canvas space, move technical evidence
 and setup into toggled windows, and verify canvas stability and live rendering.
+
+Pickup cleanup: reject shared effect objects and unproven variants. Re-enable
+exo-material only after paired positive/negative evidence proves a specific
+identifier; do not extrapolate one nearby interaction to every shared prop.

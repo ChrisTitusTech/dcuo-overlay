@@ -406,3 +406,11 @@ The Map tab dedicates most of the window to the map. Keep essential navigation
 and the ground-spawn toggle visible. Experimental evidence, scan status, map
 source metadata, import setup and calibration are available on demand in
 default-hidden Log and Map details windows, without resizing the map canvas.
+
+## Conservative pickup filtering
+
+Ground-spawn discovery accepts only explicit blue/green/gold collectible
+definitions in their expected package. Shared FXSM103 damageable effects and
+unverified event variants are excluded. Exo-material detection remains unavailable
+until an exo-specific discriminator is validated; a generic effect is insufficient.
+Keep the two-complete-miss cache rule for accepted pickups.
