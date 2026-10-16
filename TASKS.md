@@ -901,3 +901,41 @@ objects change. The 4096-slot step cap and repeated process identity/mapping
 parses are the main improvement candidates. Bounded scatter proof validation
 and allocation-light metadata parsing should be evaluated before increasing
 work per step; preserve deadlines, identity checks and uncertainty semantics.
+
+## Faster player discovery and metadata parsing
+
+User requests faster player detection. Bounded worker player_detection_review
+(gpt-6.1-sol) owns process.rs allocation reductions and discovery.rs substring
+matching/parity tests; lead owns integration, dependencies, live measurements,
+validation, documentation and publication. No worker live reads or nested workers.
+
+Replaced byte-window name matching with memchr substring search, preserving
+cross-chunk matches, overlaps, encoding order, deduplication and the occurrence
+cap. Process stat parsing selects its needed field without collecting all fields;
+map parsing uses a fixed five-field array instead of allocating per mapping.
+All identity, mapping, cancellation, ownership and area validation gates remain.
+The initial name search still finds string occurrences, not proven player identity.
+
+Acceptance: parity with original matching across synthetic chunk sizes and edge
+cases; parser boundary/error compatibility; full local gates, release timing,
+installed live sampling and independent review. An ownership scatter experiment
+was removed after it failed to improve the live baseline. Polling cadence remains
+250 ms; no claim of faster screen refresh or relaxed checks.
+
+Evidence: 151 workspace tests pass (3 opt-in private-asset checks ignored), 110
+headless tests pass, strict Clippy on Rust 1.96/1.95, formatting and workspace/
+release builds pass. All 12 installer tests and both nested-X managed startup/
+relaunch checks pass. A final paired release test with ground spawns off produced
+39/39 valid warmed samples for each build: median 10.76 ms before, 9.47 ms after;
+first samples 338.24/319.28 ms. Earlier timings varied with live context, so no
+larger speedup or universal latency guarantee is claimed. The 250 ms polling
+cadence is unchanged. Private benchmark/probe data stays outside Git.
+Installed validation: fresh controlled-pawn resource samples displayed, and the
+optimized name search completed its full 64 MiB bounded batch without error
+(no name occurrences in that batch). The app was returned to Map afterward.
+This does not claim automatic character-name detection or identity proof.
+Lead reproduced the synthetic substring benchmark (eight 64 MiB scans): old
+window matching 550.98 ms, optimized finder 13.72 ms, both eight hits. This
+approximately 40x local matching improvement excludes remote reads, metadata
+checks and decoding; it is not an end-to-end detection-speed claim. Independent
+Codex review found no actionable regressions in the final implementation.

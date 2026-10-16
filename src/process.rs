@@ -68,9 +68,9 @@ pub fn parse_stat(pid: i32, text: &str) -> io::Result<Identity> {
     if close <= open {
         return Err(invalid("invalid stat comm delimiters"));
     }
-    let fields: Vec<_> = text[close + 1..].split_whitespace().collect();
-    let start_ticks = fields
-        .get(19)
+    let start_ticks = text[close + 1..]
+        .split_whitespace()
+        .nth(19)
         .ok_or_else(|| invalid("short stat"))?
         .parse()
         .map_err(|_| invalid("invalid starttime"))?;
@@ -85,16 +85,16 @@ pub fn identity(pid: i32) -> io::Result<Identity> {
 pub fn parse_maps(text: &str) -> io::Result<Vec<Mapping>> {
     text.lines()
         .map(|line| {
-            // splitn keeps paths containing spaces intact after the five fixed fields.
+            // Keep paths containing spaces intact after the five fixed fields.
             let mut rest = line;
-            let mut fields = Vec::new();
-            for _ in 0..5 {
+            let mut fields = [""; 5];
+            for field in &mut fields {
                 rest = rest.trim_start();
                 let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
                 if end == 0 {
                     return Err(invalid("short maps line"));
                 }
-                fields.push(&rest[..end]);
+                *field = &rest[..end];
                 rest = &rest[end..];
             }
             let (start, end) = fields[0]
@@ -389,6 +389,45 @@ mod tests {
         );
         assert!(parse_stat(8, "7 (a) S").is_err());
         assert!(parse_stat(7, "7 (a) S").is_err());
+    }
+    #[test]
+    fn stat_starttime_boundary_and_trailing_fields() {
+        let mut fields = ["0"; 20];
+        fields[0] = "S";
+        fields[19] = "18446744073709551615";
+        let stat = format!("7 (name) {} ignored trailing fields", fields.join("\t"));
+        assert_eq!(parse_stat(7, &stat).unwrap().start_ticks, u64::MAX);
+        assert_eq!(
+            parse_stat(7, &format!("7 (name) {}", fields[..19].join(" ")))
+                .unwrap_err()
+                .to_string(),
+            "short stat"
+        );
+        fields[19] = "18446744073709551616";
+        assert_eq!(
+            parse_stat(7, &format!("7 (name) {}", fields.join(" ")))
+                .unwrap_err()
+                .to_string(),
+            "invalid starttime"
+        );
+    }
+    #[test]
+    fn maps_fixed_fields_preserve_path_and_missing_field_errors() {
+        for line in ["10-20", "10-20 r--p", "10-20 r--p 0", "10-20 r--p 0 00:00"] {
+            assert_eq!(parse_maps(line).unwrap_err().to_string(), "short maps line");
+        }
+        let maps = parse_maps(
+            "\t10-20\trw-p  0\t00:00 0\t \n20-30 r--s 10 08:01 42   /tmp/a  b (deleted)",
+        )
+        .unwrap();
+        assert!(maps[0].path.is_none());
+        assert!(maps[0].readable && maps[0].writable && !maps[0].executable);
+        assert_eq!(
+            maps[1].path.as_deref(),
+            Some(Path::new("/tmp/a  b (deleted)"))
+        );
+        assert_eq!(maps[1].offset, 0x10);
+        assert_eq!(maps[1].inode, 42);
     }
     #[test]
     fn malformed_maps() {

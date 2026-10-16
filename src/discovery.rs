@@ -196,17 +196,19 @@ impl NameSearch {
         self.carry.extend_from_slice(chunk);
         let base = self.address - carry_len;
         for (encoding, needle) in self.patterns.iter().enumerate() {
-            for (offset, window) in self.carry.windows(needle.len()).enumerate() {
-                if offset + needle.len() <= carry_len
-                    || window != needle
-                    || self.addresses.len() >= CANDIDATES
-                {
-                    continue;
-                }
+            let mut start = carry_len.saturating_sub(needle.len() - 1);
+            while self.addresses.len() < CANDIDATES {
+                let Some(found) = memchr::memmem::find(&self.carry[start..], needle) else {
+                    break;
+                };
+                let offset = start + found;
+                // Advance one byte so overlapping occurrences remain eligible.
+                start = offset + 1;
                 let address = base + offset;
                 if self.addresses.contains(&address) {
                     continue;
                 }
+                let window = &self.carry[offset..offset + needle.len()];
                 self.addresses.push(address);
                 if encoding == 0 {
                     self.progress.utf8_hits += 1;
@@ -261,6 +263,70 @@ mod tests {
                 status: String::new(),
                 observed_name: None,
             },
+        }
+    }
+    fn naive_consume(search: &mut NameSearch, chunk: &[u8]) {
+        let carry_len = search.carry.len();
+        search.carry.extend_from_slice(chunk);
+        let base = search.address - carry_len;
+        for (encoding, needle) in search.patterns.iter().enumerate() {
+            for (offset, window) in search.carry.windows(needle.len()).enumerate() {
+                if offset + needle.len() <= carry_len
+                    || window != needle
+                    || search.addresses.len() >= CANDIDATES
+                    || search.addresses.contains(&(base + offset))
+                {
+                    continue;
+                }
+                search.addresses.push(base + offset);
+                if encoding == 0 {
+                    search.progress.utf8_hits += 1;
+                    search.progress.observed_name = String::from_utf8(window.to_vec()).ok();
+                } else {
+                    search.progress.utf16_hits += 1;
+                    search.progress.observed_name = String::from_utf16(
+                        &window
+                            .chunks_exact(2)
+                            .map(|p| u16::from_le_bytes([p[0], p[1]]))
+                            .collect::<Vec<_>>(),
+                    )
+                    .ok();
+                }
+            }
+        }
+        let keep =
+            (search.patterns.iter().map(Vec::len).max().unwrap() - 1).min(search.carry.len());
+        search.carry.drain(..search.carry.len() - keep);
+    }
+    #[test]
+    fn optimized_search_matches_naive_overlaps_encodings_and_chunk_boundaries() {
+        for (name, bytes) in [
+            ("aa", vec![b'a'; 100]),
+            ("a", b"a\0a\0aa\0a".to_vec()),
+            ("Omega", b"Omega!O\0m\0e\0g\0a\0!Omega".to_vec()),
+            ("é", vec![0xc3, 0xa9, 0xe9, 0, 0xc3, 0xa9]),
+        ] {
+            for chunk_size in 1..=bytes.len() {
+                let mut optimized = synthetic(name);
+                let mut naive = synthetic(name);
+                // A prior occurrence at this address exercises duplicate suppression.
+                optimized.addresses.push(4096);
+                naive.addresses.push(4096);
+                for chunk in bytes.chunks(chunk_size) {
+                    optimized.consume(chunk);
+                    naive_consume(&mut naive, chunk);
+                    assert_eq!(optimized.addresses, naive.addresses);
+                    assert_eq!(optimized.progress.utf8_hits, naive.progress.utf8_hits);
+                    assert_eq!(optimized.progress.utf16_hits, naive.progress.utf16_hits);
+                    assert_eq!(
+                        optimized.progress.observed_name,
+                        naive.progress.observed_name
+                    );
+                    assert_eq!(optimized.carry, naive.carry);
+                    optimized.address += chunk.len();
+                    naive.address += chunk.len();
+                }
+            }
         }
     }
     #[test]

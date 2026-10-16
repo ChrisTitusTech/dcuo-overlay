@@ -408,6 +408,7 @@ dependencies = [
  "image",
  "libc",
  "lzokay",
+ "memchr",
  "serde",
  "serde_json",
  "sha2",
