@@ -15,6 +15,13 @@ MHDT0107 indoor area. Current-character identity, quantitative indoor accuracy, 
 profiles and full release acceptance remain incomplete. See
 [live map evidence](docs/live-map-preview.md).
 
+The Broker tab compares your observed listings with other sellers' asking prices.
+Keep the companion's Broker tab selected, open My Wares in game, then browse or
+search for competing items. Observations remain visible for 15 minutes, with ages
+and partial coverage shown. Prices come from the read-only client cache; no public
+Broker API was found. Stack sizes and item variants still need in-game confirmation.
+See [Broker usage and limitations](docs/broker.md).
+
 The Character tab includes a solo On Duty feat checklist. Look up an exact
 character name/world to load API completion data, then use Refresh feats when
 needed. With the supported game connected, the tab automatically uses live

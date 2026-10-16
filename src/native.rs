@@ -102,6 +102,8 @@ pub struct Sample {
     pub feats: Option<Arc<crate::feat_memory::Snapshot>>,
     pub feats_binding: Option<(usize, u64)>,
     pub feats_status: String,
+    pub broker: Option<Arc<crate::broker_memory::Snapshot>>,
+    pub broker_status: String,
     /// Legacy nearby recognized spawn, with no collection-status claim.
     pub collectible: Option<Collectible>,
     pub ground_spawns: Vec<Collectible>,
@@ -127,6 +129,8 @@ impl Sample {
             feats: None,
             feats_binding: None,
             feats_status: "No synthetic feats".into(),
+            broker: None,
+            broker_status: String::new(),
             collectible: None,
             ground_spawns: Vec::new(),
             ground_spawns_status: "Ground spawns off".into(),
@@ -403,6 +407,12 @@ fn next_scan_cursor(index: u32, interrupted: bool) -> usize {
 }
 pub struct Reader {
     feats_enabled: bool,
+    broker_enabled: bool,
+    broker: Option<Arc<crate::broker_memory::Snapshot>>,
+    broker_binding: Option<(usize, u64)>,
+    broker_attempt: Option<Instant>,
+    broker_first_token: Option<u64>,
+    broker_status: String,
     feat_cache: crate::feat_memory::Cache,
     feats: Option<Arc<crate::feat_memory::Snapshot>>,
     feats_binding: Option<(usize, u64)>,
@@ -567,6 +577,12 @@ impl Reader {
         let candidate_pid = candidate.identity.pid;
         let mut reader = Self {
             feats_enabled: false,
+            broker_enabled: false,
+            broker: None,
+            broker_binding: None,
+            broker_attempt: None,
+            broker_first_token: None,
+            broker_status: "Open the in-game Broker to observe listings".into(),
             feat_cache: crate::feat_memory::Cache::default(),
             feats: None,
             feats_binding: None,
@@ -1548,6 +1564,63 @@ impl Reader {
         };
         Ok((result, status))
     }
+    pub fn set_broker_enabled(&mut self, enabled: bool) {
+        if self.broker_enabled != enabled {
+            self.broker_enabled = enabled;
+            self.broker_attempt = None;
+        }
+    }
+    fn refresh_broker(&mut self) -> bool {
+        if !self.broker_enabled
+            || self
+                .broker_attempt
+                .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(3))
+        {
+            return false;
+        }
+        self.broker_attempt = Some(Instant::now());
+        self.scope_start.set(Instant::now());
+        self.scope_bytes.set(0);
+        self.scope_reads.set(0);
+        let started = Instant::now();
+        let result =
+            crate::broker_memory::snapshot(self.candidate.mapping.start, |address, len| {
+                if started.elapsed() > std::time::Duration::from_millis(250) {
+                    return Err("Broker read exceeded time budget".into());
+                }
+                self.read(address, len)
+            });
+        match result {
+            Ok(snapshot)
+                if self
+                    .feats_binding
+                    .is_some_and(|binding| binding.0 == snapshot.entity) =>
+            {
+                let baseline = *self
+                    .broker_first_token
+                    .get_or_insert(snapshot.request_token);
+                if snapshot.request_token <= baseline {
+                    self.broker_status = "Open My Wares or run a new Broker search to observe this session's listings".into();
+                    self.broker = None;
+                } else {
+                    self.broker_status = format!(
+                        "{} listings in the client's observed page",
+                        snapshot.listings.len()
+                    );
+                    self.broker = Some(Arc::new(snapshot));
+                }
+            }
+            Ok(_) => {
+                self.broker = None;
+                self.broker_status = "Broker character binding changed".into();
+            }
+            Err(error) => {
+                self.broker = None;
+                self.broker_status = format!("Waiting for Broker listings: {error}");
+            }
+        }
+        true
+    }
     pub fn set_feats_enabled(&mut self, enabled: bool) {
         if self.feats_enabled != enabled {
             self.feats_enabled = enabled;
@@ -1564,6 +1637,12 @@ impl Reader {
             ))
         })();
         self.feats_binding = binding.as_ref().ok().copied();
+        if self.broker_binding != self.feats_binding || self.feats_owner != Some(owner.objects) {
+            self.broker = None;
+            self.broker_attempt = None;
+            self.broker_binding = self.feats_binding;
+            self.broker_first_token = None;
+        }
         let changed = self.feats_owner != Some(owner.objects)
             || self.feats.as_ref().is_some_and(|snapshot| {
                 binding.as_ref().ok() != Some(&(snapshot.entity, snapshot.entity_id))
@@ -1661,7 +1740,10 @@ impl Reader {
         &mut self,
         mut progress: impl FnMut(Result<Sample, String>),
     ) -> Result<Sample, String> {
-        let sample = self.sample_physics(true)?;
+        let mut sample = self.sample_physics(true)?;
+        if self.refresh_broker() {
+            sample = self.sample_physics(false)?;
+        }
         if self.feats_enabled && self.refresh_feats(&sample.owner, &mut progress) {
             // The initial coordinates predate the optional scan; read them again.
             return self.sample_physics(false);
@@ -1766,6 +1848,8 @@ impl Reader {
             feats: self.feats.clone(),
             feats_binding: self.feats_binding,
             feats_status: self.feats_status.clone(),
+            broker: self.broker.clone(),
+            broker_status: self.broker_status.clone(),
             collectible,
             ground_spawns,
             ground_spawns_status,
@@ -2475,6 +2559,12 @@ mod tests {
             .remove(0);
         let mut reader = Reader {
             feats_enabled: false,
+            broker_enabled: false,
+            broker: None,
+            broker_binding: None,
+            broker_attempt: None,
+            broker_first_token: None,
+            broker_status: "Open the in-game Broker to observe listings".into(),
             feat_cache: crate::feat_memory::Cache::default(),
             feats: None,
             feats_binding: None,

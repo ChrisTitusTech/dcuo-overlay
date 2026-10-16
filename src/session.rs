@@ -185,6 +185,7 @@ pub struct Controller {
     api_pending: bool,
     last_native_owner: Option<native::Sample>,
     feats_enabled: Arc<AtomicBool>,
+    broker_enabled: Arc<AtomicBool>,
     ground_spawns_enabled: Arc<AtomicBool>,
     ground_spawns_enabled_since: Option<Instant>,
     auto_reconnect: bool,
@@ -212,6 +213,8 @@ impl Controller {
         let worker_ground_spawns = ground_spawns_enabled.clone();
         let feats_enabled = Arc::new(AtomicBool::new(false));
         let worker_feats = feats_enabled.clone();
+        let broker_enabled = Arc::new(AtomicBool::new(false));
+        let worker_broker = broker_enabled.clone();
         let api_events = events.clone();
         let api_generation = generation.clone();
         let api_stop = stopping.clone();
@@ -224,6 +227,7 @@ impl Controller {
                 worker_generation,
                 worker_stop,
                 worker_feats,
+                worker_broker,
                 worker_ground_spawns,
             )
         });
@@ -242,6 +246,7 @@ impl Controller {
             api_pending: false,
             last_native_owner: None,
             feats_enabled,
+            broker_enabled,
             ground_spawns_enabled,
             ground_spawns_enabled_since: None,
             auto_reconnect: false,
@@ -252,6 +257,10 @@ impl Controller {
     }
     pub fn view(&self) -> &View {
         &self.view
+    }
+    /// Broker reads run only while their view is visible.
+    pub fn set_broker_enabled(&self, enabled: bool) {
+        self.broker_enabled.store(enabled, Ordering::Release);
     }
     /// Feat scans run only while their view is visible.
     pub fn set_feats_enabled(&self, enabled: bool) {
@@ -827,6 +836,7 @@ fn worker_loop(
     generation: Arc<AtomicU64>,
     stopping: Arc<AtomicBool>,
     feats_enabled: Arc<AtomicBool>,
+    broker_enabled: Arc<AtomicBool>,
     ground_spawns_enabled: Arc<AtomicBool>,
 ) {
     let mut attached: Option<process::Candidate> = None;
@@ -1026,6 +1036,7 @@ fn worker_loop(
         {
             last_sample = Instant::now();
             let result = if let Some(reader) = reader.as_mut() {
+                reader.set_broker_enabled(broker_enabled.load(Ordering::Acquire));
                 reader.set_feats_enabled(feats_enabled.load(Ordering::Acquire));
                 reader.set_ground_spawns_enabled(ground_spawns_enabled.load(Ordering::Acquire));
                 reader.sample_with_progress(|sample| {
@@ -1448,6 +1459,7 @@ mod tests {
                 api_pending: false,
                 last_native_owner: None,
                 feats_enabled: Arc::new(AtomicBool::new(false)),
+                broker_enabled: Arc::new(AtomicBool::new(false)),
                 ground_spawns_enabled: Arc::new(AtomicBool::new(false)),
                 ground_spawns_enabled_since: None,
                 auto_reconnect: false,

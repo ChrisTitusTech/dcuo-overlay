@@ -1174,3 +1174,37 @@ reran affected tests, lint and builds before re-review.
 
 Final independent Codex review found no actionable regressions. Final updated
 binary installed and process-only launch restored; all required local gates pass.
+
+## Broker tab (2026-10-16, implemented and locally validated)
+
+- [x] Clarify comparison target: existing broker listings.
+- [x] Verify public API collection discovery and sibling API routes: no verified
+  Broker listings/prices; equipped item references are not market data.
+- [x] Pair live My Wares screenshot with bounded cache read: all ten visible prices
+  and seller ownership match. Search comparison matches seven visible results,
+  including the owned listing and six competing listings for the same item ID.
+- [x] Complete bounded parser and mutation/corruption regressions.
+- [x] Resolve item names without personal hardcoded fixtures.
+- [x] Add session-bound retention, comparison model and Broker tab.
+- [x] Verify installed UI, lifecycle, tests/lint/build and independent review.
+
+Evidence remains private in ignored local-data. Quantity semantics, durable query
+mode and whole-market coverage remain unproven. The active response cache is shared
+by My Wares and Browse; ownership must not be inferred from current query alone.
+
+Installed live UI retained all ten owned listings while switching to the searched
+item and showed the matching competing total and difference. Read ages continue
+to advance rather than resetting on cache reads. The first response after attach
+is treated as a baseline; only a later user-driven query populates the session.
+The initial full gates passed (216 workspace, 163 headless, both strict Clippy
+versions, builds, 12 installer tests, managed-X11 startup/relaunch). Independent
+review identified late-loaded names discarded for repeated tokens; added bounded
+name-only enrichment preserving timestamps with an expiry/mismatch regression.
+Affected gates and independent re-review are in progress.
+
+The late-name regression is fixed without renewing prices or reviving expired
+rows. Final workspace tests: 217 passed, 3 private-asset checks ignored; both strict
+Clippy versions and release build pass. Independent Codex re-review found no
+actionable bugs. Final binary is installed; the already-open validated Broker
+window retains its session observations and uses the final cache fix next launch.
+Publication and remote CI are tracked in PR #21.
