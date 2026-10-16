@@ -336,7 +336,7 @@ Ordinary-launch faction follow-up: lead owns saved preference, API-reference
 lifecycle, installation and live restart/connection evidence. gpt-6.1-sol
 player_detection_review owns explicit faction selection and filtering tests.
 
-## Broker extension (active)
+## Broker extension (implemented; bounded observations validated)
 
 1. Verify API capabilities and paired native My Wares/search observations.
 2. Add bounded snapshot parser and synthetic corruption/mutation coverage.

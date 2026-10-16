@@ -1175,7 +1175,7 @@ reran affected tests, lint and builds before re-review.
 Final independent Codex review found no actionable regressions. Final updated
 binary installed and process-only launch restored; all required local gates pass.
 
-## Broker tab (2026-10-16, in progress)
+## Broker tab (2026-10-16, implemented and locally validated)
 
 - [x] Clarify comparison target: existing broker listings.
 - [x] Verify public API collection discovery and sibling API routes: no verified
@@ -1186,7 +1186,7 @@ binary installed and process-only launch restored; all required local gates pass
 - [x] Complete bounded parser and mutation/corruption regressions.
 - [x] Resolve item names without personal hardcoded fixtures.
 - [x] Add session-bound retention, comparison model and Broker tab.
-- [ ] Verify installed UI, lifecycle, tests/lint/build, review and publication.
+- [x] Verify installed UI, lifecycle, tests/lint/build and independent review.
 
 Evidence remains private in ignored local-data. Quantity semantics, durable query
 mode and whole-market coverage remain unproven. The active response cache is shared
@@ -1207,4 +1207,4 @@ rows. Final workspace tests: 217 passed, 3 private-asset checks ignored; both st
 Clippy versions and release build pass. Independent Codex re-review found no
 actionable bugs. Final binary is installed; the already-open validated Broker
 window retains its session observations and uses the final cache fix next launch.
-Publication/CI/merge remain pending.
+Publication and remote CI are tracked in PR #21.
