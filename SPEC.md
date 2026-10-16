@@ -512,3 +512,16 @@ prototype and is not the release target. In-process execution is under investiga
 no live injection is validated. Existing readers remain read-only. Prove the exact
 search ABI, owned arguments, lifetime and safe execution-thread context before any
 live injected call. Never invoke transaction actions or unrelated game functions.
+
+## Broker price hotkey (current implementation scope)
+
+User selected a one-shot normal-keyboard workflow instead of injection for price
+entry. Choose an observed competing item/quantity group, review or edit a positive
+price (default one below lowest observed total), and explicitly confirm item/stack
+and unfiltered sorted search. Arm Ctrl+Alt+P for 60 seconds; the user focuses the
+game price field and selects its full contents. After shortcut release, type only
+digits once. Never move focus, click, press Enter, submit, or write game memory.
+Require supported build/session, game focus, unchanged keyboard mapping and no
+held keys. Cancel on tab/pause/disconnect/owner changes, expired observations, or
+selection changes. Price coverage remains partial; stack semantics require user
+confirmation. The unaccepted automatic-search adapter remains private reference.

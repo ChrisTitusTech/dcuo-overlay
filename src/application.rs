@@ -512,8 +512,14 @@ impl eframe::App for Probe {
         self.controller
             .set_feats_enabled(matches!(self.tab, Tab::Character));
         self.controller.set_broker_enabled(self.tab == Tab::Broker);
+        if self.tab != Tab::Broker || self.controller.view().paused {
+            self.broker.cancel_hotkey();
+        }
         self.controller.poll();
         let view = self.controller.view();
+        if view.native.is_none() {
+            self.broker.cancel_hotkey();
+        }
         if !view.connected {
             self.broker.clear();
             self.broker_owner = None;
@@ -675,7 +681,7 @@ impl Probe {
                     }
                     Tab::Broker => {
                         let status = if view.paused { "Paused - showing previously observed listings" } else { view.native.as_ref().map(|s| s.broker_status.as_str()).unwrap_or("Connect to the game and open its Broker") };
-                        self.broker.ui(ui, status);
+                        self.broker.ui(ui, status, if view.connected && !view.paused {view.selected_pid} else {None});
                     }
                     Tab::Map => {
                         let (sample, gate) = map_observation(view);

@@ -32,3 +32,9 @@ pub mod spawn_cache;
 pub mod broker_memory;
 #[cfg(feature = "window")]
 pub mod broker_view;
+
+#[cfg(feature = "window")]
+pub mod broker_hotkey;
+#[cfg(feature = "window")]
+pub mod broker_price;
+pub mod broker_scan;

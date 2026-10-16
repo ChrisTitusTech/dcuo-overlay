@@ -148,3 +148,8 @@ resets that count. These are last-seen locations, not a guarantee that a spawn i
 available. The cache clears on a confirmed area/character/session change and is
 not saved to disk. Turning the layer off hides cached locations without erasing
 them in the same context.
+
+Broker price entry: choose an observed item and review its price in the Broker
+tab, then arm **Ctrl+Alt+P**. Focus the game price field, select all existing text,
+and press/release the shortcut to type once. You confirm the listing yourself.
+See [Broker workflow](docs/broker.md) for observation limits and setup.

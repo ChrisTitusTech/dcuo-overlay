@@ -364,3 +364,11 @@ Both workers are reassigned to offline ABI/thread/lifecycle and Wine/Rust loadin
 feasibility research. No injected call or game-memory write is approved as proven
 by earlier offset discovery alone. Lead halted the input prototype and owns any
 future bounded live validation after the necessary contracts are established.
+
+## Broker price hotkey
+
+Lead owns price choices, UI, lifecycle, documentation, validation and install.
+Worker price_hotkey (gpt-6.1-sol) owns only the bounded X11 hotkey/typing backend
+and synthetic tests; no live operation. Independent review follows integration.
+Acceptance needs unit checks, isolated X11 typing checks, normal-window checks
+and a user-observed in-game field test without submitting a listing.

@@ -42,3 +42,22 @@ The production parser read the seven-result page in approximately 1.4 ms and
 Private screenshots and probe output remain ignored, outside committed fixtures.
 Synthetic tests cover malformed/mutating data, bounds, ownership exclusion,
 response-token age retention, owner changes, partial pages and cache eviction.
+
+## Fill a listing price with a hotkey
+
+Search the game Broker with All categories, Usable by me off, and Price Ascending.
+In the companion Broker tab, choose the observed item, check the item and stack
+against your intended listing, and review the suggested price ($1 below the lowest
+observed competing total). You can edit the price. These are partial observations,
+not a guaranteed market minimum. Unknown stack semantics require your confirmation.
+
+Check the confirmation box and click **Arm Ctrl+Alt+P (60 seconds)**. In game,
+focus the listing price field and select **all** existing text. Press and release
+**Ctrl+Alt+P**. It types once; inspect the resulting amount and confirm the listing
+yourself. It never clicks, selects text, presses Enter, or submits a listing.
+Cancel, a tab/session change, pause, or expiry disarms it. If input stops partway,
+review and select the field again before retrying. Only unshifted ASCII digit
+keyboard layouts are supported; unsupported mappings fail explicitly.
+
+Turn off Caps Lock, Num Lock, and Sticky Keys modifiers before using the shortcut.
+The typer rejects active modifier locks rather than risk entering symbols.

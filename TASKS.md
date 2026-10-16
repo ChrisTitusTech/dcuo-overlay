@@ -1246,3 +1246,22 @@ The failed desktop prototype remains local for reference, not release acceptance
 
 Restored the installed companion from merged commit ea56b27 after a successful
 release build. The unsupported automatic-input prototype is no longer installed.
+
+## Broker price hotkey (in progress)
+
+Implemented selection of observed competing item/quantity groups, editable price,
+one-shot 60-second arming and cancellation. Keyboard worker observes Ctrl+Alt+P
+without pointer movement or a global grab, waits for release, validates process
+and focus, then types digits without Enter. Full validation and live field
+acceptance remain pending. Automatic search and injection remain unfinished.
+
+Hotkey validation: 229 workspace tests pass (four opt-in checks ignored), 168
+headless tests, both strict Clippy versions (1.96/1.95), workspace/release builds,
+12 installer tests and two managed-X11 startup/relaunch checks pass. The opt-in
+Xvfb typing check was run separately and passed exact digit press/release events
+with no mouse/Enter events. Review found effective locked/latched modifiers could
+change digit output; fixed with effective modifier validation and verified held
+Shift/released Caps Lock rejection on the private X server. Re-review found no
+remaining actionable issues. Installed the updated build and relaunched the
+companion. Live replacement in the game's price widget is still unverified; no
+listing is submitted by this feature and no release acceptance is claimed yet.
