@@ -43,21 +43,33 @@ Private screenshots and probe output remain ignored, outside committed fixtures.
 Synthetic tests cover malformed/mutating data, bounds, ownership exclusion,
 response-token age retention, owner changes, partial pages and cache eviction.
 
-## Fill a listing price with a hotkey
+## Search then fill with Ctrl+Alt+P
 
-Search the game Broker with All categories, Usable by me off, and Price Ascending.
-In the companion Broker tab, choose the observed item, check the item and stack
-against your intended listing, and review the suggested price ($1 below the lowest
-observed competing total). You can edit the price. These are partial observations,
-not a guaranteed market minimum. Unknown stack semantics require your confirmation.
+1. Visit My Wares or Browse to observe the item. Choose its exact name and client
+   quantity in the companion. Check its stack against the item you intend to sell.
+2. Open the game's **Browse** tab: All categories, Price Ascending, **Usable by me
+   off**. Confirm this setup in the companion and arm the search.
+3. Click the **search item field**, then press and release **Ctrl+Alt+P**. The
+   shortcut replaces its text with the chosen name and presses Enter to search.
+4. Wait for the companion's **Copied** status. Only a fresh matching response
+   supplies the lowest observed total minus $1. This includes your own offers,
+   compares the selected client quantity, and does not prove whole-market coverage.
+5. On **My Wares**, add the item and click its **price field**. The next press of
+   **Ctrl+Alt+P** replaces that field with the copied amount. The $1 is subtracted
+   only once. This step does not press Enter or submit the listing. Review and
+   confirm the listing yourself.
 
-Check the confirmation box and click **Arm Ctrl+Alt+P (60 seconds)**. In game,
-focus the listing price field and select **all** existing text. Press and release
-**Ctrl+Alt+P**. It types once; inspect the resulting amount and confirm the listing
-yourself. It never clicks, selects text, presses Enter, or submits a listing.
-Cancel, a tab/session change, pause, or expiry disarms it. If input stops partway,
-review and select the field again before retrying. Only unshifted ASCII digit
-keyboard layouts are supported; unsupported mappings fail explicitly.
+Each hotkey stage is armed for 60 seconds; the response wait lasts 30 seconds.
+Watch the status to know which stage is armed: the app validates game-window focus
+but cannot detect which Broker widget has focus. It never clicks or moves focus.
+Cancel or changing the companion tab, selection, session, or pause stops the flow.
+If it expires, arm a fresh search. A failed/empty/mismatched search never copies an
+old cached price or arms price entry. Existing clipboard contents are not cleared.
 
-Turn off Caps Lock, Num Lock, and Sticky Keys modifiers before using the shortcut.
-The typer rejects active modifier locks rather than risk entering symbols.
+Turn off Caps Lock, Num Lock and Sticky Keys modifiers. Printable ASCII names on
+verified keyboard mappings are supported; unsupported input fails before typing.
+If typing stops partway, inspect the field before trying again.
+
+Before submitting the search, the shortcut briefly waits for the existing reader
+to confirm a fresh settled Broker response. If another query intervenes, it stops
+instead of attributing that query's prices to this search.

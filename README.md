@@ -149,7 +149,8 @@ available. The cache clears on a confirmed area/character/session change and is
 not saved to disk. Turning the layer off hides cached locations without erasing
 them in the same context.
 
-Broker price entry: choose an observed item and review its price in the Broker
-tab, then arm **Ctrl+Alt+P**. Focus the game price field, select all existing text,
-and press/release the shortcut to type once. You confirm the listing yourself.
-See [Broker workflow](docs/broker.md) for observation limits and setup.
+Broker search/fill hotkey: choose an observed item in the Broker tab and arm
+**Ctrl+Alt+P**. Focus the game's Browse search field; the first press replaces its
+text and searches. Fresh matching results copy the lowest observed total minus $1.
+Focus the My Wares listing price field; the next press fills that same amount
+without submitting. See [Broker workflow](docs/broker.md) for setup and limits.

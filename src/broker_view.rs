@@ -18,6 +18,7 @@ pub struct BrokerView {
     last_token: Option<u64>,
     rows: BTreeMap<u64, Observed>,
     price_entry: crate::broker_price::PriceEntry,
+    latest: Option<Snapshot>,
 }
 impl BrokerView {
     pub fn cancel_hotkey(&mut self) {
@@ -41,6 +42,7 @@ impl BrokerView {
             self.owner = Some(owner);
         }
         self.prune(now);
+        self.latest = Some(snapshot.clone());
         if self.last_token == Some(snapshot.request_token) {
             for incoming in &snapshot.listings {
                 if let Some(saved) = self.rows.get_mut(&incoming.id) {
@@ -114,49 +116,33 @@ impl BrokerView {
             })
             .min_by_key(|row| (row.listing.total_price, row.listing.id))
     }
-    fn price_offers(&self) -> Vec<crate::broker_price::Offer> {
-        use crate::broker_price::{ItemKey, Offer};
-        let Some((_, owner)) = &self.owner else {
-            return Vec::new();
-        };
-        let mut offers: BTreeMap<ItemKey, Offer> = BTreeMap::new();
-        for row in self.rows.values() {
-            let listing = &row.listing;
-            let Some(name) = listing.name.as_ref().filter(|s| !s.trim().is_empty()) else {
-                continue;
-            };
-            if listing.seller == *owner
-                || listing.item_id == 0
-                || listing.quantity_candidate == 0
-                || listing.total_price == 0
-                || row.at.elapsed() >= MAX_AGE
-            {
-                continue;
-            }
-            let item = ItemKey {
-                id: listing.item_id,
-                name: name.clone(),
-                quantity: listing.quantity_candidate,
-            };
-            let entry = offers.entry(item.clone()).or_insert(Offer {
-                item,
-                total: listing.total_price,
-                at: row.at,
-            });
-            if listing.total_price < entry.total {
-                entry.total = listing.total_price;
-                entry.at = row.at;
-            }
-        }
-        offers.into_values().collect()
+    fn search_items(&self) -> Vec<crate::broker_price::ItemKey> {
+        use crate::broker_price::ItemKey;
+        self.rows
+            .values()
+            .filter_map(|row| {
+                let listing = &row.listing;
+                let name = listing.name.as_ref().filter(|s| !s.trim().is_empty())?;
+                (listing.item_id != 0
+                    && listing.quantity_candidate != 0
+                    && row.at.elapsed() < MAX_AGE)
+                    .then(|| ItemKey {
+                        id: listing.item_id,
+                        name: name.clone(),
+                        quantity: listing.quantity_candidate,
+                    })
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
     pub fn ui(&mut self, ui: &mut egui::Ui, status: &str, pid: Option<i32>) {
         let now = Instant::now();
         self.prune(now);
         ui.heading("Broker");
         ui.label(status);
-        let offers = self.price_offers();
-        self.price_entry.ui(ui, pid, &offers);
+        let items = self.search_items();
+        self.price_entry.ui(ui, pid, &items, self.latest.as_ref());
         ui.label("Partial coverage: Broker API unavailable. Visit My Wares, then Browse manually to observe listings.");
         ui.small("Prices are total asking prices. Stack sizes and item variants are not verified. These are comparisons of observed offers, not confirmed sales.");
         if let Some((_, name)) = &self.owner {
@@ -302,7 +288,7 @@ mod tests {
         }
     }
     #[test]
-    fn price_choices_include_new_items_exclude_self_and_keep_stack_groups_separate() {
+    fn search_choices_include_wares_and_keep_stack_groups_separate() {
         let at = Instant::now();
         let mut view = BrokerView::default();
         let mut unknown = listing(9, "Other", false, 1, 1);
@@ -324,13 +310,12 @@ mod tests {
             ),
             at,
         );
-        let offers = view.price_offers();
+        let offers = view.search_items();
         assert_eq!(offers.len(), 2);
-        assert_eq!(offers[0].total, 80);
-        assert_eq!(offers[0].item.quantity, 1);
-        assert_eq!(offers[1].total, 120);
+        assert_eq!(offers[0].quantity, 1);
+        assert_eq!(offers[1].quantity, 2);
         view.prune(at + MAX_AGE);
-        assert!(view.price_offers().is_empty());
+        assert!(view.search_items().is_empty());
     }
     #[test]
     fn late_names_enrich_matching_rows_without_refreshing_or_reviving_prices() {

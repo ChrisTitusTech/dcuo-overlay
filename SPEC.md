@@ -513,15 +513,19 @@ no live injection is validated. Existing readers remain read-only. Prove the exa
 search ABI, owned arguments, lifetime and safe execution-thread context before any
 live injected call. Never invoke transaction actions or unrelated game functions.
 
-## Broker price hotkey (current implementation scope)
+## Broker search/fill hotkey (current implementation scope)
 
-User selected a one-shot normal-keyboard workflow instead of injection for price
-entry. Choose an observed competing item/quantity group, review or edit a positive
-price (default one below lowest observed total), and explicitly confirm item/stack
-and unfiltered sorted search. Arm Ctrl+Alt+P for 60 seconds; the user focuses the
-game price field and selects its full contents. After shortcut release, type only
-digits once. Never move focus, click, press Enter, submit, or write game memory.
-Require supported build/session, game focus, unchanged keyboard mapping and no
-held keys. Cancel on tab/pause/disconnect/owner changes, expired observations, or
-selection changes. Price coverage remains partial; stack semantics require user
-confirmation. The unaccepted automatic-search adapter remains private reference.
+The selected observed item may come from My Wares or Browse. User confirms All,
+Price Ascending and Usable by me off and focuses the Browse search item field.
+First Ctrl+Alt+P replaces its text with the exact selected name and submits search.
+Accept only the next fresh response token, same owner, exact item/name/quantity;
+wait for unresolved matching names. Copy the lowest observed matching total minus
+$1 (including owned offers); reject missing, zero/one or out-of-range prices.
+Auto-arm a second one-shot Ctrl+Alt+P: user focuses the My Wares price field and
+the shortcut replaces it with the copied amount, without another subtraction or
+Return. Never submit a listing. Each stage expires after 60 seconds; response wait
+after input begins is 30 seconds. No pointer movement, focus change or injection.
+The UI explains stage and widget focus requirements; native widget identity and
+stack semantics are not proven. Build/session/focus/keymap/modifier guards apply.
+Cancel on tab/pause/disconnect/owner/selection changes; do not reuse stale response
+prices on failure. Coverage remains observed-page only.

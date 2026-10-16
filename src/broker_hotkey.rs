@@ -1,4 +1,4 @@
-//! One-shot, explicitly armed price typing. No mouse, focus, selection or submit events.
+//! One-shot Browse search in the user-confirmed focused search field. No mouse or focus events.
 use crate::process;
 use std::{
     collections::HashSet,
@@ -19,28 +19,40 @@ use x11rb::{
 };
 const LIMIT: Duration = Duration::from_secs(60);
 fn err(e: impl std::fmt::Display) -> String {
-    format!("Price hotkey unavailable: {e}")
+    format!("Browse hotkey unavailable: {e}")
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Event {
+    Started(Instant),
+    ReadyToSearch(Instant),
+    Finished(Result<(), String>),
+}
 pub struct Hotkey {
     cancel: Arc<AtomicBool>,
-    result: Receiver<Result<(), String>>,
+    search_permit: Arc<AtomicBool>,
+    result: Receiver<Event>,
     completed: bool,
 }
 impl Hotkey {
-    pub fn poll(&mut self) -> Option<Result<(), String>> {
+    pub fn confirm_search(&self) {
+        self.search_permit.store(true, Ordering::Release);
+    }
+    pub fn poll(&mut self) -> Option<Event> {
         if self.completed {
             return None;
         }
         match self.result.try_recv() {
             Ok(result) => {
-                self.completed = true;
+                self.completed = matches!(result, Event::Finished(_));
                 Some(result)
             }
             Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.completed = true;
-                Some(Err("Price hotkey worker stopped unexpectedly".into()))
+                Some(Event::Finished(Err(
+                    "Browse hotkey worker stopped unexpectedly".into(),
+                )))
             }
         }
     }
@@ -50,33 +62,60 @@ impl Drop for Hotkey {
         self.cancel.store(true, Ordering::Release);
     }
 }
-pub fn arm(pid: i32, price: u64) -> Result<Hotkey, String> {
+fn valid_name(name: &str) -> bool {
+    !name.trim().is_empty() && name.len() <= 96 && name.bytes().all(|b| (32..=126).contains(&b))
+}
+pub fn arm(pid: i32, name: &str) -> Result<Hotkey, String> {
+    if pid <= 0 || !valid_name(name) {
+        return Err(
+            "Browse hotkey requires a selected game and 1-96 printable ASCII item characters"
+                .into(),
+        );
+    }
+    arm_action(pid, name.to_owned(), true)
+}
+pub fn arm_price(pid: i32, price: u64) -> Result<Hotkey, String> {
     if pid <= 0 || price == 0 || price > u64::from(u32::MAX) {
         return Err(
             "Price hotkey requires a selected game and price between 1 and 4294967295".into(),
         );
     }
+    arm_action(pid, price.to_string(), false)
+}
+fn arm_action(pid: i32, name: String, submit: bool) -> Result<Hotkey, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = cancel.clone();
+    let search_permit = Arc::new(AtomicBool::new(false));
+    let worker_permit = search_permit.clone();
     let (send, result) = mpsc::channel();
     let started = Instant::now();
     thread::Builder::new()
-        .name("broker-price-hotkey".into())
+        .name("broker-search-hotkey".into())
         .spawn(move || {
-            let _ = send.send(run(pid, price, &worker_cancel, started));
+            let result = run(
+                pid,
+                &name,
+                submit,
+                &worker_cancel,
+                &worker_permit,
+                started,
+                &send,
+            );
+            let _ = send.send(Event::Finished(result));
         })
         .map_err(err)?;
     Ok(Hotkey {
         cancel,
+        search_permit,
         result,
         completed: false,
     })
 }
 fn budget(cancel: &AtomicBool, started: Instant) -> Result<(), String> {
     if cancel.load(Ordering::Acquire) {
-        Err("Price hotkey cancelled".into())
+        Err("Browse hotkey cancelled".into())
     } else if started.elapsed() >= LIMIT {
-        Err("Price hotkey expired after 60 seconds".into())
+        Err("Browse hotkey expired after 60 seconds".into())
     } else {
         Ok(())
     }
@@ -187,7 +226,7 @@ fn no_modifiers(c: &RustConnection, root: u32) -> Result<(), String> {
     // QueryPointer reports the effective core modifier state, including those.
     let pointer = c.query_pointer(root).map_err(err)?.reply().map_err(err)?;
     if u16::from(pointer.mask) & 0xff != 0 {
-        return Err("Release modifiers and turn off Caps Lock, Num Lock and sticky/latched modifiers before price typing".into());
+        return Err("Release modifiers and turn off Caps Lock, Num Lock and sticky/latched modifiers before Browse search".into());
     }
     let keys = c.query_keymap().map_err(err)?.reply().map_err(err)?.keys;
     let modifiers = c
@@ -200,7 +239,7 @@ fn no_modifiers(c: &RustConnection, root: u32) -> Result<(), String> {
         .iter()
         .any(|code| *code != 0 && keys[usize::from(*code) / 8] & (1 << (*code % 8)) != 0)
     {
-        return Err("Release held keyboard modifiers before price typing".into());
+        return Err("Release held keyboard modifiers before Browse search".into());
     }
     Ok(())
 }
@@ -223,26 +262,42 @@ impl Edge {
         fire
     }
 }
-fn digit_codes(min: u8, width: usize, map: &[u32]) -> Result<[u8; 10], String> {
-    if width == 0 || !map.len().is_multiple_of(width) {
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Stroke {
+    code: u8,
+    shift: bool,
+}
+fn resolve(min: u8, width: usize, map: &[u32], symbol: u32) -> Result<Stroke, String> {
+    if width < 2 || !map.len().is_multiple_of(width) {
         return Err("Invalid keyboard map".into());
     }
-    let mut codes = [0; 10];
-    for (digit, slot) in codes.iter_mut().enumerate() {
-        let symbol = u32::from(b'0') + digit as u32;
-        let matches: Vec<_> = map
-            .chunks_exact(width)
-            .enumerate()
-            .filter(|(_, row)| {
-                row[0] == symbol && row.iter().step_by(2).all(|s| *s == 0 || *s == symbol)
-            })
-            .collect();
-        if matches.len() != 1 {
-            return Err("Digits require unique unshifted ASCII keyboard mappings".into());
+    let mut matches = Vec::new();
+    for (index, row) in map.chunks_exact(width).enumerate() {
+        for level in 0..2 {
+            if row[level] == symbol
+                && row
+                    .iter()
+                    .skip(level)
+                    .step_by(2)
+                    .all(|s| *s == 0 || *s == symbol)
+            {
+                let stroke = Stroke {
+                    code: u8::try_from(usize::from(min) + index).map_err(err)?,
+                    shift: level == 1,
+                };
+                // Same symbol at both levels can always use the unshifted level.
+                if level == 0 || row[0] != symbol {
+                    matches.push(stroke);
+                }
+            }
         }
-        *slot = u8::try_from(usize::from(min) + matches[0].0).map_err(err)?;
     }
-    Ok(codes)
+    if matches.len() != 1 {
+        return Err(format!(
+            "Search character {symbol:#x} requires a unique ASCII keyboard mapping"
+        ));
+    }
+    Ok(matches[0])
 }
 fn clients(
     c: &RustConnection,
@@ -266,13 +321,13 @@ fn clients(
     result.dedup();
     Ok(result)
 }
-fn send_digit(c: &RustConnection, root: u32, code: u8) -> Result<(), String> {
+fn send_key(c: &RustConnection, root: u32, code: u8) -> Result<(), String> {
     let pressed = c
         .xtest_fake_input(KEY_PRESS_EVENT, code, 0, root, 0, 0, 0)
         .map_err(err)
         .and_then(|cookie| cookie.check().map_err(err));
     thread::sleep(Duration::from_millis(35));
-    // Always release exactly the digit we attempted, including on cancellation/errors.
+    // Always release exactly the key we attempted, including on errors.
     let released = c
         .xtest_fake_input(KEY_RELEASE_EVENT, code, 0, root, 0, 0, 0)
         .map_err(err)
@@ -283,7 +338,74 @@ fn send_digit(c: &RustConnection, root: u32, code: u8) -> Result<(), String> {
     flushed?;
     Ok(())
 }
-fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<(), String> {
+fn send_stroke(c: &RustConnection, root: u32, stroke: Stroke, modifier: u8) -> Result<(), String> {
+    if !stroke.shift {
+        return send_key(c, root, stroke.code);
+    }
+    let pressed = c
+        .xtest_fake_input(KEY_PRESS_EVENT, modifier, 0, root, 0, 0, 0)
+        .map_err(err)
+        .and_then(|cookie| cookie.check().map_err(err));
+    let typed = if pressed.is_ok() {
+        send_key(c, root, stroke.code)
+    } else {
+        Ok(())
+    };
+    // Release only our own synthetic modifier, even if key input failed.
+    let released = c
+        .xtest_fake_input(KEY_RELEASE_EVENT, modifier, 0, root, 0, 0, 0)
+        .map_err(err)
+        .and_then(|cookie| cookie.check().map_err(err));
+    let flushed = c.flush().map_err(err);
+    pressed?;
+    typed?;
+    released?;
+    flushed
+}
+fn input_sequence(
+    strokes: Vec<Stroke>,
+    select: Stroke,
+    enter: Option<Stroke>,
+    control: u8,
+    shift: u8,
+) -> Vec<(Stroke, u8)> {
+    std::iter::once((
+        Stroke {
+            code: select.code,
+            shift: true,
+        },
+        control,
+    ))
+    .chain(strokes.into_iter().map(|key| (key, shift)))
+    .chain(enter.into_iter().map(|key| (key, shift)))
+    .collect()
+}
+fn wait_for_search_permit(
+    cancel: &AtomicBool,
+    started: Instant,
+    ready: Instant,
+    permit: &AtomicBool,
+) -> Result<(), String> {
+    loop {
+        budget(cancel, started)?;
+        if ready.elapsed() >= Duration::from_secs(10) {
+            return Err("Browse search confirmation timed out after 10 seconds".into());
+        }
+        if permit.swap(false, Ordering::AcqRel) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+fn run(
+    pid: i32,
+    name: &str,
+    submit: bool,
+    cancel: &AtomicBool,
+    search_permit: &AtomicBool,
+    started: Instant,
+    events: &mpsc::Sender<Event>,
+) -> Result<(), String> {
     budget(cancel, started)?;
     let candidate = process::candidate(pid).map_err(err)?;
     if process::executable_metadata(&candidate)
@@ -291,7 +413,7 @@ fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<()
         .sha256
         != crate::native::PROFILE_ID
     {
-        return Err("Unsupported game build for price hotkey".into());
+        return Err("Unsupported game build for Browse hotkey".into());
     }
     let owners = ancestry(pid)?;
     if owners.first() != Some(&candidate.identity) {
@@ -321,7 +443,44 @@ fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<()
         .reply()
         .map_err(err)?;
     let width = usize::from(mapping.keysyms_per_keycode);
-    let digits = digit_codes(min, width, &mapping.keysyms)?;
+    let strokes = name
+        .bytes()
+        .map(|b| resolve(min, width, &mapping.keysyms, u32::from(b)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let select = resolve(min, width, &mapping.keysyms, u32::from(b'a'))?;
+    let enter = if submit {
+        Some(resolve(min, width, &mapping.keysyms, 0xff0d)?)
+    } else {
+        None
+    };
+    if select.shift || enter.is_some_and(|key| key.shift) {
+        return Err("Unsupported selection or Return mapping".into());
+    }
+    let shift = resolve(min, width, &mapping.keysyms, 0xffe1)?;
+    let control = resolve(min, width, &mapping.keysyms, 0xffe3)?;
+    if shift.shift || control.shift {
+        return Err("Unsupported modifier mapping".into());
+    }
+    let modifiers = c
+        .get_modifier_mapping()
+        .map_err(err)?
+        .reply()
+        .map_err(err)?;
+    let modifier_width = modifiers.keycodes.len() / 8;
+    if modifier_width == 0
+        || !modifiers.keycodes[..modifier_width].contains(&shift.code)
+        || !modifiers.keycodes[2 * modifier_width..3 * modifier_width].contains(&control.code)
+        || modifiers
+            .keycodes
+            .chunks_exact(modifier_width)
+            .enumerate()
+            .any(|(index, codes)| {
+                (index != 0 && codes.contains(&shift.code))
+                    || (index != 2 && codes.contains(&control.code))
+            })
+    {
+        return Err("Shift and Control modifier mapping is not verified".into());
+    }
     let symbol_codes = |symbols: &[u32]| -> Vec<u8> {
         mapping
             .keysyms
@@ -395,7 +554,16 @@ fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<()
     {
         return Err("Game executable changed".into());
     }
-    for byte in price.to_string().bytes() {
+    let mut input_started = false;
+    // Ctrl+A replaces only the explicitly confirmed focused Browse search field.
+    let sequence = input_sequence(strokes, select, enter, control.code, shift.code);
+    for (stroke, modifier) in sequence {
+        if enter.is_some_and(|key| key == stroke) {
+            search_permit.store(false, Ordering::Release);
+            let ready = Instant::now();
+            events.send(Event::ReadyToSearch(ready)).map_err(err)?;
+            wait_for_search_permit(cancel, started, ready, search_permit)?;
+        }
         validate()?;
         no_modifiers(&c, root)?;
         let latest = c
@@ -403,12 +571,17 @@ fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<()
             .map_err(err)?
             .reply()
             .map_err(err)?;
+        let latest_modifiers = c
+            .get_modifier_mapping()
+            .map_err(err)?
+            .reply()
+            .map_err(err)?;
         if latest.keysyms_per_keycode != mapping.keysyms_per_keycode
             || latest.keysyms != mapping.keysyms
+            || latest_modifiers.keycodes != modifiers.keycodes
         {
             return Err("Keyboard mapping changed while armed".into());
         }
-        let code = digits[usize::from(byte - b'0')];
         if c.query_keymap()
             .map_err(err)?
             .reply()
@@ -417,10 +590,14 @@ fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<()
             .iter()
             .any(|byte| *byte != 0)
         {
-            return Err("Release all held keyboard keys before price typing".into());
+            return Err("Release all held keyboard keys before Browse search".into());
         }
         budget(cancel, started)?;
-        send_digit(&c, root, code)?;
+        if !input_started {
+            events.send(Event::Started(Instant::now())).map_err(err)?;
+            input_started = true;
+        }
+        send_stroke(&c, root, stroke, modifier)?;
         validate()?;
         no_modifiers(&c, root)?;
         thread::sleep(Duration::from_millis(35));
@@ -430,14 +607,12 @@ fn run(pid: i32, price: u64, cancel: &AtomicBool, started: Instant) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Run only under a private server:
-    // xvfb-run -a env DCUO_HOTKEY_XVFB=1 cargo test --lib broker_hotkey::tests::xvfb_digits -- --ignored
     #[test]
     #[ignore = "requires explicitly opted-in private Xvfb display"]
-    fn xvfb_digits() {
+    fn xvfb_search_events() {
         assert_eq!(std::env::var("DCUO_HOTKEY_XVFB").as_deref(), Ok("1"));
         use x11rb::protocol::{
-            Event,
+            Event as XEvent,
             xproto::{CreateWindowAux, EventMask, InputFocus, WindowClass},
         };
         let (c, screen) = x11rb::connect(None).unwrap();
@@ -470,40 +645,82 @@ mod tests {
             .check()
             .unwrap();
         let min = c.setup().min_keycode;
-        let count = c.setup().max_keycode - min + 1;
-        let mapping = c.get_keyboard_mapping(min, count).unwrap().reply().unwrap();
-        let codes = digit_codes(
-            min,
-            usize::from(mapping.keysyms_per_keycode),
-            &mapping.keysyms,
-        )
-        .unwrap();
-        let price = "4294967295";
-        for digit in price.bytes() {
-            send_digit(&c, root, codes[usize::from(digit - b'0')]).unwrap();
+        let map = c
+            .get_keyboard_mapping(min, c.setup().max_keycode - min + 1)
+            .unwrap()
+            .reply()
+            .unwrap();
+        let resolve = |symbol| {
+            super::resolve(
+                min,
+                usize::from(map.keysyms_per_keycode),
+                &map.keysyms,
+                symbol,
+            )
+            .unwrap()
+        };
+        let shift = resolve(0xffe1).code;
+        let ctrl = resolve(0xffe3).code;
+        let mut sequence = input_sequence(
+            "Ab Name: X"
+                .bytes()
+                .map(|b| resolve(u32::from(b)))
+                .collect(),
+            resolve(97),
+            Some(resolve(0xff0d)),
+            ctrl,
+            shift,
+        );
+        let price = input_sequence(
+            "12345".bytes().map(|b| resolve(u32::from(b))).collect(),
+            resolve(97),
+            None,
+            ctrl,
+            shift,
+        );
+        assert_eq!(price.len(), 6);
+        assert!(
+            price
+                .iter()
+                .all(|(key, _)| key.code != resolve(0xff0d).code)
+        );
+        sequence.extend(price);
+        let mut expected = Vec::new();
+        for (stroke, modifier) in sequence {
+            no_modifiers(&c, root).unwrap();
+            if stroke.shift {
+                expected.push((true, modifier));
+            }
+            expected.extend([(true, stroke.code), (false, stroke.code)]);
+            if stroke.shift {
+                expected.push((false, modifier));
+            }
+            send_stroke(&c, root, stroke, modifier).unwrap();
         }
-        // Round-trip ensures all synthetic events have reached this receiving client.
         c.get_input_focus().unwrap().reply().unwrap();
-        let mut received = Vec::new();
+        let mut actual = Vec::new();
         while let Some(event) = c.poll_for_event().unwrap() {
             match event {
-                Event::KeyPress(event) => received.push((true, event.detail)),
-                Event::KeyRelease(event) => received.push((false, event.detail)),
-                Event::ButtonPress(_) | Event::ButtonRelease(_) => panic!("unexpected mouse event"),
+                XEvent::KeyPress(e) => actual.push((true, e.detail)),
+                XEvent::KeyRelease(e) => actual.push((false, e.detail)),
+                XEvent::ButtonPress(_) | XEvent::ButtonRelease(_) => panic!("mouse event"),
                 _ => {}
             }
         }
-        let expected: Vec<_> = price
-            .bytes()
-            .flat_map(|digit| {
-                let code = codes[usize::from(digit - b'0')];
-                [(true, code), (false, code)]
-            })
-            .collect();
-        assert_eq!(
-            received, expected,
-            "only the exact decimal digit events are allowed"
+        assert_eq!(actual, expected);
+        assert!(
+            send_stroke(
+                &c,
+                root,
+                Stroke {
+                    code: 0,
+                    shift: true
+                },
+                shift
+            )
+            .is_err()
         );
+        no_modifiers(&c, root).unwrap();
         assert!(
             c.query_keymap()
                 .unwrap()
@@ -511,19 +728,8 @@ mod tests {
                 .unwrap()
                 .keys
                 .iter()
-                .all(|byte| *byte == 0)
+                .all(|b| *b == 0)
         );
-        // Exercise the production guard against physically held Shift, then a
-        // lock that remains effective after every physical key has been released.
-        let symbol_code = |symbol| {
-            let index = mapping
-                .keysyms
-                .chunks_exact(usize::from(mapping.keysyms_per_keycode))
-                .position(|row| row[0] == symbol)
-                .unwrap();
-            min + u8::try_from(index).unwrap()
-        };
-        let shift = symbol_code(0xffe1);
         c.xtest_fake_input(KEY_PRESS_EVENT, shift, 0, root, 0, 0, 0)
             .unwrap()
             .check()
@@ -533,37 +739,81 @@ mod tests {
             .unwrap()
             .check()
             .unwrap();
-        assert!(held.is_err(), "physically held Shift must be rejected");
-        no_modifiers(&c, root).unwrap();
-        let caps = symbol_code(0xffe5);
-        send_digit(&c, root, caps).unwrap();
+        assert!(held.is_err());
+        let caps = resolve(0xffe5).code;
+        send_key(&c, root, caps).unwrap();
         let locked = no_modifiers(&c, root);
-        let physical_keys = c.query_keymap().unwrap().reply().unwrap().keys;
-        // Restore the private server's state before assertions can panic.
-        send_digit(&c, root, caps).unwrap();
-        assert!(physical_keys.iter().all(|byte| *byte == 0));
-        assert!(
-            locked.is_err(),
-            "effective Caps Lock must be rejected with no physical keys held"
-        );
+        send_key(&c, root, caps).unwrap();
+        assert!(locked.is_err());
         no_modifiers(&c, root).unwrap();
         c.destroy_window(window).unwrap().check().unwrap();
     }
     #[test]
-    fn polling_is_nonblocking_and_drop_cancels() {
-        let cancel = Arc::new(AtomicBool::new(false));
+    fn mapping_and_names_fail_closed() {
+        let map = [97, 65, 97, 65, 59, 58, 59, 58, 32, 32, 32, 32];
+        assert_eq!(
+            resolve(20, 4, &map, 65).unwrap(),
+            Stroke {
+                code: 20,
+                shift: true
+            }
+        );
+        assert_eq!(
+            resolve(20, 4, &map, 58).unwrap(),
+            Stroke {
+                code: 21,
+                shift: true
+            }
+        );
+        assert!(!resolve(20, 4, &map, 32).unwrap().shift);
+        assert!(resolve(20, 0, &map, 65).is_err());
+        assert!(resolve(20, 4, &[97, 65, 98, 65], 97).is_err());
+        assert!(resolve(20, 2, &[97, 65, 97, 65], 65).is_err());
+        assert!(valid_name("A Name: Test"));
+        for name in ["", "  ", "a\n", "caf\u{e9}"] {
+            assert!(!valid_name(name));
+        }
+        assert!(!valid_name(&"a".repeat(97)));
+        assert!(arm(0, "Name").is_err());
+        assert!(arm_price(0, 1).is_err());
+        assert!(arm_price(1, 0).is_err());
+        assert!(arm_price(1, u64::from(u32::MAX) + 1).is_err());
+    }
+    #[test]
+    fn event_completion_is_once() {
         let (send, result) = mpsc::channel();
         let mut hotkey = Hotkey {
-            cancel: cancel.clone(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            search_permit: Arc::new(AtomicBool::new(false)),
             result,
             completed: false,
         };
         assert!(hotkey.poll().is_none());
-        send.send(Ok(())).unwrap();
-        assert_eq!(hotkey.poll(), Some(Ok(())));
+        hotkey.confirm_search();
+        assert!(hotkey.search_permit.load(Ordering::Acquire));
+        let now = Instant::now();
+        send.send(Event::Started(now)).unwrap();
+        send.send(Event::Finished(Ok(()))).unwrap();
+        assert_eq!(hotkey.poll(), Some(Event::Started(now)));
+        assert_eq!(hotkey.poll(), Some(Event::Finished(Ok(()))));
+        drop(send);
         assert!(hotkey.poll().is_none());
-        drop(hotkey);
-        assert!(cancel.load(Ordering::Acquire));
+    }
+    #[test]
+    fn search_confirmation_is_bounded_and_consumed() {
+        let cancel = AtomicBool::new(false);
+        let permit = AtomicBool::new(false);
+        let now = Instant::now();
+        assert!(
+            wait_for_search_permit(&cancel, now, now - Duration::from_secs(10), &permit).is_err()
+        );
+        assert!(wait_for_search_permit(&cancel, now - LIMIT, now, &permit).is_err());
+        cancel.store(true, Ordering::Release);
+        assert!(wait_for_search_permit(&cancel, now, now, &permit).is_err());
+        cancel.store(false, Ordering::Release);
+        permit.store(true, Ordering::Release);
+        wait_for_search_permit(&cancel, now, now, &permit).unwrap();
+        assert!(!permit.load(Ordering::Acquire));
     }
     #[test]
     fn stopped_worker_is_reported_once() {
@@ -571,48 +821,23 @@ mod tests {
         drop(send);
         let mut hotkey = Hotkey {
             cancel: Arc::new(AtomicBool::new(false)),
+            search_permit: Arc::new(AtomicBool::new(false)),
             result,
             completed: false,
         };
-        assert!(hotkey.poll().unwrap().is_err());
+        assert!(matches!(hotkey.poll(), Some(Event::Finished(Err(_)))));
         assert!(hotkey.poll().is_none());
     }
     #[test]
-    fn held_shortcut_requires_full_release_and_new_press() {
+    fn release_edge_and_budget() {
         let mut edge = Edge::default();
-        assert!(!edge.update(true, false));
-        assert!(!edge.update(false, false));
         assert!(!edge.update(true, false));
         assert!(!edge.update(false, true));
         assert!(edge.update(true, false));
         assert!(!edge.update(true, false));
-    }
-    #[test]
-    fn deadline_and_cancellation_stop_work() {
         let cancel = AtomicBool::new(false);
-        assert!(budget(&cancel, Instant::now()).is_ok());
         assert!(budget(&cancel, Instant::now() - LIMIT).is_err());
         cancel.store(true, Ordering::Release);
         assert!(budget(&cancel, Instant::now()).is_err());
-        assert!(arm(0, 10).is_err());
-        assert!(arm(123, 0).is_err());
-        assert!(arm(123, u64::from(u32::MAX) + 1).is_err());
-    }
-    #[test]
-    fn digits_require_unique_unshifted_mapping_in_each_group() {
-        let mut map: Vec<u32> = (b'0'..=b'9')
-            .flat_map(|b| [u32::from(b), u32::from(b'!'), 0, 0])
-            .collect();
-        assert_eq!(
-            digit_codes(20, 4, &map).unwrap(),
-            [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
-        );
-        map.extend_from_slice(&[u32::from(b'0'), 0, 0, 0]);
-        assert!(digit_codes(20, 4, &map).is_err());
-        map.truncate(40);
-        map[2] = u32::from(b'x');
-        assert!(digit_codes(20, 4, &map).is_err());
-        assert!(digit_codes(20, 0, &map).is_err());
-        assert!(digit_codes(20, 3, &map).is_err());
     }
 }

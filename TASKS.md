@@ -1265,3 +1265,27 @@ Shift/released Caps Lock rejection on the private X server. Re-review found no
 remaining actionable issues. Installed the updated build and relaunched the
 companion. Live replacement in the game's price widget is still unverified; no
 listing is submitted by this feature and no release acceptance is claimed yet.
+
+## Broker search then price fill (in progress)
+
+User superseded direct price entry: first hotkey searches the selected name from
+Browse; fresh response supplies lowest matching total minus $1; second hotkey
+fills that amount on My Wares, without Enter or a second subtraction. Selection
+now includes owned items without requiring a competing observation beforehand.
+No cached response may complete a new search. Full gates/review/live acceptance
+are pending. The earlier direct-price flow is superseded.
+
+Validation: 232 workspace tests pass (four opt-in checks ignored); all six
+keyboard tests pass when run on a private Xvfb server, including exact search
+selection/text/Return and price selection/digits without Return. Independent review
+found an earlier in-flight response could satisfy the price wait. Added a fresh
+matched baseline handshake before Return using the existing reader, followed by
+exact next-token/post-completion matching and a regression. Final review found no
+further actionable findings. Final build/install checks are in progress; actual
+in-game search, clipboard and price-widget behavior remain unverified.
+
+Final strict Clippy checks pass on Rust 1.96 and 1.95; workspace and release
+builds pass. Both managed-X11 startup/relaunch checks pass. Reused unchanged
+headless and installer evidence from the preceding hotkey implementation. Updated
+local install and relaunched the single companion. Live game acceptance remains
+pending, so no PR publication/merge acceptance is claimed for this workflow.

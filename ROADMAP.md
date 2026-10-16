@@ -372,3 +372,10 @@ Worker price_hotkey (gpt-6.1-sol) owns only the bounded X11 hotkey/typing backen
 and synthetic tests; no live operation. Independent review follows integration.
 Acceptance needs unit checks, isolated X11 typing checks, normal-window checks
 and a user-observed in-game field test without submitting a listing.
+
+## Broker search/fill revision
+
+Lead owns two-stage UI, fresh token correlation, clipboard, install and live
+acceptance. gpt-6.1-sol worker broker_search_keys owns only guarded name/search
+and price-only keyboard paths with isolated Xvfb tests. Worker search_fill_review
+independently reviews integration read-only. No worker operates the live game.
