@@ -349,3 +349,18 @@ Worker assignments: player_detection_review owns the pure native Broker parser;
 exo_effect_reader owns offline item-name/ownership research. Both use gpt-6.1-sol,
 with no live reads. Lead owns live experiments, shared interfaces, UI integration,
 status, commits and acceptance. No worker may spawn another worker.
+
+## Broker Update prices (active)
+
+User selected normal Broker controls instead of injection. Lead owns integration,
+UI confirmation, live operator checks and publication. gpt-6.1-sol worker
+player_detection_review owns the transport-independent bounded scan queue;
+exo_effect_reader owns the X11 input adapter, without live input or reads.
+Validate synthetic response correlation/cancellation and desktop context checks,
+then a user-triggered live scan of the observed wares before release acceptance.
+
+Transport superseded: user switched to in-process Broker search after UI testing.
+Both workers are reassigned to offline ABI/thread/lifecycle and Wine/Rust loading
+feasibility research. No injected call or game-memory write is approved as proven
+by earlier offset discovery alone. Lead halted the input prototype and owns any
+future bounded live validation after the necessary contracts are established.

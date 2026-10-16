@@ -1208,3 +1208,41 @@ Clippy versions and release build pass. Independent Codex re-review found no
 actionable bugs. Final binary is installed; the already-open validated Broker
 window retains its session observations and uses the final cache fix next launch.
 Publication and remote CI are tracked in PR #21.
+
+## Broker Update prices (2026-10-16, active)
+
+- [x] User confirmed normal Broker controls and a button-triggered workflow.
+- [x] Bounded sequential queue, correlation, cancellation and timeout tests.
+- [ ] Process-bound supported-layout desktop adapter.
+- [ ] Update prices, progress, Cancel and partial-price result integration.
+- [ ] Live full-queue validation, gates, independent review and publication.
+
+The queue, button/progress/Cancel and desktop adapter are integrated. User further
+requested disabling Usable by me; preparation now recognizes checked/off pixels,
+only toggles a positively checked box and verifies off before searches.
+Independent initial review identified pointer interference and an old Browse
+response baseline. Added exact pointer guards plus direct XTEST button pairs and
+a post-preparation response baseline. 232 workspace tests and both strict Clippy
+versions pass; headless tests, builds, installer checks and managed-X11 startup
+pass. Live button validation and re-review remain pending.
+
+Live prototype loaded the ten owned listings and queued seven distinct item groups.
+The first run stopped at zero searches because Usable by me remained checked after
+the synthetic click; no price scan acceptance is claimed. Cursor capture also
+prevented reliable operator access to the companion. User then explicitly switched
+to injection. Halted the prototype application; normal-controls work remains local
+and unaccepted. Offline research must establish ABI/thread/argument/lifetime
+contracts before the injection path can be implemented or tested.
+
+Offline injection investigation completed without loading code or writing game
+memory. The previously identified searchAuctions address is a branch inside the
+GFx dispatcher, not a callable entry point. Static analysis mapped request fields
+and found a smaller searchItem path, but query enum meanings, native GFx ownership,
+UI-thread scheduling, helper loading and shutdown are not proven. A Windows Rust
+helper toolchain is also not installed. Injection remains blocked on these
+contracts; no automatic price update is accepted or ready for publication.
+Transport-independent queue committed as 80140bb with five synthetic tests passing.
+The failed desktop prototype remains local for reference, not release acceptance.
+
+Restored the installed companion from merged commit ea56b27 after a successful
+release build. The unsupported automatic-input prototype is no longer installed.

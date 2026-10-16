@@ -5,7 +5,10 @@
 - Keep the companion application in Rust; API service changes belong in dcuobot-api.
 - Target a normal DWM-managed X11 window on a separate monitor from the game.
 - Keep memory access read-only and isolate unsafe operations behind bounded,
-  testable interfaces. Do not introduce injection or gameplay automation.
+  testable interfaces. The user explicitly authorized an in-process Broker search
+  extension on 2026-10-16; implementation requires proven build, call arguments,
+  object lifetime and execution-thread contracts. All existing readers remain
+  read-only. Purchases, sales, cancellations and other automation remain out of scope.
 - Reject unsupported game builds and ambiguous profiles rather than guessing.
 - Track validity and API comparison per field. Never label all memory verified
   because character identity matched.

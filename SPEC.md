@@ -32,7 +32,8 @@ fields that have equivalent API representations.
   floor-support status rather than claiming universal live alignment.
 - Handle loading, character switching, game exit, restart, and API outages.
 
-Memory access is read-only. Injection, game-memory writes, gameplay automation,
+Memory access is read-only. Injection, game-memory writes, gameplay automation outside
+the explicitly authorized Broker search action,
 and automatic system security changes are outside the proposed scope.
 
 ## Architecture
@@ -476,11 +477,38 @@ scope does not include spending skill points or performing game actions.
 Add a Broker tab comparing observed own listings against other sellers for the
 same proven item identity. Public Census and dcuobot-api currently expose no
 verified broker listing or price endpoint. Read the supported client's active
-listing cache using the existing single read-only session worker. Never automate
-searches, purchases, cancellations, or sales.
+listing cache using the existing single read-only session worker. The user has
+authorized an Update prices button using normal Broker search controls. Never
+automate purchases, cancellations, or sales.
 
 Retain observed listings within the bound session and character; show observation
 age and partial coverage. Absence from a page is not evidence a listing sold.
 Prove ownership from the controlled character and native seller fields. Show total
 asking prices; unit comparisons require independently proven stack quantities.
 Do not claim complete market coverage or complete My Wares from an active query.
+
+### Update prices
+
+A user-triggered button queues distinct observed owned item types and scans them
+sequentially through normal Broker controls. Record the lowest matching competing
+total on each observed response, then advance. Preserve explicit partial coverage;
+unproven empty or unrelated responses time out without inventing a price. Provide
+progress and Cancel. Stop on session/character changes, lost game focus, changed
+window geometry/layout or timeout. No injected code or game-memory writes.
+
+Initial input support is the locally verified 2560x1440 Broker Browse layout,
+with the user confirming All categories and Price Ascending before starting.
+Bind the target window to the selected process or its gamescope ancestor. Capture
+a Broker header anchor at preparation and require it unchanged before subsequent
+input. Unsupported layouts must fail clearly, never guess click locations.
+
+### Superseding transport decision
+
+After the normal-controls prototype encountered forced cursor capture and a
+checkbox click that did not register, the user explicitly requested switching to
+in-process injection. Keep the Update prices queue/progress/Cancel requirements,
+including Usable by me disabled. The normal-controls adapter is an unaccepted
+prototype and is not the release target. In-process execution is under investigation;
+no live injection is validated. Existing readers remain read-only. Prove the exact
+search ABI, owned arguments, lifetime and safe execution-thread context before any
+live injected call. Never invoke transaction actions or unrelated game functions.
