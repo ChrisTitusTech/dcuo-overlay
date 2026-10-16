@@ -422,3 +422,6 @@ installed MGOT103 map only with a validated world ownership chain and matching
 visible designer data. Reject conflicts, unknown aliases and changing ownership.
 Retained map backgrounds during unavailable area evidence must be labeled
 last-known rather than implying they are current.
+
+Map loading preserves the current in-session zoom and enables Follow player on
+successful image load. Fit and manual panning remain explicit user controls.

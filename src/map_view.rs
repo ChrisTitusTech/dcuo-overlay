@@ -132,7 +132,7 @@ impl MapView {
             status: "Load a local map catalog to browse maps.".into(),
             zoom: 1.0,
             pan: egui::Vec2::ZERO,
-            follow: false,
+            follow: true,
             pairs: [[0.; 4]; 3],
             calibration: String::new(),
             cookedpc: std::env::var_os("HOME").map(PathBuf::from).filter(|path| path.is_absolute()).map(|path| path.join(".local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC").to_string_lossy().into_owned()).unwrap_or_default(),
@@ -247,7 +247,7 @@ impl MapView {
             if self.texture.is_none() || self.selected != index {
                 self.selected = index;
                 self.auto_inflight = Some(area);
-                self.asset(true);
+                self.asset();
             }
             return;
         }
@@ -299,7 +299,7 @@ impl MapView {
                 .as_ref()
                 .is_some_and(|c| c.entries.get(self.selected).is_some())
         {
-            self.asset(true);
+            self.asset();
         }
     }
     fn retry_current(&mut self) {
@@ -354,14 +354,10 @@ impl MapView {
         ));
         self.status = "Loading catalog...".into();
     }
-    fn asset(&mut self, preserve_view: bool) {
+    fn asset(&mut self) {
         self.busy = true;
         self.generation = self.generation.wrapping_add(1);
         self.texture = None;
-        if !preserve_view {
-            self.zoom = 1.0;
-            self.follow = false;
-        }
         self.pan = egui::Vec2::ZERO;
         if let Some(entry) = self
             .catalog
@@ -400,7 +396,7 @@ impl MapView {
                     self.catalog = Some(catalog);
                     self.directory = directory;
                     self.selected = 0;
-                    self.asset(self.auto_import);
+                    self.asset();
                     if self.catalog.as_ref().is_some_and(|c| c.entries.is_empty()) {
                         self.status = "Catalog contains no maps.".into();
                         self.busy = false;
@@ -412,6 +408,10 @@ impl MapView {
                 Ok(Loaded::Image(image)) => {
                     self.texture =
                         Some(ctx.load_texture("local-map", image, egui::TextureOptions::LINEAR));
+                    // A newly loaded map keeps the chosen scale and follows the
+                    // player as soon as a valid matching location is available.
+                    self.follow = true;
+                    self.pan = egui::Vec2::ZERO;
                     self.status = "Map loaded.".into();
                     self.auto_inflight = None;
                     self.auto_token = None;
@@ -486,7 +486,7 @@ impl MapView {
             && index != self.selected
         {
             self.selected = index;
-            self.asset(true);
+            self.asset();
         }
         let entry = self
             .catalog
@@ -705,7 +705,7 @@ impl MapView {
             }
         }
         if previous != self.selected {
-            self.asset(false);
+            self.asset();
         }
         let now = Instant::now();
         let entry = self
@@ -1052,6 +1052,46 @@ mod tests {
         )
     }
     #[test]
+    fn map_loads_preserve_zoom_and_enable_follow_only_for_current_results() {
+        let mut view = MapView::default();
+        assert!(view.follow);
+        view.tx.take();
+        let (sender, replies) = mpsc::sync_channel(2);
+        view.rx = Some(replies);
+        let ctx = egui::Context::default();
+        for automatic in [true, false] {
+            view.auto_import = automatic;
+            view.catalog = Some(Catalog {
+                schema_version: 1,
+                entries: vec![test_entry("AREA1"), test_entry("AREA2")],
+            });
+            view.selected = usize::from(!automatic);
+            view.zoom = 3.25;
+            view.follow = false;
+            view.asset();
+            assert_eq!(view.zoom, 3.25);
+            let image = || egui::ColorImage::filled([2, 2], egui::Color32::BLACK);
+            sender
+                .send((view.generation.wrapping_sub(1), Ok(Loaded::Image(image()))))
+                .unwrap();
+            view.poll(&ctx);
+            assert!(!view.follow, "obsolete images must not change follow");
+            // Zoom adjusted while loading is also retained.
+            view.zoom = 4.0;
+            sender
+                .send((view.generation, Ok(Loaded::Image(image()))))
+                .unwrap();
+            view.poll(&ctx);
+            assert_eq!(view.zoom, 4.0);
+            assert!(view.follow);
+            assert!(view.texture.is_some());
+            view.follow = false;
+            view.poll(&ctx);
+            assert!(!view.follow, "ordinary polling must respect manual panning");
+        }
+    }
+
+    #[test]
     fn automatic_area_changes_cancel_old_work_and_discard_late_completion() {
         let mut view = MapView::default();
         view.set_auto_import_source("/synthetic/absent-install".into());
@@ -1236,7 +1276,7 @@ mod tests {
             view.update_current_context(None, Some(gate));
             if inflight {
                 view.auto_inflight = Some("AREA1".into());
-                view.asset(true);
+                view.asset();
             }
             let old_generation = view.generation;
             view.browse();
