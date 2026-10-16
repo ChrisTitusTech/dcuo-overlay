@@ -862,3 +862,42 @@ Follow was checked again, and the live player marker was centered. Private
 before/after captures remain under ignored local-data; no game input was used.
 
 Independent Codex review completed without actionable findings.
+
+## Restore exo-material using owned crafting effect
+
+User provided a confirmed nearby exo-material node. Bounded lead inspection
+resolved actor AllComponents -> owned ParticleSystemComponent -> ParticleSystem
+FXGEN109_FX_BAUBLE_CRAFTING -> Package DFXGEN109. Both asset instances are zero;
+package outer is null. The reflected array inner is ComponentProperty, dimension
+1, element size 8, outer equal to AllComponents and property class ActorComponent.
+A current-area inventory found two actors with this owned effect, including the
+confirmed nearby node. Generic FXSM103 alone remains excluded.
+
+Implemented bounded component inspection with schema, owner, template/package,
+instance, class generation and membership checks, repeated before publication.
+Stable missing effects count as ordinary exclusions; read errors, oversized
+arrays or changing evidence cannot certify a complete absence scan. Tooltip
+calls orange markers Exo-material. Existing two-scan cache rules remain intact.
+
+Validation: 148 workspace tests pass (3 opt-in private-asset tests ignored),
+107 headless tests pass, formatting, strict lint on Rust 1.96/1.95 and workspace/
+release builds pass. Tests reject wrong owners/assets/packages/instances and
+cover array bounds, proof mutations and known-absence classification.
+
+Live installed validation shows an orange exo-material diamond beside the yellow
+player marker, plus a second matching node. A release-built bounded reader check
+completed two authoritative sweeps, each containing two exo nodes. An initial
+unoptimized diagnostic could not complete within the optional scan budget; this
+was a diagnostic-build artifact, not evidence of a release scan-completion defect.
+Independent Codex review found no actionable defects. Private captures and
+inspection output remain ignored locally. Quantitative all-node acceptance is
+not claimed from this one confirmed example.
+
+Scan performance investigation (no performance changes): a release reader at a
+250 ms start cadence completed sweeps at 10.47 s and 20.25 s (9.78 s for the
+second sweep), averaging approximately 98-100 ms per sample. Each timing sweep
+reported one exo node; counts differ from the earlier live capture as client
+objects change. The 4096-slot step cap and repeated process identity/mapping
+parses are the main improvement candidates. Bounded scatter proof validation
+and allocation-light metadata parsing should be evaluated before increasing
+work per step; preserve deadlines, identity checks and uncertainty semantics.
