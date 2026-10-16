@@ -331,3 +331,7 @@ Remaining-unknown follow-up: gpt-6.1-sol player_detection_review owns bounded ex
 match disambiguation and synthetic tests. Lead owns catalog/source reconciliation,
 private live validation and integration. Zero unknown for a validated character
 does not establish exhaustive catalog coverage or validate other factions/builds.
+
+Ordinary-launch faction follow-up: lead owns saved preference, API-reference
+lifecycle, installation and live restart/connection evidence. gpt-6.1-sol
+player_detection_review owns explicit faction selection and filtering tests.

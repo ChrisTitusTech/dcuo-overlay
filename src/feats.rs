@@ -208,7 +208,21 @@ impl Mission {
         progress: Option<&Progress>,
         live: Option<&crate::feat_memory::Snapshot>,
     ) -> Vec<(&'a Feat, Completion)> {
+        self.visible_feats_with_faction(query, show_completed, reference, progress, live, None)
+    }
+    /// `None` retains API faction fallback; `Some("")` explicitly selects all.
+    pub fn visible_feats_with_faction<'a>(
+        &'a self,
+        query: &str,
+        show_completed: bool,
+        reference: Option<&CharacterReference>,
+        progress: Option<&Progress>,
+        live: Option<&crate::feat_memory::Snapshot>,
+        faction_filter: Option<&str>,
+    ) -> Vec<(&'a Feat, Completion)> {
         let query = query.trim().to_lowercase();
+        let selected_faction =
+            faction(faction_filter.or_else(|| reference.and_then(|r| r.alignment.as_deref())));
         self.feats
             .iter()
             .filter_map(|feat| {
@@ -216,12 +230,11 @@ impl Mission {
                 if memory.is_some_and(|entry| !entry.eligible && !entry.completed) {
                     return None;
                 }
-                // Faction comes from the cached API reference in both display
-                // modes. Live memory supplies completion, not API identity.
-                if let (Some(character), Some(required)) = (
-                    reference.and_then(|r| faction(r.alignment.as_deref())),
-                    faction(feat.alignment.as_deref()),
-                ) && character != required
+                // A saved explicit choice overrides API fallback. Neither is
+                // inferred from the live completion observations.
+                if let (Some(character), Some(required)) =
+                    (selected_faction, faction(feat.alignment.as_deref()))
+                    && character != required
                 {
                     return None;
                 }
@@ -417,6 +430,54 @@ mod tests {
                 );
             }
         }
+    }
+    #[test]
+    fn explicit_faction_works_without_api_and_overrides_api_including_all() {
+        let catalog = Catalog::parse(&fixture().to_string()).unwrap();
+        let mission = &catalog.missions[3];
+        let mut villain = live_entry(2, &mission.feats[1].name, false);
+        villain.points = 25;
+        let snapshot = live(vec![live_entry(1, &mission.feats[0].name, false), villain]);
+        let reference = character();
+        for api in [None, Some(&reference)] {
+            for memory in [None, Some(&snapshot)] {
+                for (filter, expected) in [
+                    ("Hero", vec!["f1", "f3"]),
+                    ("Villain", vec!["f2", "f3"]),
+                    ("", vec!["f1", "f2", "f3"]),
+                ] {
+                    let rows = mission.visible_feats_with_faction(
+                        "",
+                        true,
+                        api,
+                        None,
+                        memory,
+                        Some(filter),
+                    );
+                    assert_eq!(
+                        rows.iter()
+                            .map(|(feat, _)| feat.key.as_str())
+                            .collect::<Vec<_>>(),
+                        expected
+                    );
+                }
+            }
+        }
+        let fallback = mission.visible_feats_with_faction(
+            "",
+            true,
+            Some(&reference),
+            None,
+            Some(&snapshot),
+            None,
+        );
+        assert_eq!(
+            fallback
+                .iter()
+                .map(|(feat, _)| feat.key.as_str())
+                .collect::<Vec<_>>(),
+            ["f1", "f3"]
+        );
     }
     #[test]
     fn api_completion_never_overrides_live_for_matching_or_different_api_character() {

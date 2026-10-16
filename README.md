@@ -26,7 +26,9 @@ revert to incomplete; refreshes check unfinished progress and new completions.
 Restarting or reconnecting rebuilds this memory cache. API character details remain
 a separate reference. The checklist retains previously read rows during scan gaps
 and merges new findings. The cached API character faction filters both API and
-memory views consistently; it does not verify live identity.
+memory views consistently; it does not verify live identity. The All/Hero/Villain
+filter is saved across launches and can be changed on Character. A new character
+lookup selects that reference faction; connecting a process preserves the reference.
 Missions are ordered by Normal-entry CR (level-30 missions first); each documented
 feat shows its reward points. Completed feats are hidden unless Show completed is
 checked. Search matches mission names, feat names and requirements. Character

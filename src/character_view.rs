@@ -9,6 +9,8 @@ use eframe::egui;
 pub struct CharacterView {
     pub show_completed: bool,
     pub search: String,
+    /// Saved display selection; empty means all factions, not live identity proof.
+    pub faction: String,
     catalog: Result<Catalog, String>,
 }
 impl Default for CharacterView {
@@ -16,6 +18,7 @@ impl Default for CharacterView {
         Self {
             show_completed: false,
             search: String::new(),
+            faction: String::new(),
             catalog: Catalog::bundled(),
         }
     }
@@ -92,11 +95,6 @@ impl CharacterView {
         if let Some(live) = live {
             ui.label("Completion from game memory for the current character.");
             ui.small("New findings update this list; previously read feats stay visible.");
-            if let Some(alignment) = reference.and_then(|r| r.alignment.as_deref()) {
-                ui.small(format!(
-                    "Faction filter: {alignment} (cached API reference)."
-                ));
-            }
             ui.small(format!(
                 "Last successful read {}s ago. Account-only completions do not count as completed here.",
                 live.observed_at.elapsed().as_secs()
@@ -121,10 +119,25 @@ impl CharacterView {
         ui.heading("Solo On Duty feats");
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.show_completed, "Show completed");
+            ui.label("Faction");
+            egui::ComboBox::from_id_salt("character-feat-faction")
+                .selected_text(if self.faction.eq_ignore_ascii_case("Hero") {
+                    "Hero"
+                } else if self.faction.eq_ignore_ascii_case("Villain") {
+                    "Villain"
+                } else {
+                    "All"
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.faction, String::new(), "All");
+                    ui.selectable_value(&mut self.faction, "Hero".into(), "Hero");
+                    ui.selectable_value(&mut self.faction, "Villain".into(), "Villain");
+                });
             ui.add(
                 egui::TextEdit::singleline(&mut self.search).hint_text("Search missions and feats"),
             );
         });
+        ui.small("Faction is a saved filter selection, not proof from live memory.");
         let catalog = match &self.catalog {
             Ok(catalog) => catalog,
             Err(error) => {
@@ -154,8 +167,14 @@ impl CharacterView {
         ));
         let mut counts = [0usize; 3];
         for mission in &catalog.missions {
-            for (_, state) in mission.visible_feats_with_memory("", true, reference, progress, live)
-            {
+            for (_, state) in mission.visible_feats_with_faction(
+                "",
+                true,
+                reference,
+                progress,
+                live,
+                Some(&self.faction),
+            ) {
                 counts[match state {
                     Completion::Incomplete => 0,
                     Completion::Completed => 1,
@@ -177,12 +196,13 @@ impl CharacterView {
             .show(ui, |ui| {
                 let mut count = 0;
                 for mission in catalog.sorted_missions() {
-                    let feats = mission.visible_feats_with_memory(
+                    let feats = mission.visible_feats_with_faction(
                         &self.search,
                         self.show_completed,
                         reference,
                         progress,
                         live,
+                        Some(&self.faction),
                     );
                     let coverage_gap = mission.feats.is_empty()
                         && (self.search.trim().is_empty()
@@ -270,6 +290,7 @@ mod tests {
         let mut view = CharacterView::default();
         assert!(!view.show_completed);
         assert!(view.search.is_empty());
+        assert!(view.faction.is_empty());
         let context = egui::Context::default();
         let mut refresh = false;
         let mut output = context.run_ui(egui::RawInput::default(), |ui| {
@@ -277,7 +298,19 @@ mod tests {
         });
         assert!(!refresh);
         assert!(!output.shapes.is_empty());
+        let text = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => Some(text.galley.text()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
         output.textures_delta.clear();
+        assert!(text.contains("Faction"));
+        assert!(text.contains("All"));
+        assert!(text.contains("saved filter selection"));
     }
     #[test]
     fn live_source_is_explicit_and_completed_rows_are_hidden() {
@@ -285,6 +318,7 @@ mod tests {
         let mut view = CharacterView {
             show_completed: false,
             search: String::new(),
+            faction: String::new(),
             catalog: Ok(catalog),
         };
         let live = crate::feat_memory::Snapshot {
@@ -326,6 +360,7 @@ mod tests {
         let mut view = CharacterView {
             show_completed: false,
             search: "uncatalogued".into(),
+            faction: String::new(),
             catalog: Ok(catalog),
         };
         let mut output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {

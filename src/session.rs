@@ -369,6 +369,9 @@ impl Controller {
             candidates,
             selected_pid: Some(pid),
             location_generation: self.view.location_generation,
+            api: self.view.api.take(),
+            api_fetched: self.view.api_fetched,
+            api_status: self.view.api_status.clone(),
             status: "Checking process, executable and read access...".into(),
             ..View::default()
         };
@@ -1452,6 +1455,32 @@ mod tests {
             },
             events,
         )
+    }
+    #[test]
+    fn connecting_retains_independent_api_reference_and_faction() {
+        let (mut controller, _) = offline_controller();
+        controller.view.api = Some(CharacterReference {
+            id: "123".into(),
+            name: "Synthetic".into(),
+            world_id: "2".into(),
+            alignment: Some("Villain".into()),
+            power: None,
+            movement: None,
+            combat_rating: None,
+            skill_points: None,
+            health: None,
+            power_max: None,
+            league: None,
+        });
+        controller.view.api_fetched = Some(Instant::now());
+        controller.view.feats = Some(feat_snapshot(1, true));
+        controller.connect(123);
+        assert_eq!(
+            controller.view.api.as_ref().unwrap().alignment.as_deref(),
+            Some("Villain")
+        );
+        assert!(controller.view.api_fetched.is_some());
+        assert!(controller.view.feats.is_none());
     }
     fn feat_snapshot(id: u32, completed: bool) -> Arc<crate::feat_memory::Snapshot> {
         Arc::new(crate::feat_memory::Snapshot {

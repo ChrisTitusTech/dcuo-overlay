@@ -14,6 +14,7 @@ static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 pub struct Settings {
     pub api_base: String,
     pub world: String,
+    pub feat_faction: String,
     pub ui_scale: f32,
     pub dark_mode: bool,
     pub map_catalog: String,
@@ -29,6 +30,7 @@ impl Default for Settings {
         Self {
             api_base: crate::api::DEFAULT_BASE_URL.into(),
             world: "2".into(),
+            feat_faction: String::new(),
             ui_scale: 1.0,
             dark_mode: true,
             map_catalog: String::new(),
@@ -43,6 +45,9 @@ impl Default for Settings {
 
 impl Settings {
     pub fn validate(&self) -> Result<(), String> {
+        if !matches!(self.feat_faction.as_str(), "" | "Hero" | "Villain") {
+            return Err("Choose All, Hero or Villain for the feat faction filter.".into());
+        }
         if self.api_base.len() > 2048 || self.api_base.chars().any(char::is_control) {
             return Err("API URL exceeds its length limit or contains control characters.".into());
         }
@@ -102,6 +107,20 @@ impl Settings {
             return Err(warning);
         }
         saved.show_ground_spawns = enabled;
+        saved.save_path(path)
+    }
+
+    /// Persist only the immediate Character faction filter.
+    pub fn save_feat_faction(faction: &str) -> Result<(), String> {
+        let path = config_path().ok_or("The configuration directory is unavailable.")?;
+        Self::save_feat_faction_path(&path, faction)
+    }
+    fn save_feat_faction_path(path: &Path, faction: &str) -> Result<(), String> {
+        let (mut saved, warning) = load_path(path);
+        if let Some(warning) = warning {
+            return Err(warning);
+        }
+        saved.feat_faction = faction.into();
         saved.save_path(path)
     }
 
@@ -301,6 +320,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn faction_filter_round_trip_preserves_unrelated_settings_and_rejects_invalid() {
+        let dir = TempDir::new();
+        let saved = Settings {
+            map_source: "/saved/source".into(),
+            ..Settings::default()
+        };
+        saved.save_path(&dir.path()).unwrap();
+        Settings::save_feat_faction_path(&dir.path(), "Villain").unwrap();
+        let (loaded, warning) = load_path(&dir.path());
+        assert!(warning.is_none());
+        assert_eq!(loaded.feat_faction, "Villain");
+        assert_eq!(loaded.map_source, saved.map_source);
+        assert!(Settings::save_feat_faction_path(&dir.path(), "invalid").is_err());
+        assert_eq!(load_path(&dir.path()).0.feat_faction, "Villain");
+        Settings::save_feat_faction_path(&dir.path(), "").unwrap();
+        assert!(load_path(&dir.path()).0.feat_faction.is_empty());
+    }
     #[test]
     fn map_toggle_preserves_other_saved_preferences() {
         let dir = TempDir::new();
