@@ -454,7 +454,9 @@ changed-session evidence. Retain character feat knowledge separately from expiri
 physics samples: merge new observations without removing established rows during
 refresh gaps. Clear it on a known owner or connection change. Apply the selected
 cached API faction consistently to this checklist, explicitly as a faction filter
-and not as proof of live character identity. The live list is explicitly for the current game
+and not as proof of live character identity. Persist an explicit All/Hero/Villain
+filter across app launches. Newly selected API characters seed it, users can
+override it, and connecting a process preserves the separate API reference. The live list is explicitly for the current game
 character and never combines statuses with a separately selected API character.
 Cache decoded definitions and confirmed character completions within the
 PID/build-bound reader. Reuse definitions while their archive signature is stable

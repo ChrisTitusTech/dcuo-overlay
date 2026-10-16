@@ -1144,3 +1144,33 @@ or external sources. The updated application is installed. Window capture on the
 current monitor returned blank, so no new rendered-UI screenshot acceptance is
 claimed; this change alters catalog/matching only, with live model and existing
 view tests providing evidence.
+
+## Persist faction on ordinary launch (2026-10-16)
+
+User still saw Hero feats after connecting through the normal launcher. Installed
+bytes already matched the prior build, but two app copies were open. The ordinary
+launcher supplied no API reference, and connect also discarded any previously
+loaded reference, removing the faction filter.
+
+Added an explicit saved All/Hero/Villain filter. Newly observed API character IDs
+seed the filter from their alignment; users can override it, and ordinary launches
+restore it without saving personal character data. Connecting preserves the
+independent API reference while clearing native session knowledge. Faction remains
+a labeled selection, not proof of live identity. Save writes only this immediate
+preference and preserves other pending/saved settings.
+
+Worker player_detection_review (gpt-6.1-sol) owned model/view filtering and tests;
+lead owned settings, API lifecycle, integration and installed restart validation.
+199 workspace tests pass (3 opt-in private-asset checks ignored), 153 headless
+tests, formatting, both strict lint versions, builds and installer checks. Closed
+both old app copies, upgraded the local install, confirmed API lookup saves Villain,
+and relaunched with process connection only for normal-launch validation.
+
+Installed ordinary process-only launch restored Villain with no API reference and
+showed 113 incomplete / 26 completed / 0 unknown. Captured private UI evidence and
+confirmed only one app copy remains. Independent review found the existing reset
+preferences handler did not reset the new visible selector; synchronized it and
+reran affected tests, lint and builds before re-review.
+
+Final independent Codex review found no actionable regressions. Final updated
+binary installed and process-only launch restored; all required local gates pass.

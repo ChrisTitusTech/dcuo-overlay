@@ -311,6 +311,7 @@ struct Probe {
     map: MapView,
     spawn_cache: SpawnCache,
     character: crate::character_view::CharacterView,
+    faction_reference_id: Option<String>,
     feats: crate::feat_loader::Loader,
     initialized: bool,
     detected_map_source_for: Option<(i32, u64)>,
@@ -353,6 +354,8 @@ impl Probe {
             controller.lookup_reference(&preferences.api_base, &name, &preferences.world);
         }
         let startup_scan = !name.is_empty() && options.pid.is_some();
+        let mut character = crate::character_view::CharacterView::default();
+        character.faction = preferences.feat_faction.clone();
         Self {
             started: Instant::now(),
             smoke: options.smoke,
@@ -371,7 +374,8 @@ impl Probe {
             preference_status: warning.unwrap_or_default(),
             map,
             spawn_cache: SpawnCache::default(),
-            character: crate::character_view::CharacterView::default(),
+            character,
+            faction_reference_id: None,
             feats: crate::feat_loader::Loader::default(),
             initialized: false,
             detected_map_source_for: None,
@@ -380,6 +384,15 @@ impl Probe {
 }
 
 impl Probe {
+    fn save_feat_faction(&mut self) {
+        self.preferences.feat_faction = self.character.faction.clone();
+        if self.smoke.is_none() {
+            self.preference_status = match Settings::save_feat_faction(&self.character.faction) {
+                Ok(()) => "Faction filter saved.".into(),
+                Err(error) => error,
+            };
+        }
+    }
     fn save_ground_spawn_toggle(&mut self) {
         self.controller
             .set_ground_spawns_enabled(self.preferences.show_ground_spawns);
@@ -494,6 +507,23 @@ impl eframe::App for Probe {
         self.controller
             .set_feats_enabled(matches!(self.tab, Tab::Character));
         self.controller.poll();
+        if let Some(reference) = self.controller.view().api.as_ref()
+            && self.faction_reference_id.as_deref() != Some(reference.id.as_str())
+        {
+            self.faction_reference_id = Some(reference.id.clone());
+            if let Some(faction) = reference.alignment.as_deref().and_then(|value| {
+                if value.eq_ignore_ascii_case("Hero") {
+                    Some("Hero")
+                } else if value.eq_ignore_ascii_case("Villain") {
+                    Some("Villain")
+                } else {
+                    None
+                }
+            }) {
+                self.character.faction = faction.into();
+                self.save_feat_faction();
+            }
+        }
         self.feats
             .select(self.controller.view().api.as_ref().map(|r| r.id.as_str()));
         self.feats.poll();
@@ -611,9 +641,11 @@ impl Probe {
                             }
                         });
                         evidence_line(ui, &view.api_status, true);
+                        let previous_faction = self.character.faction.clone();
                         if self.character.ui(ui, view.api.as_ref(), self.feats.progress.as_ref(), &self.feats.status, view.feats.as_deref()) {
                             self.feats.refresh();
                         }
+                        if previous_faction != self.character.faction { self.save_feat_faction(); }
                     }
                     Tab::Map => {
                         let (sample, gate) = map_observation(view);
@@ -670,6 +702,7 @@ impl Probe {
                     if ui.button("Apply and save preferences").clicked() { self.save_preferences(); }
                     if ui.button("Reset preferences to defaults").clicked() {
                         self.preferences = Settings::default();
+                        self.character.faction = self.preferences.feat_faction.clone();
                         self.base = self.preferences.api_base.clone();
                         self.world = self.preferences.world.clone();
                         self.scale = self.preferences.ui_scale;
@@ -890,6 +923,23 @@ mod tests {
 
     // Replay presentation only: no PID, name lookup, persisted preferences, or
     // process attachment. Backend generation/expiry tests live in session/maps.
+    #[test]
+    fn ordinary_launch_restores_faction_without_character_lookup() {
+        let app = Probe::with_preferences(
+            Options {
+                smoke: Some(Duration::from_secs(1)),
+                ..Options::default()
+            },
+            String::new(),
+            Settings {
+                feat_faction: "Villain".into(),
+                ..Settings::default()
+            },
+            None,
+        );
+        assert_eq!(app.character.faction, "Villain");
+        assert!(app.controller.view().api.is_none());
+    }
     #[test]
     fn character_tab_keeps_connection_failure_visible_without_log() {
         let mut app = Probe::with_preferences(
