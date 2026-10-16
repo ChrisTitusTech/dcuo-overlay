@@ -1112,3 +1112,35 @@ Final independent Codex review found no actionable regressions. The installed
 final binary matches the release build; lead live UI validation shows the stable
 Villain-filtered list and read-age/status lines. Private screenshots retained
 locally. The independent reviewer did not operate the game.
+
+## Resolve remaining completion unknowns (2026-10-16)
+
+Investigated the 11 unknown catalog entries visible for the connected Villain.
+Four failed exact matching due to trailing whitespace in client titles; two had
+identical title/reward pairs in solos and duos, distinguished by exact mission
+requirements. Three catalog mismatches were a conflicting public Fun Times ID,
+the Constantine Shmonstantine spelling, and the At Arm's Length reward (10).
+Two Gotham Sewers entries are explicitly Hero-only in published mission sources;
+corrected faction metadata rather than inventing completion. Minimal correction
+provenance is in docs/feat-catalog-corrections.md; personal snapshots remain local.
+
+Worker player_detection_review (gpt-6.1-sol) implemented trimmed exact matching and
+unique exact-description disambiguation with synthetic ambiguity, reward and ID
+regressions. Lead reconciled catalog data and performed serial read-only live
+validation: 26 completed / 113 incomplete / 0 unknown applicable catalog rows,
+with cold and cached snapshots agreeing. The current snapshot reflects new
+completions since earlier observations; no statuses are hardcoded.
+
+195 workspace tests pass (3 opt-in private-asset checks ignored), 150 headless
+tests, both strict lint versions, formatting, debug/release builds and 12 installer
+checks. Installed build and managed-X11 smoke validation are finishing before
+independent review/publication. This resolves current applicable catalog unknowns,
+not missing mission catalogs, other characters/factions or unsupported builds.
+
+Both managed-X11 smoke launches and installer checks pass. Final independent
+Codex review found no actionable regressions. Lead verified the actual live
+reader/model results above; the reviewer did not independently verify live data
+or external sources. The updated application is installed. Window capture on the
+current monitor returned blank, so no new rendered-UI screenshot acceptance is
+claimed; this change alters catalog/matching only, with live model and existing
+view tests providing evidence.

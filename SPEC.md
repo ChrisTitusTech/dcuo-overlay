@@ -443,7 +443,9 @@ With a supported connected game, completion comes from character-owned native
 feat rows and client definitions. Bind the native manager's current entity to the
 controlled pawn, recheck entity identity and all structural/status evidence, and
 keep account-only completion distinct. Match catalog entries through a sourced ID
-or an unambiguous exact title and reward; ambiguous or unsupported definitions
+or an unambiguous exact trimmed title and reward. Duplicate title/reward matches
+require a unique exact trimmed requirement/description match; sourced ID and
+reward checks still apply. Do not use fuzzy title matching. Ambiguous or unsupported definitions
 remain unknown. Refresh only while Character is visible, on the existing session
 reader, with byte/time limits and no game calls or writes. Cooperatively read and
 publish fresh physics during longer feat scans so the physics freshness deadline

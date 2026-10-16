@@ -11,7 +11,8 @@
     "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
     "https://dcuniverseonline.fandom.com/wiki/Stemming_the_Tide_-_Hero",
     "https://toondata-census.brandonjoea3.workers.dev/feat-catalog",
-    "https://www.zonexus.ca/"
+    "https://www.zonexus.ca/",
+    "https://dcuobloguide.com/zones/gotham-sewer-challenge/"
   ],
   "missions": [
     {
@@ -225,13 +226,12 @@
         },
         {
           "key": "the-joker-s-funhouse-funtimes",
-          "id": "1001305",
+          "id": null,
           "name": "Fun Times",
           "points": 10,
           "requirement": "Joker's Funhouse Solo: Finish without a knockout",
           "alignment": null,
-          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats",
-          "id_source": "https://toondata-census.brandonjoea3.workers.dev/feat-catalog"
+          "source": "https://dcuniverseonline.fandom.com/wiki/Solos_Feats"
         },
         {
           "key": "the-joker-s-funhouse-schoolofhardknocksharleyquinn",
@@ -447,8 +447,8 @@
           "name": "Ain't Going Down",
           "points": 10,
           "requirement": "Complete the Gotham Sewers solo instance without being knocked out",
-          "alignment": null,
-          "source": "https://www.zonexus.ca/"
+          "alignment": "hero",
+          "source": "https://dcuobloguide.com/zones/gotham-sewer-challenge/"
         },
         {
           "key": "gotham-city-sewers-thecrochunter",
@@ -456,8 +456,8 @@
           "name": "The Croc Hunter",
           "points": 10,
           "requirement": "Complete the Scarecrow boss fight in the Gotham Sewer without allowing any Killer Croc hallucinations to rise",
-          "alignment": null,
-          "source": "https://www.zonexus.ca/"
+          "alignment": "hero",
+          "source": "https://dcuobloguide.com/zones/gotham-sewer-challenge/"
         }
       ]
     },
@@ -1831,7 +1831,7 @@
         {
           "key": "dor-desecrated-mausoleum-constantineschmonstantine",
           "id": null,
-          "name": "Constantine Schmonstantine",
+          "name": "Constantine Shmonstantine",
           "points": 25,
           "requirement": "Reckoning's Hideout Solo: Ignore Constantine's Advice",
           "alignment": null,
@@ -1951,7 +1951,7 @@
           "key": "soa-kryb-s-lab-atarmslength",
           "id": null,
           "name": "At Arm's Length",
-          "points": 25,
+          "points": 10,
           "requirement": "Kryb's Lab (Normal or Elite): Drain the flood without walking into any trench spawn eggs",
           "alignment": null,
           "source": "https://dcuniverseonline.fandom.com/wiki/Shadows_Over_Argo_Feats"

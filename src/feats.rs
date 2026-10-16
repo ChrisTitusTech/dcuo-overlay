@@ -83,22 +83,32 @@ pub fn completion(
         _ => Completion::Unknown,
     }
 }
-/// Names and rewards must identify one client definition. Never use a fuzzy
-/// title match or treat absence from the client's partial catalog as incomplete.
+/// Exact trimmed titles and rewards identify a client definition. An exact
+/// requirement may resolve duplicate titles; unresolved ambiguity stays unknown.
 pub fn memory_entry<'a>(
     feat: &Feat,
     live: &'a crate::feat_memory::Snapshot,
 ) -> Option<&'a crate::feat_memory::Entry> {
     let mut matches = live.entries.iter().filter(|entry| {
         feat.points == Some(entry.points)
-            && feat.name.eq_ignore_ascii_case(&entry.title)
+            && feat.name.trim().eq_ignore_ascii_case(entry.title.trim())
             && feat
                 .id
                 .as_ref()
                 .is_none_or(|id| id == &entry.id.to_string())
     });
+    let mut descriptions = matches.clone().filter(|entry| {
+        feat.requirement
+            .trim()
+            .eq_ignore_ascii_case(entry.description.trim())
+    });
     let entry = matches.next()?;
-    matches.next().is_none().then_some(entry)
+    if matches.next().is_none() {
+        Some(entry)
+    } else {
+        let entry = descriptions.next()?;
+        descriptions.next().is_none().then_some(entry)
+    }
 }
 
 impl Catalog {
@@ -280,6 +290,52 @@ mod tests {
             completed,
             eligible: true,
         }
+    }
+    #[test]
+    fn live_title_matching_trims_edges_without_fuzzy_or_reward_id_fallbacks() {
+        let mut feat: Feat =
+            serde_json::from_value(fixture()["missions"][3]["feats"][0].clone()).unwrap();
+        feat.name = "  Hero test  ".into();
+        let snapshot = live(vec![live_entry(1, "  hERO TEST ", false)]);
+        assert_eq!(memory_entry(&feat, &snapshot).unwrap().id, 1);
+        feat.name = "Hero  test".into();
+        assert!(memory_entry(&feat, &snapshot).is_none());
+        feat.name = "Hero test".into();
+        feat.points = Some(25);
+        assert!(memory_entry(&feat, &snapshot).is_none());
+        feat.points = Some(10);
+        feat.id = Some("2".into());
+        assert!(memory_entry(&feat, &snapshot).is_none());
+    }
+    #[test]
+    fn duplicate_live_titles_require_unique_exact_trimmed_description() {
+        let mut feat: Feat =
+            serde_json::from_value(fixture()["missions"][3]["feats"][0].clone()).unwrap();
+        feat.id = None;
+        feat.requirement = "  Finish the SOLO challenge  ".into();
+        let mut solo = live_entry(10, &feat.name, false);
+        solo.description = " finish the solo challenge ".into();
+        let mut duo = live_entry(11, &feat.name, true);
+        duo.description = "Finish the duo challenge".into();
+        let snapshot = live(vec![solo.clone(), duo]);
+        assert_eq!(memory_entry(&feat, &snapshot).unwrap().id, 10);
+        feat.requirement = "Finish the challenge".into();
+        assert!(memory_entry(&feat, &snapshot).is_none());
+        let mut catalog = Catalog::parse(&fixture().to_string()).unwrap();
+        catalog.missions[3].feats[0].id = None;
+        catalog.missions[3].feats[0].requirement = feat.requirement.clone();
+        let rows =
+            catalog.missions[3].visible_feats_with_memory("", true, None, None, Some(&snapshot));
+        assert_eq!(
+            rows.iter().find(|(feat, _)| feat.key == "f1").unwrap().1,
+            Completion::Unknown
+        );
+        feat.requirement = "Finish the solo challenge".into();
+        let mut duplicate = solo.clone();
+        duplicate.id = 12;
+        assert!(memory_entry(&feat, &live(vec![solo, duplicate])).is_none());
+        feat.id = Some("11".into());
+        assert_eq!(memory_entry(&feat, &snapshot).unwrap().id, 11);
     }
     #[test]
     fn live_completion_requires_unique_definitions_and_ignores_other_api_character() {
