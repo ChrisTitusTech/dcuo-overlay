@@ -246,3 +246,23 @@ Template (ObjectProperty, 0x224, 8). A bounded current-area inventory found two
 actors with that owned crafting effect, including the user-confirmed nearby node.
 This supplies a narrower signal than the shared definition alone; absence of
 this effect remains unsupported rather than inferring pickup semantics.
+
+## October 20 client update
+
+The installed updated executable has SHA-256
+`89a9001e5e3ed8cf80e383af2d9671df02132fe0c9e9d021eb13f2fd35e115bb`,
+size 35,066,880 bytes and PE timestamp 1,792,175,634. The prior exact-build gate
+correctly rejected it. Read-only attachment revalidated the existing name anchors,
+reflected local-player/controller/pawn schemas, stable area ownership and native
+Broker character binding. Sixteen samples included finite player positions that
+changed with live movement and a matching MHQS104 area; no offsets changed.
+The new fingerprint replaces the old experimental profile, with unknown builds
+still rejected. Profile-keyed imported maps regenerate their cache on demand.
+
+The live object table had 206,051 populated entries and 267,762 reserved entries.
+Allow reserved capacity up to 500,000 while retaining the 250,000 populated-entry
+limit and unchanged time/byte/chunk budgets. A second read-only run resumed bounded
+ground-spawn scanning instead of rejecting the table; mutable name/object tables
+were still discarded. No claim of complete spawn coverage or new map calibration
+is made. The focused bound regression and all 169 headless tests pass; independent
+native-code review found no actionable issues. Integrated UI/release checks follow.

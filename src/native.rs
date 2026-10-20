@@ -11,10 +11,22 @@ use std::{
     time::Instant,
 };
 
-pub const PROFILE_ID: &str = "a5a14396497bd05336e0267d14a1c3442fec5c21b4c28b8d298fa0a6e0105cf3";
+// October 20 observed client: reflected player/area schemas and native Broker
+// binding revalidated against this exact executable; unknown builds stay closed.
+pub const PROFILE_ID: &str = "89a9001e5e3ed8cf80e383af2d9671df02132fe0c9e9d021eb13f2fd35e115bb";
 const NAMES_RVA: usize = 0x2146c40;
 const OBJECTS_RVA: usize = 0x2146cc8;
 const ENGINE_RVA: usize = 0x2130f00;
+
+fn object_table_bounds(count: usize, capacity: usize) -> Result<(), String> {
+    // Reserve capacity is not a populated/readable entry count. The updated
+    // client was observed with 206,051 entries and capacity 267,762. Keep the
+    // populated scan bound and per-sample budgets unchanged.
+    if !(1..=250_000).contains(&count) || capacity < count || capacity > 500_000 {
+        return Err("Object table outside bounds".into());
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GroundSpawnKind {
@@ -564,6 +576,7 @@ impl Reader {
         let metadata = process::executable_metadata(&candidate).map_err(|e| e.to_string())?;
         if metadata.sha256 != PROFILE_ID
             || metadata.size != 35_066_880
+            || metadata.timestamp != 1_792_175_634
             || metadata.machine != 0x8664
             || metadata.optional_magic != 0x20b
         {
@@ -1337,9 +1350,9 @@ impl Reader {
         let base = pointer(u64_at(&table, 0)?)?;
         let count = u32_at(&table, 8)? as usize;
         let capacity = u32_at(&table, 12)? as usize;
-        if !(1..=250_000).contains(&count) || capacity < count || capacity > 250_000 {
+        if let Err(error) = object_table_bounds(count, capacity) {
             self.ground_scan = GroundScan::default();
-            return Err("Object table outside bounds".into());
+            return Err(error);
         }
         self.ground_scan.bind_owner(owner, base);
         if self.ground_scan.count != count {
@@ -1870,6 +1883,20 @@ impl Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn object_reserve_growth_does_not_expand_populated_scan_bound() {
+        assert!(object_table_bounds(206_051, 267_762).is_ok());
+        assert!(object_table_bounds(250_000, 500_000).is_ok());
+        for (count, capacity) in [
+            (0, 267_762),
+            (250_001, 267_762),
+            (206_051, 206_050),
+            (206_051, 500_001),
+            (usize::MAX, usize::MAX),
+        ] {
+            assert!(object_table_bounds(count, capacity).is_err());
+        }
+    }
     #[test]
     fn completed_sweep_unions_resumed_chunks_and_rejects_uncertain_absence() {
         let mut pass = SweepAccumulator::default();
