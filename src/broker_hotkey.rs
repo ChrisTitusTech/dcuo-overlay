@@ -26,6 +26,7 @@ fn err(e: impl std::fmt::Display) -> String {
 pub enum Event {
     Listening,
     Detected,
+    Pressed(Instant),
     Started(Instant),
     ReadyToSearch(Instant),
     Finished(Result<(), String>),
@@ -91,7 +92,53 @@ pub fn arm_price(pid: i32, price: u64) -> Result<Hotkey, String> {
     }
     arm_action(pid, price.to_string(), false, false)
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Trigger {
+    Chord,
+    Listen,
+    AlreadyPressed,
+}
+pub fn listen(pid: i32) -> Result<Hotkey, String> {
+    start_action(pid, String::new(), false, false, Trigger::Listen)
+}
+pub fn trigger_text(pid: i32, name: &str) -> Result<Hotkey, String> {
+    if pid <= 0 || !valid_name(name) {
+        return Err("Invalid item name or game session".into());
+    }
+    start_action(pid, name.into(), false, true, Trigger::AlreadyPressed)
+}
+pub fn trigger_price(pid: i32, price: u64) -> Result<Hotkey, String> {
+    if pid <= 0 || price == 0 || price > u64::from(u32::MAX) {
+        return Err("Invalid price or game session".into());
+    }
+    start_action(
+        pid,
+        price.to_string(),
+        false,
+        false,
+        Trigger::AlreadyPressed,
+    )
+}
+pub fn session_focused(pid: i32) -> Result<(), String> {
+    let owners = ancestry(pid)?;
+    let (c, screen) = x11rb::connect(None).map_err(err)?;
+    let root = c.setup().roots[screen].root;
+    let windows = clients(&c, root, &owners)?;
+    if windows.len() != 1 {
+        return Err("Expected one selected game window".into());
+    }
+    focused(&c, windows[0], root)
+}
 fn arm_action(pid: i32, name: String, submit: bool, settle_after: bool) -> Result<Hotkey, String> {
+    start_action(pid, name, submit, settle_after, Trigger::Chord)
+}
+fn start_action(
+    pid: i32,
+    name: String,
+    submit: bool,
+    settle_after: bool,
+    trigger: Trigger,
+) -> Result<Hotkey, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = cancel.clone();
     let search_permit = Arc::new(AtomicBool::new(false));
@@ -104,7 +151,7 @@ fn arm_action(pid: i32, name: String, submit: bool, settle_after: bool) -> Resul
             let result = run(
                 pid,
                 &name,
-                (submit, settle_after),
+                (submit, settle_after, trigger),
                 &worker_cancel,
                 &worker_permit,
                 started,
@@ -456,13 +503,13 @@ fn wait_for_search_permit(
 fn run(
     pid: i32,
     name: &str,
-    behavior: (bool, bool),
+    behavior: (bool, bool, Trigger),
     cancel: &AtomicBool,
     search_permit: &AtomicBool,
     started: Instant,
     events: &mpsc::Sender<Event>,
 ) -> Result<(), String> {
-    let (submit, settle_after) = behavior;
+    let (submit, settle_after, trigger) = behavior;
     budget(cancel, started)?;
     let candidate = process::candidate(pid).map_err(err)?;
     if process::executable_metadata(&candidate)
@@ -577,34 +624,41 @@ fn run(
         focused(&c, window, root)?;
         budget(cancel, started)
     };
-    events.send(Event::Listening).map_err(err)?;
-    let mut edge = Edge::default();
-    loop {
-        budget(cancel, started)?;
-        let keys = c.query_keymap().map_err(err)?.reply().map_err(err)?.keys;
-        let any = |codes: &[u8]| codes.iter().any(|code| down(&keys, *code));
-        if edge.update(
-            any(&ctrl) && any(&alt) && any(&p),
-            !any(&ctrl) && !any(&alt) && !any(&p),
-        ) {
-            break;
+    if trigger != Trigger::AlreadyPressed {
+        events.send(Event::Listening).map_err(err)?;
+        let mut edge = Edge::default();
+        loop {
+            budget(cancel, started)?;
+            let keys = c.query_keymap().map_err(err)?.reply().map_err(err)?.keys;
+            let any = |codes: &[u8]| codes.iter().any(|code| down(&keys, *code));
+            if edge.update(
+                any(&ctrl) && any(&alt) && any(&p),
+                !any(&ctrl) && !any(&alt) && !any(&p),
+            ) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
         }
-        thread::sleep(Duration::from_millis(10));
+        events.send(Event::Detected).map_err(err)?;
+        // Wait for the user's own releases. Never synthesize modifier releases.
+        loop {
+            validate()?;
+            let keys = c.query_keymap().map_err(err)?.reply().map_err(err)?.keys;
+            if ctrl
+                .iter()
+                .chain(&alt)
+                .chain(&p)
+                .all(|code| !down(&keys, *code))
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
-    events.send(Event::Detected).map_err(err)?;
-    // Wait for the user's own releases. Never synthesize modifier releases.
-    loop {
-        validate()?;
-        let keys = c.query_keymap().map_err(err)?.reply().map_err(err)?.keys;
-        if ctrl
-            .iter()
-            .chain(&alt)
-            .chain(&p)
-            .all(|code| !down(&keys, *code))
-        {
-            break;
-        }
-        thread::sleep(Duration::from_millis(10));
+    validate()?;
+    if trigger == Trigger::Listen {
+        events.send(Event::Pressed(Instant::now())).map_err(err)?;
+        return Ok(());
     }
     if process::executable_metadata(&process::candidate(pid).map_err(err)?)
         .map_err(err)?

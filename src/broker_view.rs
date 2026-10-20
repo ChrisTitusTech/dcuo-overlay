@@ -21,8 +21,14 @@ pub struct BrokerView {
     latest: Option<Snapshot>,
 }
 impl BrokerView {
-    pub fn cancel_hotkey(&mut self) {
-        self.price_entry.cancel();
+    /// Service screen recognition and the single key listener regardless of tab.
+    pub fn poll(&mut self, ctx: &egui::Context, pid: Option<i32>, visible: bool) {
+        self.prune(Instant::now());
+        self.price_entry
+            .poll(ctx, pid, self.latest.as_ref(), visible);
+    }
+    pub fn needs_reads(&self, visible: bool) -> bool {
+        self.price_entry.needs_reads(visible)
     }
     pub fn clear(&mut self) {
         self.price_entry.reset();
@@ -144,13 +150,13 @@ impl BrokerView {
             .into_iter()
             .collect()
     }
-    pub fn ui(&mut self, ui: &mut egui::Ui, status: &str, pid: Option<i32>) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, status: &str) {
         let now = Instant::now();
         self.prune(now);
         ui.heading("Broker");
         ui.label(status);
         let items = self.search_items();
-        self.price_entry.ui(ui, pid, &items, self.latest.as_ref());
+        self.price_entry.ui(ui, &items);
         ui.label("Partial coverage: Broker API unavailable. Visit My Wares, then Browse manually to observe listings.");
         ui.small("Prices are total asking prices. Stack sizes and item variants are not verified. These are comparisons of observed offers, not confirmed sales.");
         if let Some((_, name)) = &self.owner {
@@ -294,6 +300,19 @@ mod tests {
             observed_at: at,
             listings,
         }
+    }
+    #[test]
+    fn background_poll_expires_rows_without_rendering_the_broker_tab() {
+        let mut view = BrokerView::default();
+        let old = Instant::now() - MAX_AGE - Duration::from_secs(1);
+        let s = snapshot(old, 5, vec![listing(1, "Other", false, 1, 100)]);
+        view.observe_at(&s, old);
+        assert_eq!(view.rows.len(), 1);
+        view.poll(&egui::Context::default(), None, false);
+        assert!(view.rows.is_empty());
+        // Cached context keeps its original age, so input freshness cannot renew.
+        assert_eq!(view.latest.as_ref().unwrap().observed_at, old);
+        assert_eq!(view.last_token, Some(5));
     }
     #[test]
     fn public_initial_snapshot_supplies_context_without_old_prices() {

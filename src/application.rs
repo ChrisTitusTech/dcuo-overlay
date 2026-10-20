@@ -519,10 +519,9 @@ impl eframe::App for Probe {
         }
         self.controller
             .set_feats_enabled(matches!(self.tab, Tab::Character));
-        self.controller.set_broker_enabled(self.tab == Tab::Broker);
-        if self.tab != Tab::Broker || self.controller.view().paused {
-            self.broker.cancel_hotkey();
-        }
+        // One Broker reader and input lifecycle serve every companion tab.
+        self.controller
+            .set_broker_enabled(self.broker.needs_reads(self.tab == Tab::Broker));
         self.controller.poll();
         let view = self.controller.view();
         // Broker has its own observation age. Brief physics gaps must not
@@ -554,6 +553,10 @@ impl eframe::App for Probe {
                 self.broker.observe(snapshot);
             }
         }
+        self.broker
+            .poll(ctx, broker_control_pid(view), self.tab == Tab::Broker);
+        self.controller
+            .set_broker_enabled(self.broker.needs_reads(self.tab == Tab::Broker));
         if let Some(reference) = self.controller.view().api.as_ref()
             && self.faction_reference_id.as_deref() != Some(reference.id.as_str())
         {
@@ -696,7 +699,7 @@ impl Probe {
                     }
                     Tab::Broker => {
                         let status = if view.paused { "Paused - showing previously observed listings" } else { view.native.as_ref().map(|s| s.broker_status.as_str()).unwrap_or("Connect to the game and open its Broker") };
-                        self.broker.ui(ui, status, broker_control_pid(view));
+                        self.broker.ui(ui, status);
                     }
                     Tab::Map => {
                         let (sample, gate) = map_observation(view);

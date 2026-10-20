@@ -82,6 +82,9 @@ enum Action {
 }
 #[derive(Default)]
 pub struct PriceEntry {
+    wake: Option<Hotkey>,
+    queued: Option<Instant>,
+    last_press: Option<Instant>,
     monitor: Option<Monitor>,
     pid: Option<i32>,
     screen: Option<Screen>,
@@ -109,6 +112,9 @@ impl PriceEntry {
     }
     pub fn cancel(&mut self) {
         self.clear_flow();
+        self.wake = None;
+        self.queued = None;
+        self.last_press = None;
         self.monitor = None;
         self.pid = None;
         self.screen = None;
@@ -254,6 +260,7 @@ impl PriceEntry {
                 Event::Detected => {
                     self.status = "Ctrl+Alt+P detected; release the keys to paste".into()
                 }
+                Event::Pressed(_) => {}
                 Event::Started(at) => {
                     if let Some(Action::Name(name)) = &self.action {
                         if let Some(s) =
@@ -385,16 +392,18 @@ impl PriceEntry {
             self.stop_input();
         }
         if self.hotkey.is_none()
+            && self.queued.is_some()
             && self.retry_at.is_none_or(|at| Instant::now() >= at)
             && snapshot.is_some_and(|s| s.observed_at.elapsed() < Duration::from_secs(5))
             && let Some(action) = self.desired()
         {
             let result = match &action {
-                Action::Name(name) => crate::broker_hotkey::arm_text(pid, name),
-                Action::Price(_, price) => crate::broker_hotkey::arm_price(pid, *price),
+                Action::Name(name) => crate::broker_hotkey::trigger_text(pid, name),
+                Action::Price(_, price) => crate::broker_hotkey::trigger_price(pid, *price),
             };
             match result {
                 Ok(h) => {
+                    self.queued = None;
                     self.hotkey = Some(h);
                     self.action = Some(action);
                 }
@@ -405,19 +414,104 @@ impl PriceEntry {
             }
         }
     }
-    pub fn ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        pid: Option<i32>,
-        _items: &[ItemKey],
-        snapshot: Option<&Snapshot>,
-    ) {
-        if let Some(pid) = pid {
-            self.tick(ui.ctx(), pid, snapshot);
-        } else {
-            self.cancel();
+    pub fn needs_reads(&self, visible: bool) -> bool {
+        visible || self.queued.is_some() || self.pending.is_some() || self.hotkey.is_some()
+    }
+    fn accept_press(&mut self, pressed: Instant, now: Instant) {
+        if self.last_press.is_some_and(|at| pressed <= at) {
+            return;
         }
+        self.last_press = Some(pressed);
+        if now.saturating_duration_since(pressed) >= Duration::from_secs(5)
+            || self.pending.is_some()
+            || self.hotkey.is_some()
+            || self.queued.is_some()
+        {
+            return;
+        }
+        self.queued = Some(pressed);
+        self.status = "Reading the selected Broker item for this hotkey".into();
+    }
+    fn expire_activation(&mut self, now: Instant) {
+        if self
+            .queued
+            .is_some_and(|at| now.saturating_duration_since(at) >= Duration::from_secs(5))
+        {
+            self.queued = None;
+            self.status = "Hotkey expired waiting for fresh Broker context; press again".into();
+        }
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|p| now.saturating_duration_since(p.began) > Duration::from_secs(120))
+        {
+            self.pending = None;
+            self.stop_input();
+            self.status = "Search wait expired".into();
+        }
+    }
+    /// Idle service observes only the chord; OCR and Broker reads activate on demand.
+    pub fn poll(
+        &mut self,
+        ctx: &egui::Context,
+        pid: Option<i32>,
+        snapshot: Option<&Snapshot>,
+        visible: bool,
+    ) {
+        let Some(pid) = pid else {
+            self.cancel();
+            return;
+        };
+        if self.pid != Some(pid) {
+            self.cancel();
+            self.pid = Some(pid);
+        }
+        self.expire_activation(Instant::now());
+        if self.queued.is_some()
+            && let Err(error) = crate::broker_hotkey::session_focused(pid)
+        {
+            self.queued = None;
+            self.status = error;
+        }
+        while let Some(event) = self.wake.as_mut().and_then(Hotkey::poll) {
+            match event {
+                Event::Detected => self.status = "Ctrl+Alt+P detected; release keys".into(),
+                Event::Pressed(at) => self.accept_press(at, Instant::now()),
+                Event::Finished(result) => {
+                    self.wake = None;
+                    if let Err(error) = result {
+                        self.status = error;
+                        self.retry_at = Some(Instant::now() + Duration::from_secs(3));
+                    }
+                }
+                _ => {}
+            }
+        }
+        if self.needs_reads(visible) {
+            self.tick(ctx, pid, snapshot);
+        }
+        if !self.needs_reads(visible) {
+            self.monitor = None;
+            self.screen = None;
+            self.candidate = None;
+        }
+        if self.wake.is_none()
+            && self.hotkey.is_none()
+            && self.queued.is_none()
+            && self.retry_at.is_none_or(|at| Instant::now() >= at)
+        {
+            match crate::broker_hotkey::listen(pid) {
+                Ok(wake) => self.wake = Some(wake),
+                Err(error) => {
+                    self.status = error;
+                    self.retry_at = Some(Instant::now() + Duration::from_secs(3));
+                }
+            }
+        }
+    }
+    pub fn ui(&mut self, ui: &mut egui::Ui, _items: &[ItemKey]) {
         ui.strong("Broker hotkey: Ctrl+Alt+P");
+        ui.small("Works from every companion tab. Outside this tab, Broker screen and memory reads run only after a hotkey press or while waiting for your search result.");
         ui.label(
             self.selected
                 .as_ref()
@@ -453,6 +547,71 @@ impl PriceEntry {
 mod tests {
     use super::*;
     use crate::broker_memory::Listing;
+    #[test]
+    fn released_press_is_bounded_and_consumed_once_even_after_delayed_delivery() {
+        let now = Instant::now();
+        let mut entry = PriceEntry::default();
+        entry.accept_press(now - Duration::from_secs(6), now);
+        assert!(!entry.needs_reads(false));
+        entry.accept_press(now, now);
+        assert_eq!(entry.queued, Some(now));
+        // Taking the queued press starts exactly one action; replay cannot re-arm it.
+        assert_eq!(entry.queued.take(), Some(now));
+        entry.accept_press(now, now + Duration::from_millis(100));
+        assert!(entry.queued.is_none());
+        entry.accept_press(now + Duration::from_secs(1), now + Duration::from_secs(1));
+        assert!(entry.needs_reads(false));
+        entry.expire_activation(now + Duration::from_secs(6));
+        assert!(!entry.needs_reads(false));
+    }
+    #[test]
+    fn hidden_controls_read_only_during_a_bounded_press_or_search() {
+        let now = Instant::now();
+        let mut entry = PriceEntry::default();
+        assert!(!entry.needs_reads(false));
+        assert!(entry.needs_reads(true));
+        entry.queued = Some(now);
+        assert!(entry.needs_reads(false));
+        entry.expire_activation(now + Duration::from_secs(5));
+        assert!(!entry.needs_reads(false));
+
+        let (pending, _) = fixture();
+        entry.pending = Some(pending);
+        assert!(entry.needs_reads(false));
+        entry.expire_activation(now + Duration::from_secs(121));
+        assert!(!entry.needs_reads(false));
+
+        // A prepared price is retained for the next press without background OCR/reads.
+        entry.copied = Some(("Synthetic Item".into(), 123, now));
+        assert!(!entry.needs_reads(false));
+        entry.queued = Some(now);
+        entry.poll(&egui::Context::default(), None, None, false);
+        assert!(!entry.needs_reads(false));
+        assert!(entry.copied.is_none());
+    }
+    #[test]
+    fn presentation_does_not_service_or_cancel_background_controls() {
+        let ctx = egui::Context::default();
+        let mut entry = PriceEntry {
+            pid: Some(42),
+            selected: Some("Synthetic Item".into()),
+            candidate: Some(("Synthetic Item".into(), 2)),
+            copied: Some(("Synthetic Item".into(), 123, Instant::now())),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| entry.ui(ui, &[]));
+        output.textures_delta.clear();
+        assert_eq!(entry.pid, Some(42));
+        assert_eq!(entry.selected.as_deref(), Some("Synthetic Item"));
+        assert_eq!(entry.copied.as_ref().map(|(_, price, _)| *price), Some(123));
+
+        // Pause/disconnect still cancel without needing the tab to render.
+        entry.poll(&ctx, None, None, false);
+        assert!(entry.pid.is_none());
+        assert!(entry.selected.is_none());
+        assert!(entry.copied.is_none());
+        assert!(entry.candidate.is_none());
+    }
     fn fixture() -> (Pending, Snapshot) {
         let at = Instant::now();
         (

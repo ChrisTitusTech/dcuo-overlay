@@ -516,7 +516,10 @@ live injected call. Never invoke transaction actions or unrelated game functions
 ## Automatic Broker selection and paste hotkey
 
 No manual arm button or item dropdown. While the companion Broker tab is active,
-observe the supported English 2560x1440 game window. Exact high-confidence OCR
+observe the supported English 2560x1440 game window. On other tabs, keep only a
+shortcut listener running; a press starts bounded screen/listing work. Return to
+idle after the action/search completes or expires, retaining a prepared price
+without background screen/listing reads until the next press. Exact high-confidence OCR
 of Tradable Inventory and two consecutive selected-name observations provide the
 selection; this is screen evidence, not a proven native UI pointer. Changes clear
 the previous item price. A bounded background monitor captures only small regions
@@ -534,6 +537,7 @@ Selected inventory quantity is not read: this supports single-item pricing only,
 with final user verification. All/Price Ascending remain user setup requirements.
 Response waits and prepared price expire after 120 seconds. Input workers remain
 bounded and automatically renewed while eligible, not manually armed. Pausing,
-disconnecting, changing companion tabs, owner changes or uncertain screen stop
-input. Existing exact build/session/focus/keymap/modifier guards remain. Runtime
+disconnecting, owner changes or uncertain screen stop input. Changing companion
+tabs preserves an active bounded shortcut workflow; it does not enable continuous
+Broker screen/listing work outside the Broker tab. Existing exact build/session/focus/keymap/modifier guards remain. Runtime
 screen reading requires Tesseract with English data; OCR failures are explicit.

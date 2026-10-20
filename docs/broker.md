@@ -19,7 +19,8 @@ same response does not renew observation ages. Disconnect or character binding
 changes clear the view. Search request tokens, list links, rows, seller strings,
 character context and successful name lookups are rechecked before publication.
 The existing build-gated worker performs these optional reads at most every three
-seconds while Broker is selected, with a 250 ms budget and fresh physics afterward.
+seconds while Broker is selected or a bounded hotkey workflow is active, with a
+250 ms budget and fresh physics afterward.
 
 ## API evidence (2026-10-16)
 
@@ -45,10 +46,14 @@ response-token age retention, owner changes, partial pages and cache eviction.
 
 ## Automatic selection and Ctrl+Alt+P
 
-Keep the companion's Broker tab open. There is no arm button or item dropdown.
+The shortcut works from any companion tab. Outside Broker, only the shortcut
+listener runs until you press it. OCR and listing reads stop again when the action
+or pending search finishes or expires. There is no arm button or item dropdown.
 
 1. Open **Tradable Inventory** in the game and select an item. Its name appears
-   automatically in the companion after two matching screen reads.
+   automatically in the Broker tab after two matching screen reads. On another
+   companion tab, these reads start when you press the shortcut, so keep Tradable
+   Inventory visible for the first press.
 2. Turn **Usable by me off**; use **All** and **Price Ascending**. Focus the game's
    search item field, then press/release **Ctrl+Alt+P** to replace its text with
    the selected name. This does not press Enter.
@@ -73,7 +78,16 @@ existing read-only memory reader.
 
 Turn off Caps Lock and Sticky Keys. Ordinary Num Lock can remain on. Focus the correct field yourself;
 the app identifies the panel but cannot prove which text widget is focused.
-Changing companion tabs, pausing, disconnecting or an uncertain screen stops input.
+Pausing, disconnecting or an uncertain screen stops input. Changing companion
+tabs preserves a bounded active workflow. A press waiting for fresh context
+expires after five seconds; a pending manual search expires after two minutes.
 If typing stops partway, inspect the field before retrying. Existing clipboard
 contents are not cleared when a new search fails. Neither hotkey phase presses
 Enter, clicks, switches focus, injects code or submits a listing.
+
+October 20 validation: synthetic checks cover idle versus active reads, bounded
+activation/search waits, delayed/replayed shortcut rejection, cached-price idle
+retention and cancellation. All seven isolated keyboard tests pass. Independent
+review found no actionable issues. Installed off-tab thread inspection confirms
+no OCR monitor until activation. Physical in-game shortcut/search/price-field
+acceptance remains unverified; isolated checks do not establish live widget focus.

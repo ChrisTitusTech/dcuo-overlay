@@ -1338,3 +1338,61 @@ toolchains and release build pass. Independent review found no blocking regressi
 Installed and relaunched the fix; physical game hotkey acceptance is still pending.
 A bounded diagnostic observed only Ctrl/Alt/P states, with no unrelated keystrokes
 recorded. No physical chord was captured during that diagnostic window.
+
+## October 20 client update and universal Broker hotkey (active)
+
+User authorizes restoring map reads after the game update and keeping the Broker
+hotkey available across companion tabs. Lead owns build-profile investigation,
+read-only live evidence, integration, documentation, local commits and validation.
+Worker universal_broker_hotkey (gpt-6.1-sol) owns src/application.rs and
+src/broker_view.rs only: move Broker polling/control lifecycle out of tab rendering,
+keep one existing reader/listener across tabs, preserve pause/disconnect/session,
+freshness and game-focus guards, and add focused synthetic regressions. Existing
+session/native interfaces stay unchanged; request shared changes through lead.
+Worker must not operate the live desktop/game or commit. Deliver reviewed changes
+and test evidence, then stop. Lead runs integrated checks after worker completion.
+
+Worker ownership extension: src/broker_price.rs is also assigned to
+universal_broker_hotkey because its private tick currently runs inside UI drawing.
+Expose a background poll entry point for existing control state; preserve action
+contracts and keep presentation separate. Lead does not edit these three files.
+
+User refinement: outside Broker tab run only the shortcut listener; activate
+screen/listing work on a press and return idle after bounded work. Supersedes
+always-on monitoring above. Worker also owns src/broker_hotkey.rs for detection-only
+and already-triggered guarded input paths. A queued press expires promptly; pending
+manual search response remains bounded by its existing 120-second limit. Keep
+prepared price without background OCR/listing reads until the next press.
+
+Worker update_review (gpt-6.1-sol), read-only independent review: inspect the final
+map-profile/object-table changes and then the on-demand hotkey changes once lead
+signals they are ready. No file ownership or live reads/desktop operation. Check
+exact-build rejection, bounded memory, tab/session lifecycle, idle-work guarantees,
+input freshness and failure paths; report actionable findings with file/line
+references. Stop after review; no edits, commits, or nested workers.
+
+Completed local implementation and installation (2026-10-20): map-profile commit
+`dedaeda` restores the exact updated build after read-only schema, area, position
+and Broker-binding validation. Expanded only reserved object-table capacity;
+populated-entry and scan budgets stay bounded. MHQS104 map import passed with the
+new profile. Installed UI then automatically selected MPYR0242 after the user's
+area change and displayed the live player marker plus ground-spawn markers.
+
+On-demand Broker controls use a detection-only listener outside Broker. Released
+press timestamps expire after five seconds and are consumed once; OCR/listing
+reads start only for an active request or pending manual search, then stop. A
+prepared price remains idle until another press. Session/owner/pause/freshness,
+focus and per-stroke input guards remain. No automatic transaction was added.
+Worker focused checks passed; independent update_review found no actionable
+issues, including the final timestamp/replay changes.
+
+Final gates: 247 workspace tests passed (4 opt-in checks ignored), 169 headless
+tests passed, formatting and strict all-target Clippy passed on default Rust and
+Rust 1.95.0, workspace/release builds passed, and all 12 installer tests passed.
+All seven keyboard tests passed separately on private Xvfb, including the opt-in
+input-event check. The first concurrent X11 smoke run lost its test display;
+a separate rerun passed both normal-window startup/relaunch checks. Updated the
+local install and relaunched one connected companion. Actual installed off-tab
+thread inspection showed a shortcut listener and no OCR monitor. Private UI
+capture confirms the restored map. End-to-end physical Broker shortcut/search/
+price-field acceptance is still unverified; no publication or release performed.

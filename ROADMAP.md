@@ -388,3 +388,12 @@ offline and found no proven selection field. broker_screen owns bounded OCR only
 automatic_broker_review reviews integration independently. No worker operates
 the game. Acceptance includes changing selected items, no previous price reuse,
 fresh unfiltered response correlation, input isolation and live field checks.
+
+## October 20 update and on-demand Broker controls
+
+Lead revalidates the exact updated game build and live map data. Worker
+universal_broker_hotkey owns Broker/application lifecycle and shortcut transport;
+update_review independently reviews the changes. Outside Broker, only shortcut
+detection stays active. A press starts bounded OCR/listing reads; completed or
+expired work returns idle with a prepared value retained for the next press.
+Lead owns integrated checks, local installation, evidence and commits.

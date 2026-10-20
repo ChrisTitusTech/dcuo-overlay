@@ -266,3 +266,9 @@ ground-spawn scanning instead of rejecting the table; mutable name/object tables
 were still discarded. No claim of complete spawn coverage or new map calibration
 is made. The focused bound regression and all 169 headless tests pass; independent
 native-code review found no actionable issues. Integrated UI/release checks follow.
+
+Final installed UI validation also observed automatic transition to MPYR0242,
+with the live player marker and ground-spawn markers rendered. The current-area
+MHQS104 artwork import independently passed catalog/asset/profile validation.
+The full integrated checks and normal-window startup/relaunch passed; details and
+remaining Broker physical-input acceptance are recorded in TASKS.md.
