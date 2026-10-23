@@ -291,3 +291,19 @@ PE. Corrected only that exact-build offset. A cold scan then decoded 4,778 feat
 definitions with subsequent warm samples succeeding. Character ownership, archive
 structure, bounded decoding and stable rereads still apply. Synthetic cold/hot
 wrong-type checks verify unsupported archives cannot replace the accepted cache.
+
+## Audio-free MMET110 repair (October 22)
+
+The current area exposed WorldInfo instance 2, PersistentLevel, TheWorld and
+MMET110 Package (remaining instances 0), with sole visible MMET110_DESIGNERDATA
+and no audio signal. The old audio-pair rule returned no area; the existing
+Gotham-only fallback did not apply. Added an explicit second world/designer
+contract, preserving the Gotham alias, exact instances, class/metaclass checks,
+no-audio requirement, conflicting-signal rejection and repeated chain identity.
+
+Four bounded live samples resolved MMET110 with valid position/resources. The
+installed 1536x1536 overview imports and validates against the active profile.
+After installation, an ordinary auto-connected launch shows Local area MMET110,
+Live location, the yellow player marker and a ground-spawn marker. Private
+screenshots remain ignored. This confirms area selection/rendering, not new
+quantitative calibration, floor handling or all-world fallback coverage.

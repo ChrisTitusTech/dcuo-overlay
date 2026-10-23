@@ -1441,3 +1441,28 @@ Final installed map observation followed a live area transition from Gotham to
 an indoor overview and rendered the current yellow player marker. Temporary
 last-known status cleared after fresh matching context arrived; no map offsets
 needed changing. This is rendering/transition evidence, not new calibration proof.
+
+## Audio-free MMET110 area repair (2026-10-22)
+
+User requests fixing current area detection and committing all completed local
+work to main. Lead owns src/native.rs, documentation, live validation, installation
+and Git integration. Read-only evidence shows WorldInfo instance 2, PersistentLevel,
+TheWorld and MMET110 Package (remaining instances 0), with sole visible
+MMET110_DESIGNERDATA and no audio stream. Add only this observed audio-free
+world contract, preserving exact Gotham alias rules, ambiguity rejection, chain
+rereads and map freshness.
+
+Worker area_review (gpt-6.1-sol) performs independent read-only review of native.rs
+and tests after lead implementation. No edits, live reads, desktop operations,
+commits or nested workers. Check cross-world confusion, FName instance bounds,
+conflicting audio/designer evidence and ownership lifecycle. Report actionable
+findings and stop; lead owns fixes and final checks.
+
+Completed: repeated live samples resolve MMET110; private map import validates
+1536x1536 artwork/profile. Installed app automatically connects and renders
+Local area MMET110 / Live location with player and ground-spawn markers.
+255 workspace tests pass (4 opt-in ignored), 177 headless tests pass, formatting,
+strict Clippy on Rust 1.96/1.95, workspace/release builds, 12 installer tests and
+both managed-X11 launches pass. Independent area_review found no actionable
+findings. Installed binary matches the tested release. All current local commits
+are being fast-forwarded onto local main as requested; no remote push requested.

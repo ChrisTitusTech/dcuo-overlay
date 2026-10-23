@@ -542,3 +542,11 @@ disconnecting, owner changes or uncertain screen stop input. Changing companion
 tabs preserves an active bounded shortcut workflow; it does not enable continuous
 Broker screen/listing work outside the Broker tab. Existing exact build/session/focus/keymap/modifier guards remain. Runtime
 screen reading requires Tesseract with English data; OCR failures are explicit.
+
+## Audio-free MMET110 context
+
+The observed MMET110 world may also omit audio. Match its sole exact visible
+MMET110_DESIGNERDATA signal with the validated WorldInfo (instance 2),
+PersistentLevel, TheWorld and MMET110 Package ownership chain (other instances 0).
+Retain independent exact Gotham alias behavior; reject unknown worlds, conflicting
+signals or changed ownership. This identifies an area, not a floor or calibration.

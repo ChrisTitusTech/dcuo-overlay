@@ -406,3 +406,10 @@ and lifecycle tests; connection_review reviews independently. Preserve explicit
 selection for ambiguity, exact-build native validation and Disconnect cancellation.
 Restart recovery remains a separate saved preference. Lead owns local validation,
 installation, evidence and commits; no publication is requested.
+
+## Audio-free MMET110 follow-up
+
+Lead adds the independently observed MMET110 world/designer contract and validates
+live map import/marker behavior. area_review independently reviews the bounded
+fallback and regressions. After checks, bring all completed local branch commits
+onto local main as requested; remote publication remains separate.

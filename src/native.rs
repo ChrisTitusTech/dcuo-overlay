@@ -287,13 +287,27 @@ fn supported_area(packages: &[String]) -> Option<String> {
     Some(key.into())
 }
 
-// FName instances are part of the observed alias contract, not a suffix guess.
-fn supported_world_ancestor(depth: usize, name: &str, class: &str, number: u32) -> bool {
+// Only observed world packages and FName instances are supported.
+const AUDIO_FREE_WORLDS: &[(&str, &str, u32)] =
+    &[("MGOT103_ALT_US", "MGOT103", 1), ("MMET110", "MMET110", 2)];
+fn supported_world_ancestor(
+    depth: usize,
+    name: &str,
+    class: &str,
+    number: u32,
+    package: &str,
+) -> bool {
+    let Some((_, _, world_number)) = AUDIO_FREE_WORLDS
+        .iter()
+        .find(|(world, _, _)| *world == package)
+    else {
+        return false;
+    };
     let expected = [
-        (Some("WorldInfo"), "WorldInfo", 1),
+        (Some("WorldInfo"), "WorldInfo", *world_number),
         (Some("PersistentLevel"), "Level", 0),
         (Some("TheWorld"), "World", 0),
-        (Some("MGOT103_ALT_US"), "Package", 0),
+        (Some(package), "Package", 0),
     ];
     expected
         .get(depth)
@@ -304,10 +318,10 @@ fn supported_world_ancestor(depth: usize, name: &str, class: &str, number: u32) 
         })
 }
 
-// Only this observed alias has paired world-package and visible designer evidence.
+// Each observed world requires its exact paired visible designer signal.
 // Any audio signal keeps the existing audio/designer ambiguity rules authoritative.
 fn supported_world_alias(packages: &[String], package: &str) -> Option<String> {
-    if packages.len() > 2048 || package != "MGOT103_ALT_US" {
+    if packages.len() > 2048 {
         return None;
     }
     if packages.iter().any(|name| name.ends_with("_AUDIO")) {
@@ -317,7 +331,10 @@ fn supported_world_alias(packages: &[String], package: &str) -> Option<String> {
         .iter()
         .filter(|name| name.ends_with("_DESIGNERDATA"))
         .collect();
-    (designers.len() == 1 && designers[0] == "MGOT103_DESIGNERDATA").then(|| "MGOT103".into())
+    let (_, key, _) = AUDIO_FREE_WORLDS
+        .iter()
+        .find(|(world, _, _)| *world == package)?;
+    (designers.len() == 1 && designers[0] == &format!("{key}_DESIGNERDATA")).then(|| (*key).into())
 }
 
 type CollectibleSchemas = HashMap<[(usize, u32); 3], Vec<(usize, u32)>>;
@@ -959,7 +976,11 @@ impl Reader {
         self.area_schemas.borrow_mut().insert(identity);
         Ok(())
     }
-    fn world_package_chain(&self, world: usize) -> Result<Vec<AreaAncestor>, String> {
+    fn world_package_chain(
+        &self,
+        world: usize,
+        package: &str,
+    ) -> Result<Vec<AreaAncestor>, String> {
         let mut address = world;
         let mut chain = Vec::with_capacity(4);
         let mut seen = HashSet::new();
@@ -972,7 +993,7 @@ impl Reader {
             let name = self.name(u32_at(&bytes, 0x44)?)?;
             let number = u32_at(&bytes, 0x48)?;
             let class_object = self.object(class)?;
-            if !supported_world_ancestor(depth, &name, &class_object.2, number)
+            if !supported_world_ancestor(depth, &name, &class_object.2, number, package)
                 || self.class_name(class_object.1)? != "Class"
             {
                 return Err("Unsupported world package ownership".into());
@@ -1072,11 +1093,13 @@ impl Reader {
         }
         let mut key = supported_area(&packages);
         let mut world_chain = None;
-        if key.is_none() && supported_world_alias(&packages, "MGOT103_ALT_US").is_some() {
-            let chain = self.world_package_chain(world)?;
+        if let Some((package, _, _)) = AUDIO_FREE_WORLDS.iter().find(|(package, _, _)| {
+            key.is_none() && supported_world_alias(&packages, package).is_some()
+        }) {
+            let chain = self.world_package_chain(world, package)?;
             key = supported_world_alias(&packages, &chain[3].name);
             if key.is_some() {
-                if self.world_package_chain(world)? != chain {
+                if self.world_package_chain(world, package)? != chain {
                     return Err("World package ownership changed during context read".into());
                 }
                 world_chain = Some(chain);
@@ -2378,13 +2401,49 @@ mod tests {
             (2, "TheWorld", "World", 0),
             (3, "MGOT103_ALT_US", "Package", 0),
         ] {
-            assert!(supported_world_ancestor(depth, name, class, number));
-            assert!(!supported_world_ancestor(depth, name, class, number + 1));
-            assert!(!supported_world_ancestor(depth, "Other", class, number));
-            assert!(!supported_world_ancestor(depth, name, "Other", number));
+            assert!(supported_world_ancestor(
+                depth,
+                name,
+                class,
+                number,
+                "MGOT103_ALT_US"
+            ));
+            assert!(!supported_world_ancestor(
+                depth,
+                name,
+                class,
+                number + 1,
+                "MGOT103_ALT_US"
+            ));
+            assert!(!supported_world_ancestor(
+                depth,
+                "Other",
+                class,
+                number,
+                "MGOT103_ALT_US"
+            ));
+            assert!(!supported_world_ancestor(
+                depth,
+                name,
+                "Other",
+                number,
+                "MGOT103_ALT_US"
+            ));
         }
-        assert!(!supported_world_ancestor(0, "WorldInfo", "WorldInfo", 0));
-        assert!(!supported_world_ancestor(4, "MGOT103_ALT_US", "Package", 0));
+        assert!(!supported_world_ancestor(
+            0,
+            "WorldInfo",
+            "WorldInfo",
+            0,
+            "MGOT103_ALT_US"
+        ));
+        assert!(!supported_world_ancestor(
+            4,
+            "MGOT103_ALT_US",
+            "Package",
+            0,
+            "MGOT103_ALT_US"
+        ));
     }
     #[test]
     fn observed_world_alias_requires_exact_single_designer_and_no_audio() {
@@ -2420,6 +2479,59 @@ mod tests {
             supported_world_alias(&vec!["MGOT103_DESIGNERDATA".into(); 2049], "MGOT103_ALT_US")
                 .is_none()
         );
+    }
+    #[test]
+    fn audio_free_mmet110_requires_its_own_chain_and_exact_designer() {
+        let packages = vec!["MMET110_DESIGNERDATA".into()];
+        assert_eq!(supported_area(&packages), None);
+        assert_eq!(
+            supported_world_alias(&packages, "MMET110"),
+            Some("MMET110".into())
+        );
+        assert_eq!(supported_world_alias(&packages, "MGOT103_ALT_US"), None);
+        for (depth, name, class, number) in [
+            (0, "WorldInfo", "WorldInfo", 2),
+            (1, "PersistentLevel", "Level", 0),
+            (2, "TheWorld", "World", 0),
+            (3, "MMET110", "Package", 0),
+        ] {
+            assert!(supported_world_ancestor(
+                depth, name, class, number, "MMET110"
+            ));
+            assert!(!supported_world_ancestor(
+                depth,
+                name,
+                class,
+                number + 1,
+                "MMET110"
+            ));
+            assert!(!supported_world_ancestor(
+                depth, "Other", class, number, "MMET110"
+            ));
+            assert!(!supported_world_ancestor(
+                depth, name, "Other", number, "MMET110"
+            ));
+            assert!(!supported_world_ancestor(
+                depth, name, class, number, "UNKNOWN"
+            ));
+        }
+        for names in [
+            vec![],
+            vec!["MMET110_OTHER_DESIGNERDATA"],
+            vec!["MGOT103_DESIGNERDATA"],
+            vec!["MMET110_DESIGNERDATA", "MGOT103_DESIGNERDATA"],
+            vec!["MMET110_DESIGNERDATA", "MMET110_DESIGNERDATA"],
+            vec!["MMET110_DESIGNERDATA", "OTHER_AUDIO"],
+            vec!["MMET110_DESIGNERDATA", "MMET110_AUDIO"],
+        ] {
+            assert_eq!(
+                supported_world_alias(
+                    &names.into_iter().map(String::from).collect::<Vec<_>>(),
+                    "MMET110"
+                ),
+                None
+            );
+        }
     }
     #[test]
     fn fallback_chain_identity_invalidates_area_and_spawn_context() {
