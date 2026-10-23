@@ -272,3 +272,22 @@ with the live player marker and ground-spawn markers rendered. The current-area
 MHQS104 artwork import independently passed catalog/asset/profile validation.
 The full integrated checks and normal-window startup/relaunch passed; details and
 remaining Broker physical-input acceptance are recorded in TASKS.md.
+
+## October 22 reported update check
+
+The running executable still matches the October 20 SHA-256, size and timestamp
+above. Map/resource offsets remain valid. The existing bounded reader
+revalidated reflected local-player/controller/pawn schemas, finite positions that
+changed during user movement, positive resource maxima and MGOT101 streaming
+context. Changing name tables and ownership/streaming observations were rejected
+as mixed samples, as intended. Do not promote a new profile or weaken checks
+based only on the report of an update. Broker response tokens were unmatched in
+this observation; no new listing or hotkey acceptance is claimed.
+
+A separate Character-tab check found a stale feat archive vtable offset left from
+the prior client: 0x1d94a68 rejects this supported build. The current native
+manager/type-token tree points to 0x1d94a78; its function entries match the installed
+PE. Corrected only that exact-build offset. A cold scan then decoded 4,778 feat
+definitions with subsequent warm samples succeeding. Character ownership, archive
+structure, bounded decoding and stable rereads still apply. Synthetic cold/hot
+wrong-type checks verify unsupported archives cannot replace the accepted cache.

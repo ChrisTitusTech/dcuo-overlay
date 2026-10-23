@@ -457,7 +457,8 @@ pub fn read_cached(
         let token = add(base, 0x2153450)?;
         let signature = DefinitionSignature {
             root: q(&reader.bytes(add(source, 0x50)?, 8)?, 0)?,
-            archive: reader.archive_signature(source, token, add(base, 0x1d94a68)?)?,
+            // Exact October 20 build: archive vtable revalidated on October 22.
+            archive: reader.archive_signature(source, token, add(base, 0x1d94a78)?)?,
         };
         if staged.signature.as_ref() != Some(&signature)
             || rows.keys().any(|id| !staged.covered.contains(id))
@@ -594,7 +595,7 @@ mod tests {
         memory.q(TYPE + 0x114, BASE + 0x2153450);
         let archive = TYPE + 8;
         let block = archive + 8;
-        memory.q(archive, BASE + 0x1d94a68);
+        memory.q(archive, BASE + 0x1d94a78);
         let mut prefix = Vec::new();
         for value in [123u32, 12, u32::MAX, 0] {
             prefix.extend(value.to_le_bytes());
@@ -702,6 +703,22 @@ mod tests {
                 .count,
             3
         );
+    }
+    #[test]
+    fn unsupported_archive_type_does_not_replace_cached_definitions() {
+        let mut memory = fixture();
+        let mut cache = Cache::default();
+        read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap();
+        let previous = cache.state.as_ref().unwrap().definitions[&123].clone();
+        memory.q(TYPE + 8, BASE + 0x1d94a68);
+        assert_eq!(
+            read_cached(BASE, PAWN, &mut cache, |a, n| memory.read(a, n)).unwrap_err(),
+            "Unsupported feat archive type"
+        );
+        assert_eq!(cache.state.as_ref().unwrap().definitions[&123], previous);
+        let mut cold = Cache::default();
+        assert!(read_cached(BASE, PAWN, &mut cold, |a, n| memory.read(a, n)).is_err());
+        assert!(cold.state.is_none());
     }
     #[test]
     fn owner_and_archive_signature_changes_refresh_static_definitions() {
