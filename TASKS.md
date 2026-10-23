@@ -1436,3 +1436,8 @@ app automatically selected the running game and displayed live feat completion
 with zero unknown applicable entries. Only one companion remains running. Private
 UI captures stay ignored. No new full map-calibration, Broker hotkey, transaction
 or release/publication acceptance is claimed.
+
+Final installed map observation followed a live area transition from Gotham to
+an indoor overview and rendered the current yellow player marker. Temporary
+last-known status cleared after fresh matching context arrived; no map offsets
+needed changing. This is rendering/transition evidence, not new calibration proof.
