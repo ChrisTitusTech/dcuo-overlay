@@ -752,7 +752,7 @@ impl Probe {
                     if ui.checkbox(&mut self.preferences.auto_reconnect, "Reconnect after the game restarts").changed() {
                         self.controller.set_auto_reconnect(self.preferences.auto_reconnect);
                     }
-                    ui.small("Optional: reconnect only to one matching game build after a connection is lost. Disconnect cancels recovery; this does not launch the game.");
+                    ui.small("Startup automatically connects when one supported game session is running. Reconnect checks the previous build after a lost connection. Disconnect stops automatic connection.");
                     if ui.button("Apply and save preferences").clicked() { self.save_preferences(); }
                     if ui.button("Reset preferences to defaults").clicked() {
                         self.preferences = Settings::default();
@@ -775,7 +775,7 @@ impl Probe {
                     ui.label("Read-only Linux/X11 companion feasibility application. API reference and experimental memory evidence are independently labeled.");
                     ui.label("Map help: prepare a schema-version 1 local catalog and PNG/JPEG assets with matching dimensions and SHA-256 checksums. Load the catalog in Map; select a map/floor, drag to pan, scroll to zoom and use Fit to reset.");
                     ui.label("The build-specific experimental memory reader is available. Current-character identity, resource semantics, location context and map calibration remain unproven. Manual map browsing and calibration never establish a live location.");
-                    ui.label("Connection help: refresh processes, choose the game and connect. API lookup uses an exact character name and world; it is separately labeled reference data.");
+                    ui.label("Connection help: startup finds and connects to one supported game session automatically. If several sessions are running, choose the game and connect. API lookup uses an exact character name and world; it is separately labeled reference data.");
                     ui.label("Use Tab and Shift+Tab to move between controls. Space or Enter activates focused controls.");
                 }
             });

@@ -124,8 +124,9 @@ switching tabs must not start duplicate readers or change the current character.
 Connection and lifecycle requirements:
 
 - Launch into a usable shell even when the game, API, or map assets are absent.
-  Discover candidate sessions; never attach to an arbitrary process when several
-  match. Display enough identity to select one without dumping process memory.
+  Automatically discover and connect to exactly one supported session at startup;
+  wait and retry discovery while the game is absent. Never attach to an arbitrary
+  process when several match. Display enough identity to select one without dumping process memory.
   Selecting a process observes its active character; it does not change the game.
 - Show explicit states for no game, session selection, checking build/access,
   connected/waiting for character, reading, loading/character switch, paused,

@@ -110,7 +110,7 @@ fn retain_feats(
 
 enum Operation {
     Refresh,
-    Connect(i32, Option<u64>),
+    Connect(i32, Option<u64>, bool),
     Clear,
     ResetSearch,
     Resume,
@@ -130,7 +130,7 @@ struct Command {
 }
 enum Update {
     Choices(Result<Vec<ProcessChoice>, String>),
-    Connected(Result<BuildInfo, String>),
+    Connected(Result<(BuildInfo, bool), String>),
     Recovered(Result<BuildInfo, RecoveryFailure>),
     Reference(u64, Result<api::LookupResult, String>),
     Scan(Result<Progress, String>),
@@ -190,6 +190,8 @@ pub struct Controller {
     ground_spawns_enabled_since: Option<Instant>,
     auto_reconnect: bool,
     recovery: Option<Recovery>,
+    auto_connect: bool,
+    next_discovery: Instant,
 }
 
 impl Default for Controller {
@@ -251,6 +253,8 @@ impl Controller {
             ground_spawns_enabled_since: None,
             auto_reconnect: false,
             recovery: None,
+            auto_connect: true,
+            next_discovery: Instant::now(),
         };
         result.refresh_sessions();
         result
@@ -285,7 +289,7 @@ impl Controller {
         }
     }
     pub fn is_recovering(&self) -> bool {
-        self.recovery.is_some()
+        self.recovery.is_some() || self.auto_connect
     }
     fn epoch(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
@@ -330,7 +334,7 @@ impl Controller {
         }
     }
     /// Opt in to recovering only a previously connected, unexpectedly lost session.
-    /// This never selects a session at startup or after manual disconnect.
+    /// Startup discovery is independent; manual disconnect cancels both paths.
     pub fn set_auto_reconnect(&mut self, enabled: bool) {
         self.auto_reconnect = enabled;
         if !enabled && self.recovery.is_some() {
@@ -361,18 +365,34 @@ impl Controller {
             }
         }
     }
+    fn discover_if_due(&mut self, now: Instant) {
+        if self.auto_connect
+            && !self.view.connected
+            && !self.view.busy
+            && now >= self.next_discovery
+        {
+            self.refresh_sessions();
+        }
+    }
     pub fn refresh_sessions(&mut self) {
+        self.next_discovery = Instant::now() + Duration::from_secs(2);
         self.queue(Operation::Refresh);
     }
     pub fn connect(&mut self, pid: i32) {
-        self.begin_connect(pid, None);
+        self.begin_connect(pid, None, false);
     }
     pub fn connect_selection(&mut self, pid: i32, start_ticks: u64) {
-        self.begin_connect(pid, Some(start_ticks));
+        self.begin_connect(pid, Some(start_ticks), false);
     }
-    fn begin_connect(&mut self, pid: i32, expected_start: Option<u64>) {
+    fn begin_connect(&mut self, pid: i32, expected_start: Option<u64>, automatic: bool) {
+        self.auto_connect = false;
         self.recovery = None;
-        self.invalidate();
+        // Automatic connection is the first session attachment. Preserve the
+        // independent startup API request and its pending count/cancel token.
+        // Explicit session changes still invalidate all prior session work.
+        if !automatic {
+            self.invalidate();
+        }
         let candidates = std::mem::take(&mut self.view.candidates);
         self.view = View {
             candidates,
@@ -384,10 +404,11 @@ impl Controller {
             status: "Checking process, executable and read access...".into(),
             ..View::default()
         };
-        self.queue(Operation::Connect(pid, expected_start));
+        self.queue(Operation::Connect(pid, expected_start, automatic));
         self.refresh_sessions();
     }
     pub fn disconnect(&mut self) {
+        self.auto_connect = false;
         self.recovery = None;
         self.invalidate();
         let candidates = std::mem::take(&mut self.view.candidates);
@@ -455,13 +476,35 @@ impl Controller {
                 self.pending = self.pending.saturating_sub(1);
             }
             match event.update {
-                Update::Choices(Ok(choices)) => self.view.candidates = choices,
+                Update::Choices(Ok(choices)) => {
+                    self.view.candidates = choices;
+                    if self.auto_connect && !self.view.connected {
+                        match self.view.candidates.as_slice() {
+                            [choice] => {
+                                let (pid, start) = (choice.pid, choice.start_ticks);
+                                self.begin_connect(pid, Some(start), true);
+                            }
+                            [] => {
+                                self.view.status =
+                                    "Waiting for the game; checking automatically every 2 seconds"
+                                        .into()
+                            }
+                            _ => {
+                                self.view.status =
+                                    "Multiple game sessions found; choose one and connect".into()
+                            }
+                        }
+                    }
+                }
                 Update::Choices(Err(error)) => self.view.status = error,
-                Update::Connected(Ok(build)) => {
+                Update::Connected(Ok((build, native_available))) => {
                     self.view.connected = true;
                     self.view.build = Some(build);
-                    self.view.status =
-                        "Read access confirmed; live character profile unsupported".into();
+                    self.view.status = if native_available {
+                        "Experimental native reader connected; character identity unverified"
+                    } else {
+                        "Read access confirmed; experimental native reader unavailable; see Diagnostics"
+                    }.into();
                 }
                 Update::Connected(Err(error)) => {
                     self.view.connected = false;
@@ -630,6 +673,7 @@ impl Controller {
                 "Experimental physics stale; waiting for the session reader".into();
         }
         self.recover_if_due(Instant::now());
+        self.discover_if_due(Instant::now());
     }
 }
 impl Drop for Controller {
@@ -877,7 +921,7 @@ fn worker_loop(
                         })
                         .map_err(|e| format!("Process discovery failed: {e}")),
                 ),
-                Operation::Connect(pid, expected_start) => {
+                Operation::Connect(pid, expected_start, automatic) => {
                     attached = None;
                     search = None;
                     reader = None;
@@ -897,9 +941,13 @@ fn worker_loop(
                                 }
                                 Err(error) => native_attach_error = Some(error),
                             }
-                            attached = Some(candidate);
-                            attached_generation = command.generation;
-                            Update::Connected(Ok(info))
+                            if automatic && native_attach_error.is_some() {
+                                Update::Connected(Err(native_attach_error.clone().unwrap()))
+                            } else {
+                                attached = Some(candidate);
+                                attached_generation = command.generation;
+                                Update::Connected(Ok((info, reader.is_some())))
+                            }
                         }
                         Ok(_) => continue,
                         Err(error) => Update::Connected(Err(error)),
@@ -1137,6 +1185,227 @@ mod tests {
         controller.view.build = Some(synthetic_build());
         controller.set_auto_reconnect(true);
         (controller, events, commands)
+    }
+    fn startup_controller() -> (Controller, SyncSender<Event>, Receiver<Command>) {
+        let (mut controller, events) = offline_controller();
+        let (sender, commands) = mpsc::sync_channel(8);
+        controller.sender = sender;
+        controller.auto_connect = true;
+        (controller, events, commands)
+    }
+    #[test]
+    fn startup_waits_then_connects_one_fresh_candidate() {
+        let (mut controller, events, commands) = startup_controller();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Choices(Ok(vec![])),
+            })
+            .unwrap();
+        controller.next_discovery = Instant::now() + Duration::from_secs(2);
+        controller.poll();
+        assert!(controller.view.status.contains("Waiting for the game"));
+        assert!(commands.try_recv().is_err());
+        controller.discover_if_due(Instant::now() + Duration::from_secs(3));
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Refresh
+        ));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Choices(Ok(vec![ProcessChoice {
+                    pid: 42,
+                    start_ticks: 900,
+                }])),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Connect(42, Some(900), true)
+        ));
+        assert!(!controller.auto_connect);
+        assert_eq!(controller.view.selected_pid, Some(42));
+    }
+    #[test]
+    fn automatic_startup_connection_preserves_in_flight_api_reference() {
+        let (mut controller, events, commands) = startup_controller();
+        let (api_sender, api_commands) = mpsc::sync_channel(2);
+        controller.api_sender = api_sender;
+        controller.lookup_reference("http://fixture.invalid", "Synthetic", "2");
+        let lookup = api_commands.try_recv().unwrap();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Choices(Ok(vec![ProcessChoice {
+                    pid: 42,
+                    start_ticks: 900,
+                }])),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(!lookup.cancel.load(Ordering::Acquire));
+        assert_eq!(lookup.generation, controller.epoch());
+        assert!(controller.api_pending);
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Connect(42, Some(900), true)
+        ));
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Refresh
+        ));
+        assert_eq!(controller.pending, 3);
+        events
+            .send(Event {
+                generation: lookup.generation,
+                update: Update::Connected(Ok((synthetic_build(), true))),
+            })
+            .unwrap();
+        events
+            .send(Event {
+                generation: lookup.generation,
+                update: Update::Choices(Ok(vec![])),
+            })
+            .unwrap();
+        events
+            .send(Event {
+                generation: lookup.generation,
+                update: Update::Reference(
+                    controller.api_request,
+                    Ok(api::LookupResult {
+                        reference: CharacterReference {
+                            id: "123".into(),
+                            name: "Synthetic".into(),
+                            world_id: "2".into(),
+                            alignment: None,
+                            power: None,
+                            movement: None,
+                            combat_rating: None,
+                            skill_points: None,
+                            health: None,
+                            power_max: None,
+                            league: None,
+                        },
+                        received_at: Instant::now(),
+                        source: api::LookupSource::Network,
+                    }),
+                ),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.connected);
+        assert_eq!(controller.view.api.as_ref().unwrap().name, "Synthetic");
+        assert!(
+            controller
+                .view
+                .api_status
+                .contains("API reference received")
+        );
+        assert!(!controller.api_pending);
+        assert_eq!(controller.pending, 0);
+        assert!(!controller.view.busy);
+    }
+    #[test]
+    fn startup_ambiguity_never_selects_a_process_and_disconnect_cancels_polling() {
+        let (mut controller, events, commands) = startup_controller();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Choices(Ok(vec![
+                    ProcessChoice {
+                        pid: 42,
+                        start_ticks: 900,
+                    },
+                    ProcessChoice {
+                        pid: 43,
+                        start_ticks: 901,
+                    },
+                ])),
+            })
+            .unwrap();
+        controller.next_discovery = Instant::now() + Duration::from_secs(2);
+        controller.poll();
+        assert!(controller.view.status.contains("Multiple game sessions"));
+        assert!(commands.try_recv().is_err());
+        controller.disconnect();
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Clear
+        ));
+        controller.discover_if_due(Instant::now() + Duration::from_secs(20));
+        assert!(commands.try_recv().is_err());
+        assert!(!controller.is_recovering());
+    }
+    #[test]
+    fn disconnect_rejects_queued_discovery_and_manual_connect_remains_available() {
+        let (mut controller, events, commands) = startup_controller();
+        controller.disconnect();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Choices(Ok(vec![ProcessChoice {
+                    pid: 42,
+                    start_ticks: 900,
+                }])),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.candidates.is_empty());
+        assert_eq!(controller.view.selected_pid, None);
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Clear
+        ));
+        assert!(commands.try_recv().is_err());
+        controller.connect_selection(42, 900);
+        assert!(matches!(
+            commands.try_recv().unwrap().operation,
+            Operation::Connect(42, Some(900), false)
+        ));
+    }
+    #[test]
+    fn connection_status_reports_actual_native_reader_availability() {
+        for available in [false, true] {
+            let (mut controller, events) = offline_controller();
+            events
+                .send(Event {
+                    generation: 1,
+                    update: Update::Connected(Ok((synthetic_build(), available))),
+                })
+                .unwrap();
+            controller.poll();
+            assert!(controller.view.connected);
+            assert!(controller.view.status.contains(if available {
+                "reader connected"
+            } else {
+                "reader unavailable"
+            }));
+        }
+    }
+    #[test]
+    fn failed_automatic_connection_requires_manual_retry() {
+        let (mut controller, events, commands) = startup_controller();
+        controller.begin_connect(42, Some(900), true);
+        let generation = controller.epoch();
+        while commands.try_recv().is_ok() {}
+        events
+            .send(Event {
+                generation,
+                update: Update::Connected(Err("Unsupported executable build".into())),
+            })
+            .unwrap();
+        controller.poll();
+        controller.discover_if_due(Instant::now() + Duration::from_secs(20));
+        assert!(!controller.view.connected);
+        assert!(
+            controller
+                .view
+                .status
+                .contains("Unsupported executable build")
+        );
+        assert!(commands.try_recv().is_err());
     }
     #[test]
     fn opt_in_does_not_attach_at_first_launch() {
@@ -1381,6 +1650,8 @@ mod tests {
             stream.write_all(body).unwrap();
         });
         let mut controller = Controller::new();
+        // This test isolates independent API/session queues from startup attachment.
+        controller.auto_connect = false;
         let deadline = Instant::now() + Duration::from_secs(2);
         while controller.pending > 0 && Instant::now() < deadline {
             controller.poll();
@@ -1464,6 +1735,8 @@ mod tests {
                 ground_spawns_enabled_since: None,
                 auto_reconnect: false,
                 recovery: None,
+                auto_connect: false,
+                next_discovery: Instant::now(),
             },
             events,
         )
@@ -1890,15 +2163,18 @@ mod tests {
         events
             .send(Event {
                 generation: 0,
-                update: Update::Connected(Ok(BuildInfo {
-                    pid: 42,
-                    start_ticks: 900,
-                    sha256: "synthetic".into(),
-                    executable_bytes: 64,
-                    machine: 0x8664,
-                    header_access: true,
-                    map_source: None,
-                })),
+                update: Update::Connected(Ok((
+                    BuildInfo {
+                        pid: 42,
+                        start_ticks: 900,
+                        sha256: "synthetic".into(),
+                        executable_bytes: 64,
+                        machine: 0x8664,
+                        header_access: true,
+                        map_source: None,
+                    },
+                    false,
+                ))),
             })
             .unwrap();
         controller.poll();

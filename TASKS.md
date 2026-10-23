@@ -1396,3 +1396,43 @@ local install and relaunched one connected companion. Actual installed off-tab
 thread inspection showed a shortcut listener and no OCR monitor. Private UI
 capture confirms the restored map. End-to-end physical Broker shortcut/search/
 price-field acceptance is still unverified; no publication or release performed.
+
+## October 22 connection and reported update repair (active)
+
+User requests updated offsets and automatic process detection/connection. Lead
+owns read-only live build/profile diagnosis, integration, status, checks and commits.
+Worker auto_connect (gpt-6.1-sol) owns src/session.rs, src/settings.rs and
+src/application.rs: default startup discovery/connection for exactly one candidate,
+bounded waiting when absent, ambiguity/build rejection and explicit disconnect
+cancellation, using existing process/native interfaces. Add lifecycle regressions;
+no desktop/game operations, commits or nested workers. Stop with focused evidence.
+
+Worker connection_review (gpt-6.1-sol) independently reviews the automatic
+connection diff and lifecycle regressions. Read-only ownership; no live game or
+desktop operations, edits, commits or nested workers. Check startup queue ordering,
+unsupported/ambiguous selection, cancellation, stale events and retry behavior;
+report actionable findings and stop. Lead resolves findings and owns final gates.
+
+Live diagnosis: executable remains the exact October 20 profile. Map/resources
+and user movement resolve with existing offsets, but the feat archive vtable was
+still the prior build's 0x1d94a68. Verified the current type-tree binding and PE
+entries at 0x1d94a78; corrected this field only. Cold/warm live reads now decode
+4,778 definitions. Added a wrong-type cache preservation regression. Worker
+connection_review also reviews this change using lead evidence, without live reads.
+
+Startup review found automatic attachment cancelling a pending API reference.
+Worker fixed it by retaining the initial generation/token and pending work for
+first automatic attachment only; explicit session changes still invalidate. A
+synthetic delayed-reference regression passes. Integrated gates are in progress.
+
+Final validation: 254 workspace tests passed (4 existing opt-in checks ignored),
+176 headless tests passed, strict all-target Clippy passed on Rust 1.96 and 1.95,
+formatting, workspace/release builds and 12 installer checks passed. Both managed
+X11 startup/relaunch checks passed. Independent connection_review found no further
+actionable findings after the API fix and feat offset review.
+
+Updated the local installation and launched without a PID argument. The installed
+app automatically selected the running game and displayed live feat completion
+with zero unknown applicable entries. Only one companion remains running. Private
+UI captures stay ignored. No new full map-calibration, Broker hotkey, transaction
+or release/publication acceptance is claimed.

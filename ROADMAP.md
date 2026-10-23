@@ -397,3 +397,12 @@ update_review independently reviews the changes. Outside Broker, only shortcut
 detection stays active. A press starts bounded OCR/listing reads; completed or
 expired work returns idle with a prepared value retained for the next press.
 Lead owns integrated checks, local installation, evidence and commits.
+
+## October 22 startup connection
+
+Lead verifies the reported update against the running executable and read-only
+field evidence. Worker auto_connect owns automatic startup selection/connection
+and lifecycle tests; connection_review reviews independently. Preserve explicit
+selection for ambiguity, exact-build native validation and Disconnect cancellation.
+Restart recovery remains a separate saved preference. Lead owns local validation,
+installation, evidence and commits; no publication is requested.
