@@ -449,5 +449,6 @@ platform_reader owns Windows read-only process/memory, platform_storage owns
 portable settings/maps/assets, platform_desktop owns native desktop/Broker guards.
 Lead owns dependencies, integration, release packaging/workflows and validation.
 Build Linux and Windows candidates, test Linux artifacts and Windows installer,
-provide candidate to user for Windows game acceptance, complete independent review,
-then publish tagged 0.1.0 with AppImage, RPM, EXE installer and SHA256SUMS.
+complete independent review and publish tagged 0.1.0 with AppImage, RPM, EXE
+installer and SHA256SUMS. The user explicitly authorized publication on October 26
+before their manual Windows game test; track that test as pending after release.

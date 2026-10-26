@@ -52,3 +52,16 @@ acceptance is tracked separately from successful compilation and automated tests
 Linux preferences use XDG config/data directories. Windows preferences use
 APPDATA and imported maps use LOCALAPPDATA. Uninstall preserves these user files.
 Linux Wayland-native support and non-x86_64 platforms are not part of 0.1.
+
+## Validation
+
+Native Linux and Windows builds, automated tests and package checks passed in
+[GitHub Actions run 40395688843](https://github.com/ChrisTitusTech/dcuo-overlay/actions/runs/40395688843)
+at source commit `ff7593c`. Published binaries are those exact CI artifacts;
+subsequent release commits update documentation only. Windows installer checks
+include installation, GUI startup with a test-only software OpenGL driver, and
+uninstall. The installer uses the machine's graphics driver and includes its C
+runtime, without a separate Visual C++ runtime installation.
+
+**Live Windows game testing is pending.** This release is published at the user's
+request before their manual test of auto-connect, current area and character data.

@@ -1742,3 +1742,11 @@ installer download and a pending request to check live-game auto-connect,
 current area and character data. Do not claim that manual check passed. Final
 main integration, tag and public v0.1.0 release await that result; no release or
 release tag has been created. This status-only commit reuses ff7593c code checks.
+
+User explicitly authorizes publishing v0.1.0 now and will test the Windows client
+manually afterward. This supersedes the earlier pre-publication manual-test stop.
+Reuse successful native CI run 40395688843 at ff7593c and its exact three package
+artifacts; SHA256SUMS verifies all three locally. Release integration changes only
+planning/release documentation, with application/build code unchanged from that
+validated commit. Publish on main with the v0.1.0 tag and four download assets.
+Windows live-game testing remains pending and must not be described as passed.
