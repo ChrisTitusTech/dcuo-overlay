@@ -3,9 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
-    fs::OpenOptions,
     io::Read,
-    os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
     path::{Component, Path},
     time::{Duration, Instant},
 };
@@ -112,12 +110,10 @@ pub struct Catalog {
 }
 
 fn bounded_read(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
+    let file = crate::storage::read_options(false)
         .open(path)
         .map_err(|e| format!("Cannot open local map file: {e}"))?;
-    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+    if !crate::storage::regular(&file).map_err(|e| e.to_string())? {
         return Err("Map file must be a regular file".into());
     }
     let mut data = Vec::new();
@@ -265,15 +261,12 @@ pub fn load_asset(entry: &MapEntry, catalog_dir: &Path) -> Result<Vec<u8>, Strin
     entry.validate()?;
     let path = confined_asset(entry, catalog_dir)?;
     let root = catalog_dir.canonicalize().map_err(|e| e.to_string())?;
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
+    let file = crate::storage::read_options(false)
         .open(path)
         .map_err(|e| e.to_string())?;
     // Validate the opened object, not just a path that may have changed before open.
-    let opened = std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
-        .map_err(|e| e.to_string())?;
-    if !opened.starts_with(&root) || !file.metadata().map_err(|e| e.to_string())?.is_file() {
+    let opened = crate::storage::opened_path(&file).map_err(|e| e.to_string())?;
+    if !opened.starts_with(&root) || !crate::storage::regular(&file).map_err(|e| e.to_string())? {
         return Err("Opened asset escapes catalog directory or is not a file".into());
     }
     let mut bytes = Vec::new();
@@ -758,9 +751,12 @@ mod tests {
         assert!(load_asset(&bad, &root).is_err());
         bad.asset = "../test.png".into();
         assert!(load_asset(&bad, &root).is_err());
-        std::os::unix::fs::symlink("/etc/hosts", root.join("escape.png")).unwrap();
-        bad.asset = "escape.png".into();
-        assert!(load_asset(&bad, &root).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/etc/hosts", root.join("escape.png")).unwrap();
+            bad.asset = "escape.png".into();
+            assert!(load_asset(&bad, &root).is_err());
+        }
         let catalog = Catalog {
             schema_version: 1,
             entries: vec![map.clone(), map],

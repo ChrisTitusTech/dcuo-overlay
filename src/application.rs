@@ -1,4 +1,4 @@
-//! Managed X11 companion with explicitly sourced verification evidence.
+//! Native desktop companion with explicitly sourced verification evidence.
 
 use crate::{
     api::DEFAULT_BASE_URL,
@@ -12,21 +12,26 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+#[cfg(target_os = "linux")]
 use winit::platform::x11::EventLoopBuilderExtX11;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+#[cfg(target_os = "linux")]
 use x11rb::connection::Connection;
+#[cfg(target_os = "linux")]
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, MapState, PropMode};
+#[cfg(target_os = "linux")]
 use x11rb::wrapper::ConnectionExt as _;
 
 const TITLE: &str = "DCUO Companion";
+#[cfg(target_os = "linux")]
 const WM_CLASS: &[u8] = b"dcuo-companion\0DcuoCompanion\0";
 type SetupError = Box<dyn std::error::Error + Send + Sync>;
-const HELP: &str = "DCUO Companion - managed X11 verification window
+const HELP: &str = "DCUO Companion - native companion window
 Usage: dcuo-companion [--smoke-seconds SECONDS] [--position X Y]
        [--pid PID] [--reference-stdin] [--world ID] [--api-base URL]
 
   --smoke-seconds SECONDS  Close after 1..3600 seconds.
-  --position X Y          Initial physical-pixel placement hint for DWM.
+  --position X Y          Initial physical-pixel window placement hint.
   --pid PID               Connect to an explicit positive process ID.
   --reference-stdin       Read an exact reference name from stdin (64 characters).
   --world ID              Reference world ID (saved preference, otherwise 2).
@@ -193,6 +198,7 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Option<Option
 /// only in EpiIntegration::post_rendering after the first frame. AppCreator runs
 /// before that frame. Check that assumption at runtime, and complete checked X11
 /// requests before returning the app. Never repair the identity after mapping.
+#[cfg(target_os = "linux")]
 fn prepare_x11_window(
     cc: &eframe::CreationContext<'_>,
     position: Option<(i32, i32)>,
@@ -282,6 +288,46 @@ fn prepare_x11_window(
     println!(
         "window=0x{id:x} backend=x11 identity=verified-before-map type=normal override_redirect=false"
     );
+    Ok(())
+}
+
+fn desktop_backend() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "Windows native"
+    } else {
+        "managed X11"
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_windows_window(
+    cc: &eframe::CreationContext<'_>,
+    position: Option<(i32, i32)>,
+) -> Result<(), SetupError> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, WS_CHILD, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+        WS_OVERLAPPEDWINDOW,
+    };
+    let window = cc.winit_window().ok_or("Missing native window")?;
+    let RawWindowHandle::Win32(handle) = window.window_handle()?.as_raw() else {
+        return Err("Expected native Windows window".into());
+    };
+    let hwnd = handle.hwnd.get() as *mut std::ffi::c_void;
+    // Inspect only our own window; normal decorations and resizing must remain enabled.
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    let extended = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    if style & WS_CHILD != 0
+        || style & WS_OVERLAPPEDWINDOW != WS_OVERLAPPEDWINDOW
+        || extended & (WS_EX_TOPMOST | WS_EX_TOOLWINDOW) != 0
+    {
+        return Err(
+            "Windows companion must be a normal decorated resizable top-level window".into(),
+        );
+    }
+    if let Some((x, y)) = position {
+        window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
+    }
+    println!("backend=windows type=normal decorations=true resizable=true topmost=false");
     Ok(())
 }
 
@@ -479,8 +525,9 @@ fn map_observation(view: &crate::session::View) -> (Option<LocationSample>, Mark
 
 fn sanitized_session_diagnostics(view: &crate::session::View) -> String {
     format!(
-        "DCUO Companion {}\nBackend: managed X11 / OpenGL\nConnection: {}\nPaused: {}\nHeader evidence available: {}\nAPI reference available: {}\nNative profile: experimental physics/resource chain v1\nFresh native sample available: {}\nLive character identity: unverified\nTrusted live location: unavailable\n",
+        "DCUO Companion {}\nBackend: {} / OpenGL\nConnection: {}\nPaused: {}\nHeader evidence available: {}\nAPI reference available: {}\nNative profile: experimental physics/resource chain v1\nFresh native sample available: {}\nLive character identity: unverified\nTrusted live location: unavailable\n",
         env!("CARGO_PKG_VERSION"),
+        desktop_backend(),
         view.connected,
         view.paused,
         view.build.is_some(),
@@ -730,9 +777,13 @@ impl Probe {
                         ui.label(&view.native_status);
                         ui.label("Identity, resource semantics, map calibration and floor remain unverified.");
                         ui.separator(); ui.heading("Application");
-                        ui.label(format!("Version {} / X11 / OpenGL", env!("CARGO_PKG_VERSION")));
+                        ui.label(format!("Version {} / {} / OpenGL", env!("CARGO_PKG_VERSION"), desktop_backend()));
+                        #[cfg(target_os = "linux")]
                         ui.label("WM_CLASS: dcuo-companion / DcuoCompanion");
+                        #[cfg(target_os = "linux")]
                         ui.label("Normal managed window; exact identity checked before mapping. DWM controls placement and focus.");
+                        #[cfg(target_os = "windows")]
+                        ui.label("Normal Windows window; use Windows controls to move, resize and switch focus.");
                         ui.label(format!("Uptime: {:.0}s", self.started.elapsed().as_secs_f64()));
                         ui.separator(); ui.heading("Sanitized diagnostic preview");
                         let diagnostic = format!("{}{}", sanitized_session_diagnostics(view), self.map.sanitized_diagnostics(Some(crate::native::PROFILE_ID)));
@@ -776,7 +827,7 @@ impl Probe {
                 }
                 if self.about {
                     ui.separator(); ui.heading(format!("DCUO Companion {}", env!("CARGO_PKG_VERSION")));
-                    ui.label("Read-only Linux/X11 companion feasibility application. API reference and experimental memory evidence are independently labeled.");
+                    ui.label("Read-only Linux and Windows companion application. API reference and experimental memory evidence are independently labeled.");
                     ui.label("Map help: prepare a schema-version 1 local catalog and PNG/JPEG assets with matching dimensions and SHA-256 checksums. Load the catalog in Map; select a map/floor, drag to pan, scroll to zoom and use Fit to reset.");
                     ui.label("The build-specific experimental memory reader is available. Current-character identity, resource semantics, location context and map calibration remain unproven. Manual map browsing and calibration never establish a live location.");
                     ui.label("Connection help: startup finds and connects to one supported game session automatically. If several sessions are running, choose the game and connect. API lookup uses an exact character name and world; it is separately labeled reference data.");
@@ -874,16 +925,20 @@ pub fn run() -> eframe::Result {
     } else {
         String::new()
     };
+    let viewport = egui::ViewportBuilder::default()
+        .with_title(TITLE)
+        .with_inner_size([640.0, 720.0])
+        .with_min_inner_size([320.0, 260.0])
+        .with_resizable(true)
+        .with_transparent(false)
+        .with_decorations(true);
+    #[cfg(target_os = "linux")]
+    let viewport = viewport
+        .with_override_redirect(false)
+        .with_window_type(egui::X11WindowType::Normal);
     let native = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(TITLE)
-            .with_inner_size([640.0, 720.0])
-            .with_min_inner_size([320.0, 260.0])
-            .with_resizable(true)
-            .with_transparent(false)
-            .with_decorations(true)
-            .with_override_redirect(false)
-            .with_window_type(egui::X11WindowType::Normal),
+        viewport,
+        #[cfg(target_os = "linux")]
         event_loop_builder: Some(Box::new(|builder| {
             builder.with_x11();
         })),
@@ -895,7 +950,10 @@ pub fn run() -> eframe::Result {
         TITLE,
         native,
         Box::new(move |cc| {
+            #[cfg(target_os = "linux")]
             prepare_x11_window(cc, options.position)?;
+            #[cfg(target_os = "windows")]
+            prepare_windows_window(cc, options.position)?;
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
             Ok(Box::new(Probe::new(options, reference_name)))
         }),

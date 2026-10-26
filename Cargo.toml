@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 publish = false
-description = "Read-only DCUO companion feasibility prototypes for Linux/X11"
+description = "DC Universe Online companion for Linux and Windows"
+license = "GPL-3.0-only"
 
 [features]
 default = ["window"]
@@ -22,7 +23,6 @@ lzokay = { version = "2.0.1", default-features = false, features = ["decompress"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"], optional = true }
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11"], optional = true }
 winit = { version = "0.30.13", default-features = false, features = ["x11", "rwh_06"], optional = true }
-x11rb = { version = "0.13.2", optional = true, features = ["xtest"] }
 httpdate = "1.0.3"
 memchr = "2.8.3"
 
@@ -39,3 +39,15 @@ required-features = ["window"]
 name = "dcuo-companion"
 path = "src/bin/companion.rs"
 required-features = ["window"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13.2", optional = true, features = ["xtest"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Diagnostics_Debug", "Win32_System_Memory", "Win32_Storage_FileSystem",
+    "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi",
+    "Win32_System_DataExchange", "Win32_System_Ole", "Win32_System_LibraryLoader",
+    "Win32_Security", "Win32_System_ProcessStatus",
+] }

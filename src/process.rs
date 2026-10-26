@@ -1,9 +1,23 @@
-//! Linux process identity and bounded mapped-PE metadata discovery.
+//! Process identity and bounded mapped-PE metadata discovery.
+#[cfg(windows)]
+#[path = "process_windows.rs"]
+mod windows;
+#[cfg(target_os = "linux")]
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, File},
-    io::{self, Read, Seek, SeekFrom},
+    fs::File,
+    io::{self, Read},
     path::{Path, PathBuf},
+};
+#[cfg(windows)]
+pub(crate) use windows::windows_read;
+#[cfg(windows)]
+pub use windows::{candidate, discover, executable_metadata, identity, mappings};
+
+#[cfg(target_os = "linux")]
+use std::{
+    fs,
+    io::{Seek, SeekFrom},
 };
 
 pub const MAX_PROC_BYTES: u64 = 2 * 1024 * 1024;
@@ -11,6 +25,7 @@ pub const MAX_EXECUTABLE_BYTES: u64 = 512 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
     pub pid: i32,
+    /// Linux start ticks or Windows process creation FILETIME, scoped to PID.
     pub start_ticks: u64,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +94,7 @@ pub fn parse_stat(pid: i32, text: &str) -> io::Result<Identity> {
     }
     Ok(Identity { pid, start_ticks })
 }
+#[cfg(target_os = "linux")]
 pub fn identity(pid: i32) -> io::Result<Identity> {
     parse_stat(pid, &bounded_text(Path::new(&format!("/proc/{pid}/stat")))?)
 }
@@ -135,9 +151,11 @@ pub fn parse_maps(text: &str) -> io::Result<Vec<Mapping>> {
         })
         .collect()
 }
+#[cfg(target_os = "linux")]
 pub fn mappings(pid: i32) -> io::Result<Vec<Mapping>> {
     parse_maps(&bounded_text(Path::new(&format!("/proc/{pid}/maps")))?)
 }
+#[cfg(target_os = "linux")]
 pub fn candidate(pid: i32) -> io::Result<Candidate> {
     let before = identity(pid)?;
     let comm = bounded_text(Path::new(&format!("/proc/{pid}/comm")))?;
@@ -151,6 +169,7 @@ pub fn candidate(pid: i32) -> io::Result<Candidate> {
         mapping,
     })
 }
+#[cfg(any(target_os = "linux", test))]
 fn select_game_mapping(comm: &str, maps: &[Mapping]) -> io::Result<Mapping> {
     if !comm.trim_end().eq_ignore_ascii_case("DCGAME.EXE") {
         return Err(invalid("process comm is not DCGAME.EXE"));
@@ -174,6 +193,7 @@ fn select_game_mapping(comm: &str, maps: &[Mapping]) -> io::Result<Mapping> {
     // anonymously. The exact named header is a candidate, not a profile proof.
     Ok(matches[0].clone())
 }
+#[cfg(target_os = "linux")]
 pub fn discover() -> io::Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
     for entry in fs::read_dir("/proc")? {
@@ -210,6 +230,7 @@ pub fn parse_pe(header: &[u8]) -> io::Result<(u16, u32, u16)> {
     }
     Ok((machine, stamp, magic))
 }
+#[cfg(target_os = "linux")]
 pub fn executable_metadata(candidate: &Candidate) -> io::Result<PeMetadata> {
     use std::os::unix::fs::MetadataExt;
     revalidate_candidate(candidate)?;
@@ -293,6 +314,7 @@ fn ensure_same_candidate(expected: &Candidate, current: &Candidate) -> io::Resul
     }
     Ok(())
 }
+#[cfg(target_os = "linux")]
 fn revalidate_candidate(expected: &Candidate) -> io::Result<()> {
     // candidate() checks the comm, unique current header and identity around maps.
     // Compare every mapping attribute, including permissions, before accepting

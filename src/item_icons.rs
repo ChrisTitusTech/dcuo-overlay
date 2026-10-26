@@ -709,6 +709,7 @@ mod tests {
         raw.pop();
         assert!(gfx_image(&raw, "046").is_err());
     }
+    #[cfg(unix)]
     #[test]
     fn source_confines_symlinks_and_requires_exact_package() {
         let path = std::env::temp_dir().join(format!("dcuo-icon-test-{}", std::process::id()));

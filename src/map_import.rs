@@ -6,12 +6,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
-    os::{
-        fd::AsRawFd,
-        unix::fs::{DirBuilderExt, OpenOptionsExt},
-    },
     path::{Component, Path, PathBuf},
     sync::{
         Arc,
@@ -209,6 +205,7 @@ fn checked_range(bytes: &[u8], start: usize, size: usize) -> Result<&[u8], Strin
         .ok_or_else(|| "File range exceeds available bytes".into())
 }
 pub(crate) fn open_confined(root: &Path, relative: &Path) -> Result<File, String> {
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
     if relative
         .components()
         .any(|c| !matches!(c, Component::Normal(_)))
@@ -220,17 +217,14 @@ pub(crate) fn open_confined(root: &Path, relative: &Path) -> Result<File, String
         .join(relative)
         .canonicalize()
         .map_err(|e| format!("Local game asset unavailable: {e}"))?;
-    if !resolved.starts_with(root) {
+    if !resolved.starts_with(&root) {
         return Err("Local asset symlink escapes installation".into());
     }
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+    let file = crate::storage::read_options(true)
         .open(resolved)
         .map_err(|e| e.to_string())?;
-    let actual =
-        fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).map_err(|e| e.to_string())?;
-    if !actual.starts_with(root) || !file.metadata().map_err(|e| e.to_string())?.is_file() {
+    let actual = crate::storage::opened_path(&file).map_err(|e| e.to_string())?;
+    if !actual.starts_with(&root) || !crate::storage::regular(&file).map_err(|e| e.to_string())? {
         return Err("Opened asset escapes installation or is not regular".into());
     }
     Ok(file)
@@ -937,30 +931,35 @@ fn assemble(
 }
 fn new_output(root: &Path) -> Result<PathBuf, String> {
     if !root.is_absolute()
-        || root
-            .components()
-            .any(|c| !matches!(c, Component::RootDir | Component::Normal(_)))
+        || root.components().any(|c| {
+            !matches!(
+                c,
+                Component::RootDir | Component::Prefix(_) | Component::Normal(_)
+            )
+        })
     {
         return Err("Import destination must be an absolute path without traversal".into());
     }
     let mut ancestor = PathBuf::new();
     for component in root.components() {
         ancestor.push(component.as_os_str());
+        if matches!(component, Component::Prefix(_)) {
+            continue;
+        }
         match fs::symlink_metadata(&ancestor) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                if crate::storage::is_reparse(&metadata) || !metadata.is_dir() {
                     return Err("Destination ancestor is a symlink or not a directory".into());
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let mut builder = fs::DirBuilder::new();
-                builder.mode(0o700);
-                builder.create(&ancestor).map_err(|e| e.to_string())?;
+                crate::storage::create_directory(&ancestor).map_err(|e| e.to_string())?;
             }
             Err(error) => return Err(error.to_string()),
         }
     }
     let canonical = root.canonicalize().map_err(|e| e.to_string())?;
+    #[cfg(unix)]
     if canonical != root {
         return Err("Destination path changed during creation".into());
     }
@@ -969,13 +968,13 @@ fn new_output(root: &Path) -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())?
         .as_nanos();
     let output = root.join(format!("import-{}-{stamp}", std::process::id()));
-    let mut builder = fs::DirBuilder::new();
-    builder.mode(0o700);
-    builder.create(&output).map_err(|e| e.to_string())?;
-    if output.canonicalize().map_err(|e| e.to_string())? != output {
+    crate::storage::create_directory(&output).map_err(|e| e.to_string())?;
+    if output.canonicalize().map_err(|e| e.to_string())?
+        != canonical.join(output.file_name().ok_or("Missing output name")?)
+    {
         return Err("Created output escapes destination".into());
     }
-    Ok(output)
+    output.canonicalize().map_err(|e| e.to_string())
 }
 /// Creates a fresh private import directory; never overwrites an existing catalog.
 /// Projection remains explicitly unverified until the lead records live landmarks.
@@ -1063,27 +1062,24 @@ fn map_entry(
     Ok(entry)
 }
 fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
+    let mut file = crate::storage::create_options()
         .open(path)
         .map_err(|e| e.to_string())?;
     file.write_all(bytes).map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())
 }
 fn cache_state(destination: &Path, area: &str) -> Result<Option<CacheReceipt>, String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let slot = destination.join(area);
     match fs::symlink_metadata(&slot) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.to_string()),
         Ok(m)
             if !m.is_dir()
-                || m.file_type().is_symlink()
-                || m.uid() != fs::metadata(destination).map_err(|e| e.to_string())?.uid()
-                || m.permissions().mode() & 0o777 != 0o700 =>
+                || !crate::storage::private_owned(
+                    &m,
+                    &fs::metadata(destination).map_err(|e| e.to_string())?,
+                    true,
+                ) =>
         {
             return Err("Area cache directory is not private and owned".into());
         }
@@ -1105,9 +1101,11 @@ fn cache_state(destination: &Path, area: &str) -> Result<Option<CacheReceipt>, S
             return Err("Area cache contains unowned or symlink files".into());
         }
         let file_metadata = item.metadata().map_err(|e| e.to_string())?;
-        if file_metadata.uid() != fs::metadata(destination).map_err(|e| e.to_string())?.uid()
-            || file_metadata.permissions().mode() & 0o777 != 0o600
-        {
+        if !crate::storage::private_owned(
+            &file_metadata,
+            &fs::metadata(destination).map_err(|e| e.to_string())?,
+            false,
+        ) {
             return Err("Area cache file is not private and owned".into());
         }
         found.insert(name);
@@ -1207,10 +1205,7 @@ pub fn import_area_cancellable(
     }
     let image = assemble(&root, area, &m, &all, &mappings, cancellation)?;
     let filename = format!("{area}.png");
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
+    let file = crate::storage::create_options()
         .open(output.path.join(&filename))
         .map_err(|e| e.to_string())?;
     let mut writer = CancellableFile { file, cancellation };
@@ -1310,10 +1305,7 @@ pub fn import_maps_cancellable(
             cancellation.checkpoint()?;
             let filename = format!("{area}.png");
             let path = output.join(&filename);
-            let file = OpenOptions::new()
-                .write(true)
-                .mode(0o600)
-                .create_new(true)
+            let file = crate::storage::create_options()
                 .open(&path)
                 .map_err(|e| e.to_string())?;
             let mut writer = CancellableFile { file, cancellation };
@@ -1376,10 +1368,7 @@ pub fn import_maps_cancellable(
         cancellation.checkpoint()?;
         let path = output.join("catalog.json");
         let temporary = output.join("catalog.partial");
-        let mut file = OpenOptions::new()
-            .write(true)
-            .mode(0o600)
-            .create_new(true)
+        let mut file = crate::storage::create_options()
             .open(&temporary)
             .map_err(|e| e.to_string())?;
         cancellation.checkpoint()?;
@@ -1654,6 +1643,23 @@ mod tests {
         assert_eq!(texture_hash("DUIMAPMPYR0224_0_0.THETILE"), 0x19b1cc1d);
     }
     #[test]
+    fn fresh_output_is_confined_and_can_be_read_through_original_root() {
+        let base = cancellation_fixture();
+        let destination = base.join("maps");
+        let output = new_output(&destination).unwrap();
+        assert!(output.starts_with(destination.canonicalize().unwrap()));
+        write_private(&output.join("sample"), b"bounded").unwrap();
+        let relative = Path::new(output.file_name().unwrap()).join("sample");
+        assert_eq!(
+            read_confined(&destination, &relative, 7).unwrap(),
+            b"bounded"
+        );
+        assert!(read_confined(&destination, &relative, 6).is_err());
+        assert!(read_confined(&destination, Path::new("../escape"), 7).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
     fn first_run_destination_is_private_and_preserves_existing_files() {
         use std::os::unix::fs::PermissionsExt;
         let base = std::env::temp_dir().join(format!(
@@ -1724,12 +1730,9 @@ mod tests {
         assert!(package_path("MHDT/0108").is_err());
     }
     fn synthetic_cache(destination: &Path, area: &str) -> PathBuf {
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(destination)
-            .unwrap();
+        crate::storage::create_directory(destination).unwrap();
         let slot = destination.join(area);
-        fs::DirBuilder::new().mode(0o700).create(&slot).unwrap();
+        crate::storage::create_directory(&slot).unwrap();
         let image = RgbaImage::from_pixel(4, 4, Rgba([20, 40, 60, 255]));
         let mut png = std::io::Cursor::new(Vec::new());
         image.write_to(&mut png, ImageFormat::Png).unwrap();
@@ -1776,12 +1779,15 @@ mod tests {
         fs::write(slot.join("MLOC139_ART_001.png"), b"corrupt").unwrap();
         assert!(cache_state(&root, "MLOC139_ART_001").is_err());
         fs::remove_dir_all(root).unwrap();
-        let root = cancellation_fixture();
-        let slot = synthetic_cache(&root, "MHDT0107");
-        fs::remove_file(slot.join("MHDT0107.png")).unwrap();
-        std::os::unix::fs::symlink("/etc/hosts", slot.join("MHDT0107.png")).unwrap();
-        assert!(cache_state(&root, "MHDT0107").is_err());
-        fs::remove_dir_all(root).unwrap();
+        #[cfg(unix)]
+        {
+            let root = cancellation_fixture();
+            let slot = synthetic_cache(&root, "MHDT0107");
+            fs::remove_file(slot.join("MHDT0107.png")).unwrap();
+            std::os::unix::fs::symlink("/etc/hosts", slot.join("MHDT0107.png")).unwrap();
+            assert!(cache_state(&root, "MHDT0107").is_err());
+            fs::remove_dir_all(root).unwrap();
+        }
     }
     #[test]
     fn generic_area_paths_downsampling_and_cancellation_are_bounded() {
@@ -1916,6 +1922,7 @@ mod tests {
         assert_eq!(image.get_pixel(32, 64).0, [0, 0, 0, 0]);
         fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(unix)]
     #[test]
     fn source_path_rejects_traversal_and_escaping_symlink() {
         let root = std::env::temp_dir().join(format!("dcuo-import-test-{}", std::process::id()));

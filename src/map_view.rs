@@ -135,7 +135,7 @@ impl MapView {
             follow: true,
             pairs: [[0.; 4]; 3],
             calibration: String::new(),
-            cookedpc: std::env::var_os("HOME").map(PathBuf::from).filter(|path| path.is_absolute()).map(|path| path.join(".local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC").to_string_lossy().into_owned()).unwrap_or_default(),
+            cookedpc: default_cookedpc(),
             busy: false,
             browse_other_maps: false,
             details_open: false,
@@ -631,7 +631,7 @@ impl MapView {
                         self.busy = true;
                         self.status = "Importing installed maps in the background...".into();
                     }
-                    _ => self.status = "Use a local CookedPC directory and an available XDG data directory.".into(),
+                    _ => self.status = "Use a local CookedPC directory and an available local data directory.".into(),
                 }
             }
         });
@@ -884,6 +884,7 @@ fn current_map_index(
         .position(|entry| std::ptr::eq(entry, matching))
 }
 
+#[cfg(not(windows))]
 fn import_destination() -> Option<PathBuf> {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
@@ -895,6 +896,31 @@ fn import_destination() -> Option<PathBuf> {
                 .map(|p| p.join(".local/share"))
         })
         .map(|p| p.join("dcuo-companion/maps"))
+}
+
+#[cfg(windows)]
+fn import_destination() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .map(|p| p.join("dcuo-companion/maps"))
+}
+
+fn default_cookedpc() -> String {
+    #[cfg(not(windows))]
+    let path = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .map(|p| {
+            p.join(".local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC")
+        });
+    #[cfg(windows)]
+    let path = std::env::var_os("ProgramFiles(x86)")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .map(|p| p.join("Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC"));
+    path.map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 fn decode(dir: &std::path::Path, entry: &MapEntry) -> Result<egui::ColorImage, String> {
@@ -930,6 +956,17 @@ fn decode_image(bytes: Vec<u8>, width: u32, height: u32) -> Result<egui::ColorIm
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn synthetic_path(relative: &str) -> PathBuf {
+        let path = std::env::temp_dir()
+            .join(format!("dcuo-map-view-fixtures-{}", std::process::id()))
+            .join(relative);
+        assert!(path.is_absolute());
+        path
+    }
+    fn synthetic_path_text(relative: &str) -> String {
+        synthetic_path(relative).to_string_lossy().into_owned()
+    }
+
     fn test_entry(zone: &str) -> MapEntry {
         MapEntry {
             id: zone.into(),
@@ -1094,7 +1131,7 @@ mod tests {
     #[test]
     fn automatic_area_changes_cancel_old_work_and_discard_late_completion() {
         let mut view = MapView::default();
-        view.set_auto_import_source("/synthetic/absent-install".into());
+        view.set_auto_import_source(synthetic_path_text("absent-install"));
         let (a, gate) = auto_sample("AREA1");
         let (b, _) = auto_sample("AREA2");
         view.update_current_context(Some(&a), Some(gate));
@@ -1117,7 +1154,7 @@ mod tests {
                 old_generation,
                 Ok(Loaded::ImportedArea(
                     "AREA1".into(),
-                    PathBuf::from("/private/late/catalog.json"),
+                    synthetic_path("private/late/catalog.json"),
                 )),
             ))
             .unwrap();
@@ -1134,7 +1171,7 @@ mod tests {
     #[test]
     fn automatic_failure_is_memoized_until_explicit_retry_and_browsing_does_not_override() {
         let mut view = MapView::default();
-        view.set_auto_import_source("/synthetic/absent-install".into());
+        view.set_auto_import_source(synthetic_path_text("absent-install"));
         let (a, gate) = auto_sample("AREA1");
         view.update_current_context(Some(&a), Some(gate));
         let (sender, replies) = mpsc::sync_channel(1);
@@ -1170,7 +1207,7 @@ mod tests {
     #[test]
     fn fresh_current_catalog_reloads_texture_after_outage_without_reimport() {
         let mut view = MapView::default();
-        view.catalog_path = "/synthetic/checked/catalog.json".into();
+        view.catalog_path = synthetic_path_text("checked/catalog.json");
         view.remember_auto("AREA1".into(), Some(PathBuf::from(&view.catalog_path)));
         let (a, gate) = auto_sample("AREA1");
         view.catalog = Some(Catalog {
@@ -1205,7 +1242,7 @@ mod tests {
     #[test]
     fn changing_source_invalidates_same_area_assets_and_preserves_explicit_browsing() {
         let mut view = MapView::default();
-        view.set_auto_import_source("/synthetic/source-a".into());
+        view.set_auto_import_source(synthetic_path_text("source-a"));
         let (a, gate) = auto_sample("AREA1");
         view.update_current_context(Some(&a), Some(gate));
         let old_token = view.auto_token.clone().unwrap();
@@ -1218,23 +1255,20 @@ mod tests {
             egui::ColorImage::new([1, 1], vec![egui::Color32::WHITE]),
             egui::TextureOptions::LINEAR,
         ));
-        view.remember_auto(
-            "AREA1".into(),
-            Some(PathBuf::from("/synthetic/old-catalog")),
-        );
-        view.set_auto_import_source("/synthetic/source-b".into());
+        view.remember_auto("AREA1".into(), Some(synthetic_path("old-catalog")));
+        view.set_auto_import_source(synthetic_path_text("source-b"));
         assert!(old_token.is_cancelled());
         assert!(view.catalog.is_none());
         assert!(view.texture.is_none());
         assert!(view.auto_memo.is_empty());
         view.update_current_context(Some(&a), Some(gate));
         assert!(
-            matches!(&view.pending, Some(Request::ImportArea(_, source, _, area, _)) if source == &PathBuf::from("/synthetic/source-b") && area == "AREA1")
+            matches!(&view.pending, Some(Request::ImportArea(_, source, _, area, _)) if source == &synthetic_path("source-b") && area == "AREA1")
         );
         view.cancel_auto();
         view.browse_other_maps = true;
         view.auto_import = false;
-        view.set_auto_import_source("/synthetic/source-c".into());
+        view.set_auto_import_source(synthetic_path_text("source-c"));
         view.update_current_context(Some(&a), Some(gate));
         assert!(view.browse_other_maps);
         assert!(!view.auto_import);
@@ -1243,7 +1277,7 @@ mod tests {
     #[test]
     fn source_change_after_context_loss_reimports_instead_of_reusing_old_catalog() {
         let mut view = MapView::default();
-        view.set_auto_import_source("/synthetic/source-a".into());
+        view.set_auto_import_source(synthetic_path_text("source-a"));
         let (sample, gate) = auto_sample("AREA1");
         view.update_current_context(Some(&sample), Some(gate));
         view.cancel_auto();
@@ -1254,18 +1288,18 @@ mod tests {
         view.update_current_context(None, Some(gate));
         assert!(view.auto_context.is_none());
         assert!(view.catalog.is_some());
-        view.set_auto_import_source("/synthetic/source-b".into());
+        view.set_auto_import_source(synthetic_path_text("source-b"));
         assert!(view.catalog.is_none());
         view.update_current_context(Some(&sample), Some(gate));
         assert!(matches!(&view.pending,
             Some(Request::ImportArea(_, source, _, area, _))
-            if source == &PathBuf::from("/synthetic/source-b") && area == "AREA1"));
+            if source == &synthetic_path("source-b") && area == "AREA1"));
     }
     #[test]
     fn browse_recovers_selected_asset_after_outage_and_inflight_cancellation() {
         for inflight in [false, true] {
             let mut view = MapView::default();
-            view.set_auto_import_source("/synthetic/source".into());
+            view.set_auto_import_source(synthetic_path_text("source"));
             let (sample, gate) = auto_sample("AREA1");
             view.update_current_context(Some(&sample), Some(gate));
             view.cancel_auto();
@@ -1292,8 +1326,8 @@ mod tests {
     #[test]
     fn saved_automatic_catalog_must_pass_source_check_once_per_launch() {
         let mut view = MapView::default();
-        view.set_auto_import_source("/synthetic/source".into());
-        view.catalog_path = "/synthetic/saved/catalog.json".into();
+        view.set_auto_import_source(synthetic_path_text("source"));
+        view.catalog_path = synthetic_path_text("saved/catalog.json");
         view.catalog = Some(Catalog {
             schema_version: 1,
             entries: vec![test_entry("AREA1")],
@@ -1313,8 +1347,8 @@ mod tests {
     #[test]
     fn transient_location_loss_keeps_texture_and_view_but_hides_marker() {
         let mut view = MapView::default();
-        view.set_auto_import_source("/synthetic/source".into());
-        view.catalog_path = "/synthetic/checked/catalog.json".into();
+        view.set_auto_import_source(synthetic_path_text("source"));
+        view.catalog_path = synthetic_path_text("checked/catalog.json");
         view.remember_auto("AREA1".into(), Some(PathBuf::from(&view.catalog_path)));
         view.catalog = Some(Catalog {
             schema_version: 1,

@@ -1,4 +1,4 @@
-//! Bounded read-only Linux reads. No scanning or game profiles.
+//! Bounded read-only process reads. No scanning or game profiles.
 use crate::process::{self, Identity, Mapping};
 use std::{fmt, io};
 pub const MAX_READ_BYTES: usize = 4096;
@@ -65,23 +65,7 @@ pub fn read_exact(identity: &Identity, address: usize, len: usize) -> Result<Vec
     let maps = process::mappings(identity.pid).map_err(ReadError::Metadata)?;
     validate(address, len, &maps)?;
     let mut bytes = vec![0; len];
-    let local = libc::iovec {
-        iov_base: bytes.as_mut_ptr().cast(),
-        iov_len: len,
-    };
-    let remote = libc::iovec {
-        iov_base: address as *mut libc::c_void,
-        iov_len: len,
-    };
-    // SAFETY: the local iovec references an allocated len-byte buffer, both iovec
-    // arrays have one valid element, and the remote range/size was checked above.
-    // The kernel handles foreign pointers; no remote pointer is dereferenced here.
-    let count = unsafe { libc::process_vm_readv(identity.pid, &local, 1, &remote, 1, 0) };
-    let result = if count < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(count as usize)
-    };
+    let result = read_into(identity, address, &mut bytes);
     let matches = process::identity(identity.pid).ok().as_ref() == Some(identity);
     finish(result, len, matches)?;
     Ok(bytes)
@@ -111,7 +95,8 @@ fn finish_scatter(
     finish(result, total, identity_matches)?;
     Ok(buffers)
 }
-/// Read at most 128 separately bounded ranges in one read-only syscall.
+/// Read at most 128 separately bounded ranges (one Linux syscall; bounded
+/// sequential ReadProcessMemory calls on Windows).
 /// Fresh mappings validate every range. A partial batch or changed PID discards
 /// every buffer, including ranges the kernel may have copied successfully.
 pub fn read_scatter(
@@ -127,6 +112,67 @@ pub fn read_scatter(
         validate(address, len, &maps)?;
     }
     let mut buffers: Vec<Vec<u8>> = ranges.iter().map(|(_, len)| vec![0; *len]).collect();
+    #[cfg(target_os = "linux")]
+    let result = scatter_linux(identity, ranges, &mut buffers);
+    #[cfg(windows)]
+    let result = (|| {
+        let mut received = 0;
+        for ((address, _), buffer) in ranges.iter().zip(&mut buffers) {
+            let count = read_into(identity, *address, buffer)?;
+            received += count;
+            if count != buffer.len() {
+                break;
+            }
+        }
+        Ok(received)
+    })();
+    let matches = process::identity(identity.pid).ok().as_ref() == Some(identity);
+    finish_scatter(result, total, matches, buffers)
+}
+
+/// Larger read path exclusively for bounded discovery. Callers periodically
+/// revalidate the exact mapping; PID identity is checked around every read.
+pub(crate) fn read_discovery(
+    identity: &Identity,
+    mapping: &Mapping,
+    address: usize,
+    len: usize,
+) -> Result<Vec<u8>, ReadError> {
+    if len == 0 || len > 65536 || address == 0 {
+        return Err(ReadError::InvalidRequest);
+    }
+    let end = address.checked_add(len).ok_or(ReadError::InvalidRequest)?;
+    if !mapping.readable || address < mapping.start || end > mapping.end {
+        return Err(ReadError::UnreadableRange);
+    }
+    if process::identity(identity.pid).ok().as_ref() != Some(identity) {
+        return Err(ReadError::IdentityChanged);
+    }
+    let mut bytes = vec![0; len];
+    let result = read_into(identity, address, &mut bytes);
+    finish(
+        result,
+        len,
+        process::identity(identity.pid).ok().as_ref() == Some(identity),
+    )?;
+    Ok(bytes)
+}
+pub fn self_test() -> Result<(), ReadError> {
+    let fixture = [0x51u8, 0xa2, 0x13, 0x74];
+    let identity = process::identity(std::process::id() as i32).map_err(ReadError::Metadata)?;
+    let bytes = read_exact(&identity, fixture.as_ptr() as usize, fixture.len())?;
+    if bytes != fixture {
+        return Err(ReadError::InvalidRequest);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn scatter_linux(
+    identity: &Identity,
+    ranges: &[(usize, usize)],
+    buffers: &mut [Vec<u8>],
+) -> io::Result<usize> {
     let local: Vec<libc::iovec> = buffers
         .iter_mut()
         .map(|bytes| libc::iovec {
@@ -155,66 +201,37 @@ pub fn read_scatter(
             0,
         )
     };
-    let result = if count < 0 {
+    if count < 0 {
         Err(io::Error::last_os_error())
     } else {
         Ok(count as usize)
-    };
-    let matches = process::identity(identity.pid).ok().as_ref() == Some(identity);
-    finish_scatter(result, total, matches, buffers)
+    }
 }
 
-/// Larger read path exclusively for bounded discovery. Callers periodically
-/// revalidate the exact mapping; PID identity is checked around every read.
-pub(crate) fn read_discovery(
-    identity: &Identity,
-    mapping: &Mapping,
-    address: usize,
-    len: usize,
-) -> Result<Vec<u8>, ReadError> {
-    if len == 0 || len > 65536 || address == 0 {
-        return Err(ReadError::InvalidRequest);
-    }
-    let end = address.checked_add(len).ok_or(ReadError::InvalidRequest)?;
-    if !mapping.readable || address < mapping.start || end > mapping.end {
-        return Err(ReadError::UnreadableRange);
-    }
-    if process::identity(identity.pid).ok().as_ref() != Some(identity) {
-        return Err(ReadError::IdentityChanged);
-    }
-    let mut bytes = vec![0; len];
+#[cfg(target_os = "linux")]
+fn read_into(identity: &Identity, address: usize, bytes: &mut [u8]) -> io::Result<usize> {
     let local = libc::iovec {
         iov_base: bytes.as_mut_ptr().cast(),
-        iov_len: len,
+        iov_len: bytes.len(),
     };
     let remote = libc::iovec {
         iov_base: address as *mut libc::c_void,
-        iov_len: len,
+        iov_len: bytes.len(),
     };
-    // SAFETY: one valid local allocated buffer and bounded remote range. The
-    // kernel reads foreign memory; this code never dereferences remote pointers.
+    // SAFETY: the local allocation and both single-element arrays remain valid;
+    // the kernel handles the foreign pointer and never writes foreign memory.
     let count = unsafe { libc::process_vm_readv(identity.pid, &local, 1, &remote, 1, 0) };
-    let result = if count < 0 {
+    if count < 0 {
         Err(io::Error::last_os_error())
     } else {
         Ok(count as usize)
-    };
-    finish(
-        result,
-        len,
-        process::identity(identity.pid).ok().as_ref() == Some(identity),
-    )?;
-    Ok(bytes)
-}
-pub fn self_test() -> Result<(), ReadError> {
-    let fixture = [0x51u8, 0xa2, 0x13, 0x74];
-    let identity = process::identity(std::process::id() as i32).map_err(ReadError::Metadata)?;
-    let bytes = read_exact(&identity, fixture.as_ptr() as usize, fixture.len())?;
-    if bytes != fixture {
-        return Err(ReadError::InvalidRequest);
     }
-    Ok(())
 }
+#[cfg(windows)]
+fn read_into(identity: &Identity, address: usize, bytes: &mut [u8]) -> io::Result<usize> {
+    crate::process::windows_read(identity, address, bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,11 +341,11 @@ mod tests {
             Err(ReadError::IdentityChanged)
         ));
         assert!(matches!(
-            finish(Err(io::Error::from_raw_os_error(libc::EPERM)), 4, false),
+            finish(Err(io::Error::from_raw_os_error(1)), 4, false),
             Err(ReadError::IdentityChanged)
         ));
         assert!(matches!(
-            finish(Err(io::Error::from_raw_os_error(libc::EPERM)), 4, true),
+            finish(Err(io::Error::from_raw_os_error(1)), 4, true),
             Err(ReadError::System(_))
         ));
     }

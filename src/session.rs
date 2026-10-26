@@ -1240,21 +1240,44 @@ mod tests {
     #[test]
     fn map_source_comes_only_from_the_expected_game_install_layout() {
         use std::path::Path;
+        let root = std::env::temp_dir().join("dcuo-map-source-path-fixture");
+        let unreal = root.join("DC Universe Online/UNREAL3");
         assert_eq!(
-            map_source_path(Path::new(
-                "/games/DC Universe Online/UNREAL3/BINARIES/WIN64/DCGAME.EXE"
-            )),
-            Some(Path::new("/games/DC Universe Online/UNREAL3/DCGAME/COOKEDPC").into())
+            map_source_path(&unreal.join("BINARIES/WIN64/DCGAME.EXE")),
+            Some(unreal.join("DCGAME/COOKEDPC"))
         );
+        assert_eq!(
+            map_source_path(&unreal.join("binaries/win64/dcgame.exe")),
+            Some(unreal.join("DCGAME/COOKEDPC"))
+        );
+        assert!(map_source_path(Path::new("relative/DCGAME.EXE")).is_none());
         for path in [
-            "relative/DCGAME.EXE",
-            "/tmp/DCGAME.EXE",
-            "/games/UNREAL3/BINARIES/WIN32/DCGAME.EXE",
-            "/games/../UNREAL3/BINARIES/WIN64/DCGAME.EXE",
+            root.join("DCGAME.EXE"),
+            unreal.join("BINARIES/WIN32/DCGAME.EXE"),
+            root.join("games/../UNREAL3/BINARIES/WIN64/DCGAME.EXE"),
+        ] {
+            assert!(map_source_path(&path).is_none());
+        }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn map_source_accepts_windows_absolute_paths_and_rejects_drive_relative_paths() {
+        use std::path::Path;
+        for root in [r"C:\Games", r"\\server\games", r"\\?\C:\Games"] {
+            let unreal = Path::new(root).join("DC Universe Online/UNREAL3");
+            assert_eq!(
+                map_source_path(&unreal.join("BINARIES/WIN64/DCGAME.EXE")),
+                Some(unreal.join("DCGAME/COOKEDPC"))
+            );
+        }
+        for path in [
+            r"C:Games\UNREAL3\BINARIES\WIN64\DCGAME.EXE",
+            r"\Games\UNREAL3\BINARIES\WIN64\DCGAME.EXE",
         ] {
             assert!(map_source_path(Path::new(path)).is_none());
         }
     }
+
     fn synthetic_build() -> BuildInfo {
         BuildInfo {
             pid: 42,

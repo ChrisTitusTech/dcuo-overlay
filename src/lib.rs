@@ -50,3 +50,5 @@ pub mod wiki_view;
 pub mod item_icons;
 
 pub mod equipped_items;
+
+mod storage;

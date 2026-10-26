@@ -415,6 +415,7 @@ dependencies = [
  "sha2",
  "ureq",
  "url",
+ "windows-sys 0.61.2",
  "winit",
  "x11rb",
 ]

@@ -3,8 +3,9 @@ use crate::{
     memory,
     process::{self, Candidate, Mapping},
 };
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::{
-    path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -33,6 +34,7 @@ pub struct NameSearch {
     addresses: Vec<usize>,
     progress: Progress,
 }
+#[cfg(target_os = "linux")]
 fn eligible_maps(pid: i32) -> Result<Vec<Mapping>, String> {
     let raw = process::bounded_text(Path::new(&format!("/proc/{pid}/maps")))
         .map_err(|e| e.to_string())?;
@@ -47,6 +49,20 @@ fn eligible_maps(pid: i32) -> Result<Vec<Mapping>, String> {
                 && map.device == "00:00"
                 && map.path.as_deref().is_none_or(|p| p == Path::new("[heap]")))
             .then_some(map)
+        })
+        .collect())
+}
+#[cfg(windows)]
+fn eligible_maps(pid: i32) -> Result<Vec<Mapping>, String> {
+    Ok(process::mappings(pid)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|map| {
+            map.readable
+                && map.writable
+                && !map.executable
+                && map.device == "windows-private"
+                && map.path.is_none()
         })
         .collect())
 }

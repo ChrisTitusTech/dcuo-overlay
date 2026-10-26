@@ -1,13 +1,17 @@
-//! Validated, non-personal preferences stored in the standard XDG config directory.
+//! Validated, non-personal preferences in the platform configuration directory.
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MAX_BYTES: u64 = 64 * 1024;
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
+// Windows cannot reliably replace a directory entry while another settings
+// operation has a metadata/open handle on it. Keep reads and writes ordered
+// within this process, including the pre-publication destination checks.
+#[cfg(windows)]
+static SETTINGS_IO: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -125,6 +129,10 @@ impl Settings {
     }
 
     fn save_path(&self, path: &Path) -> Result<(), String> {
+        #[cfg(windows)]
+        let _guard = SETTINGS_IO
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         self.validate()?;
         let bytes = serde_json::to_vec_pretty(self)
             .map_err(|_| "Settings could not be serialized.".to_owned())?;
@@ -139,13 +147,7 @@ impl Settings {
         for _ in 0..32 {
             let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
             let temp = parent.join(format!(".settings-{}-{id}.tmp", std::process::id()));
-            match OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(&temp)
-            {
+            match crate::storage::create_options().open(&temp) {
                 Ok(file) => {
                     created = Some((temp, file));
                     break;
@@ -160,10 +162,13 @@ impl Settings {
             file.write_all(&bytes)?;
             file.write_all(b"\n")?;
             file.sync_all()?;
+            // Windows replacement must not race an open source handle retained
+            // by an earlier writer after it published this destination.
+            drop(file);
             reject_non_regular(path)?;
             // Rename replaces the directory entry and never follows a target symlink.
-            fs::rename(&temp, path)?;
-            fs::File::open(parent)?.sync_all()
+            crate::storage::replace(&temp, path)?;
+            crate::storage::sync_directory(parent)
         })();
         if result.is_err() {
             let _ = fs::remove_file(&temp);
@@ -183,6 +188,7 @@ pub fn load() -> (Settings, Option<String>) {
     }
 }
 
+#[cfg(not(windows))]
 fn config_path() -> Option<PathBuf> {
     let xdg = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -196,22 +202,29 @@ fn config_path() -> Option<PathBuf> {
     Some(base.join("dcuo-companion/settings.json"))
 }
 
+#[cfg(windows)]
+fn config_path() -> Option<PathBuf> {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .map(|p| p.join("dcuo-companion/settings.json"))
+}
+
 fn load_path(path: &Path) -> (Settings, Option<String>) {
-    let mut file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
-    {
+    #[cfg(windows)]
+    let _guard = SETTINGS_IO
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let mut file = match crate::storage::read_options(true).open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return (Settings::default(), None);
         }
         Err(_) => return defaults_warning(),
     };
-    if !file
-        .metadata()
-        .is_ok_and(|meta| meta.is_file() && meta.len() <= MAX_BYTES)
-    {
+    if !file.metadata().is_ok_and(|meta| {
+        meta.is_file() && !crate::storage::is_reparse(&meta) && meta.len() <= MAX_BYTES
+    }) {
         return defaults_warning();
     }
     let mut bytes = Vec::new();
@@ -238,7 +251,7 @@ fn defaults_warning() -> (Settings, Option<String>) {
 
 fn reject_non_regular(path: &Path) -> std::io::Result<()> {
     match fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => Ok(()),
+        Ok(meta) if meta.is_file() && !crate::storage::is_reparse(&meta) => Ok(()),
         Ok(_) => Err(std::io::Error::other("not a regular file")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -247,7 +260,7 @@ fn reject_non_regular(path: &Path) -> std::io::Result<()> {
 
 fn ensure_directory(path: &Path) -> std::io::Result<()> {
     match fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
+        Ok(meta) if meta.is_dir() && !crate::storage::is_reparse(&meta) => {
             if let Some(parent) = path
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())
@@ -264,8 +277,8 @@ fn ensure_directory(path: &Path) -> std::io::Result<()> {
             {
                 ensure_directory(parent)?;
             }
-            match fs::create_dir(path) {
-                Ok(()) => fs::set_permissions(path, fs::Permissions::from_mode(0o700)),
+            match crate::storage::create_directory(path) {
+                Ok(()) => Ok(()),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     ensure_directory(path)
                 }
@@ -310,8 +323,12 @@ mod tests {
         settings.ui_scale = 2.0;
         settings.save_path(&dir.path()).unwrap();
         assert_eq!(load_path(&dir.path()), (settings, None));
+        #[cfg(unix)]
         assert_eq!(
-            fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::metadata(dir.path()).unwrap().permissions().mode()
+            } & 0o777,
             0o600
         );
         assert_eq!(
@@ -495,28 +512,31 @@ mod tests {
     fn concurrent_saves_publish_complete_files_and_clean_temporary_files() {
         let dir = TempDir::new();
         Settings::default().save_path(&dir.path()).unwrap();
-        std::thread::scope(|scope| {
-            for poll_ms in 100..108 {
-                let path = dir.path();
-                scope.spawn(move || {
-                    Settings {
-                        poll_ms,
-                        ..Settings::default()
-                    }
-                    .save_path(&path)
-                    .unwrap();
-                    let (settings, warning) = load_path(&path);
-                    assert!(warning.is_none());
-                    assert!((100..108).contains(&settings.poll_ms));
-                });
-            }
-        });
+        for _ in 0..16 {
+            std::thread::scope(|scope| {
+                for poll_ms in 100..108 {
+                    let path = dir.path();
+                    scope.spawn(move || {
+                        Settings {
+                            poll_ms,
+                            ..Settings::default()
+                        }
+                        .save_path(&path)
+                        .unwrap();
+                        let (settings, warning) = load_path(&path);
+                        assert!(warning.is_none());
+                        assert!((100..108).contains(&settings.poll_ms));
+                    });
+                }
+            });
+        }
         assert_eq!(
             fs::read_dir(dir.path().parent().unwrap()).unwrap().count(),
             1
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlink_destinations_and_directories_are_rejected() {
         use std::os::unix::fs::symlink;
