@@ -32,6 +32,68 @@ pub struct Snapshot {
     pub response_count: u32,
     pub observed_at: Instant,
 }
+/// Item definitions resolved for a proven current player, independently of Broker state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ItemNames {
+    pub entity: usize,
+    pub player_name: String,
+    pub items: Vec<(u32, String)>,
+}
+
+/// Caller establishes exact process/build identity before using these offsets.
+/// Missing or unloaded definitions are omitted. Every traversed source byte is
+/// rechecked before returning; no Broker request or response is required.
+pub fn item_names(
+    base: usize,
+    ids: &[u32],
+    read: impl FnMut(usize, usize) -> Result<Vec<u8>, String>,
+) -> Result<ItemNames, String> {
+    if ids.len() > 50 || ids.contains(&0) || ids.iter().collect::<HashSet<_>>().len() != ids.len() {
+        return Err("Item capture requires at most 50 unique nonzero IDs".into());
+    }
+    pointer(base)?;
+    let mut reader = Reader {
+        read,
+        calls: 0,
+        bytes: 0,
+        name_proofs: BTreeMap::new(),
+        name_nodes: BTreeMap::new(),
+        named_wrappers: HashSet::new(),
+    };
+    let manager = pointer(address_at(&reader.watched(add(base, 0x2134130)?, 8)?, 0)?)?;
+    let entity = pointer(address_at(&reader.watched(add(manager, 0x94)?, 8)?, 0)?)?;
+    let data = pointer(address_at(&reader.watched(add(entity, 8)?, 8)?, 0)?)?;
+    if u32_at(&reader.watched(add(data, 0x50)?, 4)?, 0) != 0 {
+        return Err("Unsupported item capture player-name context".into());
+    }
+    let holder = reader.watched(add(entity, 0x264)?, 16)?;
+    let (address, bytes, player_name) = reader.string(&holder)?;
+    reader.remember(address, &bytes)?;
+    let mut items = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if let Some(name) = reader.item_name(base, manager, id)? {
+            items.push((id, name));
+        }
+    }
+    // This capture's proof is intentionally stricter than Broker snapshots:
+    // include every byte of every traversed tree node, even unsuccessful paths.
+    for (address, before) in std::mem::take(&mut reader.name_nodes) {
+        if reader.bytes(address, before.len())? != before {
+            return Err("Item capture definition changed; capture discarded".into());
+        }
+    }
+    for ((address, len), before) in std::mem::take(&mut reader.name_proofs) {
+        if reader.bytes(address, len)? != before {
+            return Err("Item capture source changed; capture discarded".into());
+        }
+    }
+    Ok(ItemNames {
+        entity,
+        player_name,
+        items,
+    })
+}
+
 fn add(address: usize, offset: usize) -> Result<usize, String> {
     address
         .checked_add(offset)
@@ -452,6 +514,98 @@ mod tests {
         m.u32(DEFINITION + 0x25c, 64);
         m.put(ITEM_NAME, b"Synthetic item");
         m
+    }
+    #[test]
+    fn item_capture_needs_no_broker_response_and_omits_missing_definitions() {
+        let mut m = named_fixture();
+        m.u64(BROKER + 8, 0);
+        let result = item_names(BASE, &[122, 123, 124], |a, n| {
+            assert!(!(BROKER..BROKER + HEADER_BYTES).contains(&a));
+            m.read(a, n)
+        })
+        .unwrap();
+        assert_eq!(result.player_name, "Player");
+        assert_eq!(result.entity, ENTITY);
+        assert_eq!(result.items, vec![(123, "Synthetic item".into())]);
+        assert!(
+            item_names(BASE, &[], |a, n| m.read(a, n))
+                .unwrap()
+                .items
+                .is_empty()
+        );
+    }
+    #[test]
+    fn item_capture_rejects_invalid_ids_before_reading() {
+        for ids in [vec![0], vec![123, 123], (1..=51).collect()] {
+            assert!(item_names(BASE, &ids, |_, _| panic!("unexpected read")).is_err());
+        }
+        let m = named_fixture();
+        assert!(item_names(BASE, &(1..=50).collect::<Vec<_>>(), |a, n| m.read(a, n)).is_ok());
+    }
+    #[test]
+    fn item_capture_rechecks_all_context_tree_and_string_bytes() {
+        for (changed, offset) in [
+            (BASE + 0x2134130, 0),
+            (MANAGER + 0x94, 0),
+            (ENTITY + 8, 0),
+            (DATA + 0x50, 0),
+            (ENTITY + 0x264, 0),
+            (PLAYER_NAME, 0),
+            (MANAGER + 0x217c + 0x50, 0),
+            (NODE, 0x18),
+            (WRAPPER + 8, 0),
+            (DEFINITION + 0x250, 0),
+            (ITEM_NAME, 0),
+        ] {
+            let m = named_fixture();
+            let mut reads = 0;
+            assert!(
+                item_names(BASE, &[123], |a, n| {
+                    let mut bytes = m.read(a, n)?;
+                    if a == changed {
+                        reads += 1;
+                        if reads == 2 {
+                            bytes[offset] ^= 1;
+                        }
+                    }
+                    Ok(bytes)
+                })
+                .is_err(),
+                "{changed:x}/{offset:x}"
+            );
+        }
+        let m = named_fixture();
+        let mut reads = 0;
+        assert!(
+            item_names(BASE, &[122], |a, n| {
+                let mut bytes = m.read(a, n)?;
+                if a == NODE {
+                    reads += 1;
+                    if reads == 2 {
+                        bytes[0x18] ^= 1;
+                    }
+                }
+                Ok(bytes)
+            })
+            .is_err()
+        );
+    }
+    #[test]
+    fn item_capture_retains_string_path_and_short_read_bounds() {
+        for case in 0..4 {
+            let mut m = named_fixture();
+            match case {
+                0 => m.u32(DEFINITION + 0x258, 513),
+                1 => m.put(ITEM_NAME, &[0xff; 14]),
+                2 => {
+                    m.u32(NODE + 0x50, 124);
+                    m.u64(NODE + 0x60, NODE as u64);
+                }
+                _ => m.u32(DATA + 0x50, 1),
+            }
+            assert!(item_names(BASE, &[123], |a, n| m.read(a, n)).is_err());
+        }
+        assert!(item_names(BASE, &[123], |_, _| Ok(vec![])).is_err());
     }
     #[test]
     fn resolves_shared_item_name_and_preserves_player_and_own_candidate_separately() {

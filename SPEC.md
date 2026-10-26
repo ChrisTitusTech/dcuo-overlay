@@ -550,3 +550,14 @@ MMET110_DESIGNERDATA signal with the validated WorldInfo (instance 2),
 PersistentLevel, TheWorld and MMET110 Package ownership chain (other instances 0).
 Retain independent exact Gotham alias behavior; reject unknown worlds, conflicting
 signals or changed ownership. This identifies an area, not a floor or calibration.
+
+## Wiki item contribution
+
+The companion supports explicit, read-only capture of missing equipped item names
+for dcuo-wiki.com. One bounded operation on the selected session reader resolves
+only IDs requested by the linked wiki profile; unsupported builds and changing
+character bindings fail closed. Preview names before an explicit send. The
+companion token stays in memory, has no moderation/article permissions, and
+captured names publish directly with history. Raw memory, addresses, chat and positions are
+not uploaded. Item stats/icons remain outside this capture until independently
+proven. See the wiki repository's docs/overlay-item-capture.md for the API contract.

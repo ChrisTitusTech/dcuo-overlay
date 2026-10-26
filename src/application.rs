@@ -287,6 +287,7 @@ fn prepare_x11_window(
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
+    WikiItems,
     Character,
     Broker,
     Map,
@@ -312,6 +313,7 @@ struct Probe {
     map: MapView,
     spawn_cache: SpawnCache,
     character: crate::character_view::CharacterView,
+    wiki: crate::wiki_view::WikiView,
     faction_reference_id: Option<String>,
     feats: crate::feat_loader::Loader,
     broker: crate::broker_view::BrokerView,
@@ -380,6 +382,7 @@ impl Probe {
             map,
             spawn_cache: SpawnCache::default(),
             character,
+            wiki: crate::wiki_view::WikiView::default(),
             faction_reference_id: None,
             feats: crate::feat_loader::Loader::default(),
             initialized: false,
@@ -648,7 +651,7 @@ impl Probe {
     fn draw(&mut self, ui: &mut egui::Ui, view: &crate::session::View) {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
-            egui::ScrollArea::vertical().id_salt(match self.tab { Tab::Broker => "broker-page", Tab::Map => "map-page", Tab::Character => "character-page", Tab::Diagnostics => "diagnostics-page" }).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(match self.tab { Tab::WikiItems => "wiki-items-page", Tab::Broker => "broker-page", Tab::Map => "map-page", Tab::Character => "character-page", Tab::Diagnostics => "diagnostics-page" }).show(ui, |ui| {
                 if self.tab == Tab::Diagnostics {
                     ui.heading(TITLE);
                     ui.label(egui::RichText::new("READ-ONLY VERIFICATION").color(egui::Color32::from_rgb(120, 195, 235)));
@@ -672,7 +675,7 @@ impl Probe {
                 }
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
-                    for (tab, label) in [(Tab::Character, "Character"), (Tab::Map, "Map"), (Tab::Broker, "Broker"), (Tab::Diagnostics, "Diagnostics")] { ui.selectable_value(&mut self.tab, tab, label); }
+                    for (tab, label) in [(Tab::Character, "Character"), (Tab::Map, "Map"), (Tab::Broker, "Broker"), (Tab::WikiItems, "Wiki items"), (Tab::Diagnostics, "Diagnostics")] { ui.selectable_value(&mut self.tab, tab, label); }
                     ui.toggle_value(&mut self.show_log, "Log");
                     if ui.button("Settings").clicked() { self.settings = !self.settings; }
                     if ui.button("About").clicked() { self.about = !self.about; }
@@ -680,6 +683,7 @@ impl Probe {
                 });
                 ui.add_space(4.0);
                 match self.tab {
+                    Tab::WikiItems => self.wiki.show(ui, view, &mut self.controller),
                     Tab::Character => {
                         ui.horizontal_wrapped(|ui| {
                             ui.label("Character");

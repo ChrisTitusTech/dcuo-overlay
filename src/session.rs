@@ -33,6 +33,8 @@ pub struct BuildInfo {
 
 #[derive(Clone, Debug)]
 pub struct View {
+    pub wiki_items: Option<crate::wiki_items::WikiCapture>,
+    pub wiki_status: String,
     pub candidates: Vec<ProcessChoice>,
     pub selected_pid: Option<i32>,
     pub connected: bool,
@@ -54,6 +56,8 @@ pub struct View {
 impl Default for View {
     fn default() -> Self {
         Self {
+            wiki_items: None,
+            wiki_status: "Capture item names on demand".into(),
             candidates: Vec::new(),
             selected_pid: None,
             connected: false,
@@ -109,6 +113,7 @@ fn retain_feats(
 }
 
 enum Operation {
+    WikiItems(u64, Vec<u32>),
     Refresh,
     Connect(i32, Option<u64>, bool),
     Clear,
@@ -129,6 +134,7 @@ struct Command {
     operation: Operation,
 }
 enum Update {
+    WikiItems(u64, Result<crate::wiki_items::WikiCapture, String>),
     Choices(Result<Vec<ProcessChoice>, String>),
     Connected(Result<(BuildInfo, bool), String>),
     Recovered(Result<BuildInfo, RecoveryFailure>),
@@ -182,6 +188,7 @@ pub struct Controller {
     api_worker: Option<JoinHandle<()>>,
     pending: usize,
     api_request: u64,
+    wiki_request: u64,
     api_pending: bool,
     last_native_owner: Option<native::Sample>,
     feats_enabled: Arc<AtomicBool>,
@@ -245,6 +252,7 @@ impl Controller {
             api_worker: Some(api_worker),
             pending: 0,
             api_request: 0,
+            wiki_request: 0,
             api_pending: false,
             last_native_owner: None,
             feats_enabled,
@@ -305,6 +313,7 @@ impl Controller {
         self.pending = 0;
         self.view.busy = false;
         self.view.native = None;
+        self.view.wiki_items = None;
         self.last_native_owner = None;
         self.view.feats = None;
         self.view.location_generation = self.view.location_generation.wrapping_add(1);
@@ -460,6 +469,28 @@ impl Controller {
             self.view.api_status = "Reference request was not queued; retry when ready".into();
         }
     }
+    pub fn capture_wiki_items(&mut self, ids: Vec<u32>) -> u64 {
+        self.view.wiki_items = None;
+        if !self.view.connected
+            || self.view.paused
+            || self.view.busy
+            || ids.is_empty()
+            || ids.len() > 50
+        {
+            self.view.wiki_status =
+                "Connect to a supported character and wait for other work to finish".into();
+            return 0;
+        }
+        self.wiki_request = self.wiki_request.wrapping_add(1).max(1);
+        let request = self.wiki_request;
+        if self.queue(Operation::WikiItems(request, ids)) {
+            self.view.wiki_status = "Reading loaded item definitions...".into();
+            request
+        } else {
+            self.view.wiki_status = "Item capture queue is busy; wait and retry".into();
+            0
+        }
+    }
     pub fn scan_name(&mut self, name: &str) {
         if !self.view.connected || self.view.paused || self.view.busy {
             return;
@@ -476,6 +507,23 @@ impl Controller {
                 self.pending = self.pending.saturating_sub(1);
             }
             match event.update {
+                Update::WikiItems(request, result) => {
+                    if request == self.wiki_request && self.view.connected && !self.view.paused {
+                        match result {
+                            Ok(capture) => {
+                                self.view.wiki_status = format!(
+                                    "{} loaded item names captured; preview before sending",
+                                    capture.items.len()
+                                );
+                                self.view.wiki_items = Some(capture);
+                            }
+                            Err(error) => {
+                                self.view.wiki_items = None;
+                                self.view.wiki_status = error;
+                            }
+                        }
+                    }
+                }
                 Update::Choices(Ok(choices)) => {
                     self.view.candidates = choices;
                     if self.auto_connect && !self.view.connected {
@@ -617,6 +665,7 @@ impl Controller {
                                 })
                             {
                                 self.view.feats = None;
+                                self.view.wiki_items = None;
                             }
                             if let Some(feats) = &sample.feats {
                                 retain_feats(&mut self.view.feats, feats);
@@ -627,11 +676,13 @@ impl Controller {
                         }
                         Ok(_) => {
                             self.view.native = None;
+                            self.view.wiki_items = None;
                             self.view.native_status =
                                 "Experimental physics sample expired; waiting for fresh data"
                                     .into();
                         }
                         Err(error) => {
+                            self.view.wiki_items = None;
                             if self.view.native.take().is_some() {
                                 self.view.location_generation =
                                     self.view.location_generation.wrapping_add(1);
@@ -668,6 +719,7 @@ impl Controller {
             .is_some_and(|sample| sample.observed_at.elapsed() > Duration::from_secs(1))
         {
             self.view.native = None;
+            self.view.wiki_items = None;
             self.view.location_generation = self.view.location_generation.wrapping_add(1);
             self.view.native_status =
                 "Experimental physics stale; waiting for the session reader".into();
@@ -908,6 +960,16 @@ fn worker_loop(
                 continue;
             }
             let update = match command.operation {
+                Operation::WikiItems(request, ids) => {
+                    let result = if paused {
+                        Err("Resume the session before capturing items".into())
+                    } else if let Some(reader) = reader.as_mut() {
+                        reader.capture_wiki_items(request, &ids)
+                    } else {
+                        Err("Connect to a supported game build first".into())
+                    };
+                    Update::WikiItems(request, result)
+                }
                 Operation::Refresh => Update::Choices(
                     process::discover()
                         .map(|choices| {
@@ -1727,6 +1789,7 @@ mod tests {
                 api_worker: None,
                 pending: 1,
                 api_request: 2,
+                wiki_request: 0,
                 api_pending: false,
                 last_native_owner: None,
                 feats_enabled: Arc::new(AtomicBool::new(false)),
@@ -1740,6 +1803,74 @@ mod tests {
             },
             events,
         )
+    }
+    fn wiki_capture(request_id: u64) -> crate::wiki_items::WikiCapture {
+        crate::wiki_items::WikiCapture {
+            request_id,
+            player_name: "Synthetic".into(),
+            items: vec![(123, "Synthetic Helmet".into())],
+            build: native::PROFILE_ID.into(),
+            captured_at: 1,
+        }
+    }
+    #[test]
+    fn wiki_results_reject_old_requests_and_cancelled_generations() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.wiki_request = 2;
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::WikiItems(1, Ok(wiki_capture(1))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.wiki_items.is_none());
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::WikiItems(2, Ok(wiki_capture(2))),
+            })
+            .unwrap();
+        controller.poll();
+        assert_eq!(controller.view.wiki_items.as_ref().unwrap().request_id, 2);
+        controller.invalidate();
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::WikiItems(2, Ok(wiki_capture(2))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.wiki_items.is_none());
+    }
+    #[test]
+    fn wiki_capture_is_cleared_on_pause_loading_and_character_change() {
+        let (mut controller, events) = offline_controller();
+        controller.view.connected = true;
+        controller.view.wiki_items = Some(wiki_capture(1));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Err("Loading".into())),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.wiki_items.is_none());
+        controller.view.wiki_items = Some(wiki_capture(1));
+        controller.last_native_owner = Some(native::Sample::synthetic(1));
+        events
+            .send(Event {
+                generation: 1,
+                update: Update::Native(Ok(native::Sample::synthetic(2))),
+            })
+            .unwrap();
+        controller.poll();
+        assert!(controller.view.wiki_items.is_none());
+        controller.view.wiki_items = Some(wiki_capture(1));
+        controller.pause();
+        assert!(controller.view.wiki_items.is_none());
+        assert_eq!(controller.capture_wiki_items(vec![1]), 0);
     }
     #[test]
     fn connecting_retains_independent_api_reference_and_faction() {

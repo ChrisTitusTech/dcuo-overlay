@@ -1600,6 +1600,45 @@ impl Reader {
         };
         Ok((result, status))
     }
+    /// One bounded read on the existing session thread. Never enters the Broker or sends input.
+    pub fn capture_wiki_items(
+        &mut self,
+        request_id: u64,
+        ids: &[u32],
+    ) -> Result<crate::wiki_items::WikiCapture, String> {
+        let before = self.sample()?;
+        let binding = before
+            .feats_binding
+            .ok_or("Current character binding is unavailable")?;
+        self.scope_start.set(Instant::now());
+        self.scope_bytes.set(0);
+        self.scope_reads.set(0);
+        let started = Instant::now();
+        let names =
+            crate::broker_memory::item_names(self.candidate.mapping.start, ids, |address, len| {
+                if started.elapsed() > std::time::Duration::from_millis(250) {
+                    return Err("Item read exceeded time budget".into());
+                }
+                self.read(address, len)
+            })?;
+        let after = self.sample()?;
+        if names.entity != binding.0
+            || after.feats_binding != Some(binding)
+            || !before.same_character_owner(&after)
+        {
+            return Err("Character changed during item capture; try again".into());
+        }
+        Ok(crate::wiki_items::WikiCapture {
+            request_id,
+            player_name: names.player_name,
+            items: names.items,
+            build: PROFILE_ID.into(),
+            captured_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "System clock is before Unix epoch")?
+                .as_secs(),
+        })
+    }
     pub fn set_broker_enabled(&mut self, enabled: bool) {
         if self.broker_enabled != enabled {
             self.broker_enabled = enabled;

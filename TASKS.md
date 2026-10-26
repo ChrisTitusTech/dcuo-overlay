@@ -1466,3 +1466,76 @@ strict Clippy on Rust 1.96/1.95, workspace/release builds, 12 installer tests an
 both managed-X11 launches pass. Independent area_review found no actionable
 findings. Installed binary matches the tested release. All current local commits
 are being fast-forwarded onto local main as requested; no remote push requested.
+
+## Wiki item capture (2026-10-25)
+
+User authorizes extending the companion to fill missing wiki item names from
+read-only character memory and explicitly send updates to the wiki. The lead
+owns contracts, native/session/application wiring, wiki route/UI integration,
+validation, documentation and commits. No new game input or unattended upload.
+Scoped account tokens expire after 30 days, remain in companion memory only,
+and authorize item-name publication, never article editing or moderation.
+
+Worker wiki_memory (gpt-6.1-sol) owns src/broker_memory.rs only. Prerequisite:
+existing exact-build item definition lookup. Expose ItemNames { player_name:
+String, items: Vec<(u32,String)> } and item_names(base:usize, ids:&[u32], read:
+impl FnMut(usize,usize)->Result<Vec<u8>,String>) -> Result<ItemNames,String>.
+Bound <=50 unique nonzero IDs, prove manager/current entity/player name and
+all traversed tree/string bytes unchanged; no Broker request/input dependency.
+Synthetic tests cover missing IDs, mutation, bounds. Stop after focused tests;
+no wiring, live reads, Git operations or nested workers.
+
+Worker wiki_client (gpt-6.1-sol) owns new src/wiki_items.rs and src/wiki_view.rs
+only. Contract: HTTPS fixed https://dcuo-wiki.com, bearer 64 lowercase hex token
+entered masked and kept in memory. GET /api/overlay/items returns {character:
+{id,name,worldId},items:[{itemId}]}; POST same path accepts {schemaVersion:1,
+character,build:64hex,profile:"item-names-v1",capturedAt:unix seconds,items:
+[{itemId,name}]}, returns {submitted,skipped} counts. Implement bounded timed
+transport, capture/preview/send GUI; all network on background workers. Expose
+WikiView::show(ui, view:&session::View, controller:&session::Controller), poll
+inside show. Controller contract: capture_wiki_items(ids:Vec<u32>), View fields
+wiki_items: Option<WikiCapture> and wiki_status:String; WikiCapture in wiki_items
+contains player_name:String,items:Vec<(u32,String)>,build:String,captured_at:u64.
+Capture is on demand through the existing session reader; clear previews on
+process/character changes, require exact case-insensitive player name match to
+linked wiki character and current API identity/world. No automatic send. Tests
+cover validation and stale binding; stop with module tests. No shared files,
+live reads, Git operations or nested workers.
+
+Worker wiki_server (gpt-6.1-sol) owns wiki worker/overlay-items.mjs, migration
+0007_overlay_items.sql, worker/item-evidence.mjs and tests/overlay-items.test.mjs
+only. Implement createOverlayToken(env,user), revokeOverlayToken(env,user),
+overlayItems(request,env) and submitOverlayItems(request,env). Hash tokens, bind
+to linked profile, 30-day TTL, rotation/revocation, rate limits in lead routes.
+GET contract above requires fresh <=24h saved equipment, returns only unresolved
+unique IDs including augments. POST validates schema/profile/build/time, bounded
+50 unique names, exact linked character/world and snapshot membership. Store as
+pending evidence, retain structured capture provenance without raw memory;
+never autoapprove. Existing screenshots remain; native evidence uses empty blob
+and hasScreenshot false. Extend review listing with capture metadata and image
+404 for no screenshot. Atomic profile/token guard and safe duplicate retries.
+Stop after focused tests; no routes/UI, live services, Git or nested workers.
+
+Acceptance: relevant Rust formatting/Clippy/tests and wiki validation/browser/
+Cloudflare tests, dry-run worker budget, independent review, synthetic signed-in
+account integration. Actual user token pairing remains a user action.
+
+User correction: moderator approval is not required for companion captures.
+Explicit Send publishes names globally with provenance and audit history; retain
+the existing reviewed tooltip workflow separately. Capture/publish the 23 stable
+loaded item names as repository source data, without personal session metadata.
+
+Implemented: one on-demand read on the existing session worker, build/owner/name
+proofs, scoped memory-only tokens and explicit preview/send. User correction makes
+companion publication immediate and atomic with account-attributed history. Eight
+server tests exercise authorization, duplicates, existing tooltip preservation,
+competing mappings and complete transaction rollback. Repeated live reads resolved
+23 of the 24 current unknown equipped IDs; only sanitized item definitions were
+exported to the wiki repository. The unresolved definition stays unknown.
+
+Current local evidence: 269 Rust workspace tests pass (4 existing opt-in checks
+ignored), 189 headless tests, strict all-target Clippy, formatting and release
+build pass. Installer's 12 checks pass. Exact-build live capture succeeded twice
+with stable names; no account token or upload was performed from the live session.
+This does not establish item-stat/icon extraction or a new full desktop/map/Broker
+acceptance. Final direct-publication review and wiki deployment checks follow.

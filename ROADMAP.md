@@ -413,3 +413,12 @@ Lead adds the independently observed MMET110 world/designer contract and validat
 live map import/marker behavior. area_review independently reviews the bounded
 fallback and regressions. After checks, bring all completed local branch commits
 onto local main as requested; remote publication remains separate.
+
+## Wiki item contribution (2026-10-25)
+
+Add on-demand name capture through the existing exact-build selected-session
+reader. Scoped expiring wiki tokens supply only missing equipped IDs. Capture,
+preview and send remain explicit; the wiki records client-provided provenance and publishes names
+directly after the player sends them. Synthetic reader, lifecycle, transport and D1/browser
+checks establish the integration; do not imply general item stat extraction,
+universal build support or character ownership verification.
