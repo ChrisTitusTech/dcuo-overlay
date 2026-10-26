@@ -85,6 +85,12 @@ impl MissingItems {
     }
     pub fn submission(&self, capture: &WikiCapture) -> Result<Submission, String> {
         self.validate()?;
+        if capture.items.is_empty() {
+            return Err(
+                "No requested item names are loaded. Open your inventory and try capturing again."
+                    .into(),
+            );
+        }
         let requested: HashSet<_> = self.items.iter().map(|v| v.item_id).collect();
         let mut seen = HashSet::new();
         if !capture
@@ -298,6 +304,16 @@ mod tests {
             captured_at: 1,
         };
         assert!(missing.submission(&capture).is_ok());
+        let empty = WikiCapture {
+            items: vec![],
+            ..capture.clone()
+        };
+        assert!(
+            missing
+                .submission(&empty)
+                .unwrap_err()
+                .contains("No requested item names are loaded")
+        );
         capture.player_name = "Other".into();
         assert!(missing.submission(&capture).is_err());
         capture.player_name = "Hero".into();

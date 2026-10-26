@@ -1539,3 +1539,11 @@ build pass. Installer's 12 checks pass. Exact-build live capture succeeded twice
 with stable names; no account token or upload was performed from the live session.
 This does not establish item-stat/icon extraction or a new full desktop/map/Broker
 acceptance. Final direct-publication review and wiki deployment checks follow.
+
+Final direct-publication gates passed: independent Codex reviews are clean for
+both repositories, wiki unit/browser/Cloudflare suites pass (204/37/24), worker
+bundle and asset budgets pass, and the initial companion main CI passed. The
+wiki database migration is applied and wiki main 04efc2e is deploying. Installed
+companion matches its tested release. Empty loaded-definition captures now give
+an actionable inventory/retry message. Account token creation is a normal user
+setup step; no account token was created by the development agent.
