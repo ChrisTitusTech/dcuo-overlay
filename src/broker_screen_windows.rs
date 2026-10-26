@@ -441,39 +441,60 @@ mod desktop_tests {
             std::env::var("DCUO_WINDOWS_DESKTOP_TEST").as_deref(),
             Ok("1")
         );
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            CreateWindowExW, DestroyWindow, WS_OVERLAPPEDWINDOW,
+        use windows_sys::Win32::{
+            System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*,
         };
-        let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+        unsafe extern "system" fn window_proc(
+            hwnd: HWND,
+            message: u32,
+            wparam: usize,
+            lparam: isize,
+        ) -> isize {
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        let class: Vec<u16> = "DcuoIsolatedCaptureTest\0".encode_utf16().collect();
         let title: Vec<u16> = "DCUO isolated capture test\0".encode_utf16().collect();
         unsafe {
+            let instance = GetModuleHandleW(std::ptr::null());
+            let brush = CreateSolidBrush(0x00332211);
+            assert!(!brush.is_null());
+            let definition = WNDCLASSW {
+                lpfnWndProc: Some(window_proc),
+                hInstance: instance,
+                hbrBackground: brush,
+                lpszClassName: class.as_ptr(),
+                ..std::mem::zeroed()
+            };
+            assert_ne!(RegisterClassW(&definition), 0);
             let w = CreateWindowExW(
                 0,
                 class.as_ptr(),
                 title.as_ptr(),
-                WS_OVERLAPPEDWINDOW,
-                0,
-                0,
-                100,
-                100,
+                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                32,
+                32,
+                160,
+                120,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                instance,
                 std::ptr::null(),
             );
-            assert!(!w.is_null());
-            let dc = GetDC(w);
-            assert!(!dc.is_null());
-            let brush = CreateSolidBrush(0x00332211);
-            let rect = RECT {
-                left: 0,
-                top: 0,
-                right: 16,
-                bottom: 16,
-            };
-            assert_ne!(FillRect(dc, &rect, brush), 0);
-            DeleteObject(brush);
-            ReleaseDC(w, dc);
+            assert!(
+                !w.is_null(),
+                "test window creation failed: {}",
+                std::io::Error::last_os_error()
+            );
+            // Exercise the normal visible-window paint lifecycle. Drawing once to
+            // a hidden STATIC control's DC can be discarded when it is repainted.
+            let mut message: MSG = std::mem::zeroed();
+            while PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            assert_ne!(InvalidateRect(w, std::ptr::null(), 1), 0);
+            assert_ne!(UpdateWindow(w), 0);
+            GdiFlush();
             let result = capture(
                 w,
                 Roi {
@@ -484,9 +505,15 @@ mod desktop_tests {
                 },
             );
             DestroyWindow(w);
+            UnregisterClassW(class.as_ptr(), instance);
+            DeleteObject(brush);
             let rgb = result.expect("bounded native test-window capture");
             assert_eq!(rgb.dimensions(), (8, 8));
-            assert!(rgb.pixels().all(|p| p.0 == [0x11, 0x22, 0x33]));
+            assert!(
+                rgb.pixels().all(|p| p.0 == [0x11, 0x22, 0x33]),
+                "unexpected client pixel {:?}",
+                rgb.get_pixel(0, 0)
+            );
         }
     }
 }

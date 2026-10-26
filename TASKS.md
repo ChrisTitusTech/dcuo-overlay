@@ -1709,3 +1709,13 @@ passing for Linux and Windows GNU. Second Codex review identified Windows-invali
 map-view test fixture paths; convert them to platform-absolute paths and run the
 Windows-target tests before candidate CI. Native Windows and user live-game
 acceptance remain pending; no final release has been published.
+
+Candidate branch commits 05651cc and 8bd4eae were pushed. Full independent Codex
+review reports no actionable findings. Windows GNU execution under isolated Wine
+passes 303 library tests (7 opt-in ignored). First native Windows CI likewise
+passes 303 library tests, then exposes an inherited nonblocking socket in the
+headless delayed-response fixture; explicitly restore blocking mode with existing
+timeouts. The isolated capture fixture now uses a visible painted window; exact
+pixel assertions and Unicode input pass on fresh Wine/Xvfb desktops. These test
+corrections require a new native candidate CI run. No live Windows game acceptance
+or final release is claimed.

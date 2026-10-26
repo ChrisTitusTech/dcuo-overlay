@@ -1739,6 +1739,9 @@ mod tests {
                     Err(error) => panic!("Delayed fixture server failed: {error}"),
                 }
             };
+            // Winsock inherits the listener's nonblocking mode on accept.
+            // The bounded request/response phase uses blocking I/O with timeouts.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
                 .unwrap();
