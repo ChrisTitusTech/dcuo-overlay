@@ -561,3 +561,11 @@ companion token stays in memory, has no moderation/article permissions, and
 captured names publish directly with history. Raw memory, addresses, chat and positions are
 not uploaded. Item stats/icons remain outside this capture until independently
 proven. See the wiki repository's docs/overlay-item-capture.md for the API contract.
+
+Wiki token onboarding uses the authenticated wiki response for the linked
+character/world and missing equipment IDs. Pasting a complete token loads that
+account data once without requiring a separate character-reference lookup or a
+running game. Capture still requires a fresh supported selected session, and its
+memory-read character name must match the linked wiki character. Loading gaps
+clear capture previews, not the fetched account target. Publication stays an
+explicit Send after a valid preview; show actionable reasons for disabled actions.

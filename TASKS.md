@@ -1547,3 +1547,38 @@ wiki database migration is applied and wiki main 04efc2e is deploying. Installed
 companion matches its tested release. Empty loaded-definition captures now give
 an actionable inventory/retry message. Account token creation is a normal user
 setup step; no account token was created by the development agent.
+
+## Wiki capture onboarding repair (2026-10-26)
+
+User reports Capture and Send remain disabled after entering the token. Current
+WikiView gates even account fetch on an independent dcuo.bot API reference and
+requires a separate manual refresh. Fix token onboarding without weakening the
+actual capture's exact-build, live owner, memory-name and wiki snapshot guards.
+The authenticated wiki response supplies character/world; no second reference
+lookup is required for this contribution flow. Fetch may run without the game;
+capture/send require fresh selected-session memory. Keep fetched account items
+across game sampling gaps while clearing capture requests/previews on owner loss.
+
+Worker wiki_client (existing gpt-6.1-sol) owns src/wiki_view.rs only. Implement
+valid-token auto-fetch once (trim pasted outer whitespace; bound input), manual
+retry, token-epoch network result rejection, no API-reference prerequisite, and
+explicit per-button readiness/reasons. Bind capture/preview to current fresh
+pid/start/build/entity, exact requested IDs and captured player name as before.
+Separate account fetch state from game binding; invalidate previews on session
+loss but retain account target. No automatic publication. Network stays bounded,
+off GUI thread, one worker at a time. Receipt of already-sent data can be shown
+if game disconnected, but reject stale-token results. Add offline regression
+coverage for token-only fetch, no-reference capture, game gaps, stale tokens,
+wrong-character/empty captures, busy/capture/preview sequencing. No real tokens,
+live game/UI, shared modules, Git operations or nested workers. Stop after tests
+and report helpers/behavior. Lead owns docs, integration, validation, install,
+independent review and publication.
+
+Repair validated: valid-token auto-fetch and no-reference capture/send pass nine
+offline lifecycle tests. All 276 workspace tests pass (4 existing opt-in checks
+ignored), formatting and strict all-target Clippy pass on stable/Rust 1.95,
+release build and 12 installer checks pass. Independent Codex review found no
+actionable defects. A bounded live probe confirms the running game's supported
+build, fresh native sample and character binding; no real token was inspected,
+logged, transmitted by the agent or saved. Install the correction without
+restarting the current application, so its memory-only token is not silently lost.

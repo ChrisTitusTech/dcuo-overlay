@@ -422,3 +422,11 @@ preview and send remain explicit; the wiki records client-provided provenance an
 directly after the player sends them. Synthetic reader, lifecycle, transport and D1/browser
 checks establish the integration; do not imply general item stat extraction,
 universal build support or character ownership verification.
+
+### Wiki token onboarding correction
+
+Remove the independent reference-lookup prerequisite. Auto-load the linked wiki
+account after a complete token paste, retain that account target across game
+sampling gaps, and gate capture/send on their actual live-memory/preview needs.
+Cover the reported token-only path and stale-result rejection with offline UI
+state tests before installing and publishing the correction.
