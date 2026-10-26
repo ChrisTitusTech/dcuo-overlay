@@ -15,6 +15,7 @@ sessions require explicit selection; unsupported executable builds are rejected.
   Launch DCUO Companion from the desktop menu.
 - **Windows installer:** Windows 10/11 x86_64. Run the setup EXE; it installs for
   the current user without requiring administrator privileges. Launch from Start.
+  A working OpenGL 2.0 or newer graphics driver is required.
   Installer and application are unsigned; Windows may show a publisher warning.
 
 Verify downloads against SHA256SUMS before running them. The release's source

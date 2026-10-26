@@ -1719,3 +1719,12 @@ timeouts. The isolated capture fixture now uses a visible painted window; exact
 pixel assertions and Unicode input pass on fresh Wine/Xvfb desktops. These test
 corrections require a new native candidate CI run. No live Windows game acceptance
 or final release is claimed.
+
+Native candidate deba480: Windows strict Clippy, 303 full library tests, 208
+headless tests, optimized executable build and both isolated desktop tests pass.
+NSIS successfully builds the installer. Its installed GUI startup fails on the
+hosted runner's OpenGL 1.1 driver. Supply checksum-pinned Mesa 26.2.4 only in the
+installed test directory, remove those test DLLs before uninstall, and repeat the
+same launch/uninstall checks. Release payload retains the actual game machine's
+graphics driver requirement. Latest Linux candidate builds, package smoke and
+artifact upload are green; the CI-built RPM also installs/runs/removes in Fedora44.
