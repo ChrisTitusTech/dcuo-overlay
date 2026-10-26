@@ -1664,3 +1664,48 @@ reports no actionable findings, including equipment pagination/session guards.
 Matching wiki checks: 220 unit / 39 browser / 25 Cloudflare pass. Installed updated binary
 without restarting the current application or disturbing its memory-only token.
 Publish main and verify the matching live wiki before reporting deployment done.
+
+## Cross-platform 0.1 release (2026-10-26, active)
+
+User authorizes Linux and Windows support and a first GitHub 0.1 release with
+AppImage, RPM and Windows EXE installer. Lead owns Cargo/lib wiring, packaging,
+CI/release workflows, docs, integration, validation and publication. Preserve
+read-only memory, exact-build rejection, private assets and explicit wiki actions.
+User selected GPL-3.0-only and will test the candidate installer on Windows.
+
+Worker platform_reader (gpt-6.1-sol) owns process.rs, memory.rs and new platform
+reader files only. Preserve public structs/functions and Linux semantics; implement
+Windows discovery, PID creation-time identity, mapped PE metadata and bounded
+ReadProcessMemory using read/query-only handles and VirtualQueryEx. No game writes,
+privilege changes, live operations, Git or nested workers. Add synthetic tests and
+Windows self-process validation. Stop at tested backend/report.
+Worker platform_storage (gpt-6.1-sol) owns settings.rs, maps.rs, map_import.rs,
+item_icons.rs and new storage helpers only. Implement Windows config/cache paths,
+atomic replacement and bounded safe file handling without weakening Linux checks.
+Keep shared APIs intact; gate Unix-only tests and add Windows checks. No live
+operations, Git or nested workers. Stop with evidence and shared wiring requests.
+Worker platform_desktop (gpt-6.1-sol) owns application.rs, broker_hotkey.rs,
+broker_screen.rs, bin/companion.rs and bin/window_probe.rs plus desktop modules.
+Native Windows normal window plus functioning guarded Broker shortcut/OCR if
+feasible; preserve current APIs and Linux behavior. No silent no-op implementations.
+Use Win32 read-only capture/focus/process guards and user-triggered input only.
+No live game/desktop operations, Git or nested workers. Stop with tests/limitations.
+Shared Win32 dependency: windows-sys 0.61 with features managed by lead. Request
+needed features/module wiring instead of editing Cargo.toml or lib.rs.
+
+Initial implementation: native Windows reader/storage/desktop backends compile
+with strict Clippy; Linux has 307 passing workspace tests and 203 headless tests.
+AppImage builds and passes two isolated X11 startup/relaunch checks. RPM installs,
+runs --help and uninstalls successfully in a disposable Fedora 44 container.
+Installer tests pass (12). User selected GPL-3.0-only and will test Windows.
+Independent Codex review found Ubuntu Python 3.10 lacks tomllib and an idle
+Windows hotkey foreground guard caused listener restart gaps. Pin Python 3.12
+and separate idle identity checks from action foreground checks before re-review.
+
+Follow-up validation fixed Windows settings read/save serialization and mapped-file
+identity checks; isolated Wine settings (8) and reader (20) tests pass. Linux
+workspace remains 307 passed / 6 opt-in ignored, with strict all-target Clippy
+passing for Linux and Windows GNU. Second Codex review identified Windows-invalid
+map-view test fixture paths; convert them to platform-absolute paths and run the
+Windows-target tests before candidate CI. Native Windows and user live-game
+acceptance remain pending; no final release has been published.

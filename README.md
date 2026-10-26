@@ -1,7 +1,7 @@
 # DCUO Companion
 
-A native Linux companion application in development, written in Rust for DC Universe
-Online running under Wine or Proton. It displays game information in a normal
+A native Linux and Windows companion application written in Rust for DC Universe
+Online (Wine/Proton on Linux, native on Windows). It displays game information in a normal
 managed window on another monitor, reads game memory, and cross-checks supported
 character fields through [dcuobot-api](https://github.com/DCUOBot/dcuobot-api).
 Its Map tab previews experimental live position on locally imported open-world
@@ -51,9 +51,16 @@ does not establish in-game freshness, and the selected API character is not
 automatically verified against the controlled player. Sources and coverage are
 available under each mission's Details. No personal snapshots are bundled.
 
+## Install version 0.1
+
+Download the AppImage, RPM or Windows EXE installer from
+[GitHub Releases](https://github.com/ChrisTitusTech/dcuo-overlay/releases).
+See [installation, requirements and known limits](docs/release-0.1.md).
+The project is licensed under [GPL-3.0-only](LICENSE).
+
 ## Run the application
 
-Use Linux/X11 and Rust 1.95 or newer (validated with 1.96.0):
+Use Linux/X11 or Windows x86_64 and Rust 1.95 or newer:
 
 ```sh
 cargo run --locked --bin dcuo-companion

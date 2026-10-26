@@ -346,7 +346,8 @@ ticks as confirmed ability casts. Manual timers must remain labeled manual.
 - UI/backend choice following the feasibility experiment.
 - Minimum usable window size, tested UI scales, field staleness thresholds, and
   measured memory/rendering/map accuracy and latency budgets.
-- Distribution format and project license before shipping application code.
+- Distribution: AppImage/RPM for Linux x86_64 and per-user EXE installer for
+  Windows x86_64. License: GPL-3.0-only (user-selected October 26).
 
 ## References
 
@@ -574,3 +575,14 @@ running game. Capture still requires a fresh supported selected session, and its
 memory-read character name must match the linked wiki character. Loading gaps
 clear capture previews, not the fetched account target. Publication stays an
 explicit Send after a valid preview; show actionable reasons for disabled actions.
+
+## First cross-platform 0.1 release
+
+Support Linux X11 x86_64 and native Windows 10/11 x86_64. Preserve shared read-only
+profiles and per-field provenance. Windows uses process creation time, query/read
+handles and mapped-image verification; never elevate privileges automatically.
+Use normal decorated Windows windows, platform-native user config/cache paths,
+and the same explicit Broker/wiki action boundaries. Package AppImage, RPM and
+per-user EXE installer on GitHub with checksums and GPL-3.0-only source. Do not
+bundle proprietary game files, imported assets, user data or credentials. Windows
+live game/installer acceptance is user-assisted; CI cannot imply live game proof.

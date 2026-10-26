@@ -442,3 +442,12 @@ articles and enriches source pages without replacing community edits. Validate
 reader mutation/identity guards, complete API/D1/R2/article/editor flow, repeated
 item IDs in distinct slots, actual installed icons and live character values.
 Lead owns main publication, installation and live acceptance.
+
+## Cross-platform 0.1 packaging
+
+platform_reader owns Windows read-only process/memory, platform_storage owns
+portable settings/maps/assets, platform_desktop owns native desktop/Broker guards.
+Lead owns dependencies, integration, release packaging/workflows and validation.
+Build Linux and Windows candidates, test Linux artifacts and Windows installer,
+provide candidate to user for Windows game acceptance, complete independent review,
+then publish tagged 0.1.0 with AppImage, RPM, EXE installer and SHA256SUMS.

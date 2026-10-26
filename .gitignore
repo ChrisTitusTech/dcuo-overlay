@@ -6,3 +6,6 @@
 *.dmp
 /local-data/
 /captures/
+
+/dist/
+__pycache__/
