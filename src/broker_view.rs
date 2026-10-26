@@ -23,7 +23,10 @@ pub struct BrokerView {
 impl BrokerView {
     /// Service screen recognition and the single key listener regardless of tab.
     pub fn poll(&mut self, ctx: &egui::Context, pid: Option<i32>, visible: bool) {
-        self.prune(Instant::now());
+        self.poll_at(ctx, pid, visible, Instant::now());
+    }
+    fn poll_at(&mut self, ctx: &egui::Context, pid: Option<i32>, visible: bool, now: Instant) {
+        self.prune(now);
         self.price_entry
             .poll(ctx, pid, self.latest.as_ref(), visible);
     }
@@ -304,11 +307,17 @@ mod tests {
     #[test]
     fn background_poll_expires_rows_without_rendering_the_broker_tab() {
         let mut view = BrokerView::default();
-        let old = Instant::now() - MAX_AGE - Duration::from_secs(1);
+        // A freshly booted Windows runner may have less uptime than MAX_AGE.
+        let old = Instant::now();
         let s = snapshot(old, 5, vec![listing(1, "Other", false, 1, 100)]);
         view.observe_at(&s, old);
         assert_eq!(view.rows.len(), 1);
-        view.poll(&egui::Context::default(), None, false);
+        view.poll_at(
+            &egui::Context::default(),
+            None,
+            false,
+            old + MAX_AGE + Duration::from_secs(1),
+        );
         assert!(view.rows.is_empty());
         // Cached context keeps its original age, so input freshness cannot renew.
         assert_eq!(view.latest.as_ref().unwrap().observed_at, old);
