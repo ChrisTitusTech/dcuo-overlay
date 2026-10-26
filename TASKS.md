@@ -1582,3 +1582,85 @@ actionable defects. A bounded live probe confirms the running game's supported
 build, fresh native sample and character binding; no real token was inspected,
 logged, transmitted by the agent or saved. Install the correction without
 restarting the current application, so its memory-only token is not silently lost.
+
+## Complete equipped item data (2026-10-26)
+
+User requires icons and substantive item details on the character sheet, beyond
+names. Lead owns live read-only field investigation, shared contracts, wiring,
+account/runtime provenance, integration, validation, installation and publication.
+Do not infer item stats or icons from names, publish raw memory, or mix character-
+specific scaled stats into a global item definition. Enrich existing known IDs,
+not just unknown names; preserve working names and capture history.
+
+Worker item_asset_research (gpt-6.1-sol) is offline research only. Read map_import.rs
+and installed CookedPC UI packages under /home/titus/.local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/DCGAME/COOKEDPC.
+Find item-icon resource formats, remap/cache decoding and a bounded reusable Rust
+interface. May inspect local-data notes and installed asset/package metadata; no
+live memory/game/UI, code edits, full-game exports, Git operations or nested workers.
+Report concrete paths/schema and safe next implementation files, then stop.
+
+Worker item_schema_research (gpt-6.1-sol) is offline binary research only. Inspect
+exact supported DCGAME.EXE at /home/titus/.local/share/Steam/steamapps/common/DC Universe Online/UNREAL3/BINARIES/WIN64/DCGAME.EXE,
+existing local-data/broker-static-notes.txt and broker_memory.rs. Derive item
+serialization/tooltip fields (description, icon reference, type, rarity, level,
+style, stat arrays) from targeted static code/schema, with exact evidence and
+bounds; distinguish definitions from per-character item instances. Never guess
+field meanings from adjacent values. No live reads, game/UI, code edits, dumps in
+Git, publication or nested workers. Private scratch may stay under local-data.
+Report evidence and proposed bounded parser contract, then stop.
+
+Worker item_catalog_research (gpt-6.1-sol) owns offline read-only analysis of the
+wiki catalog/source articles and existing item identity/art indexes. Determine
+which current equipped item IDs already have substantive sourced details/art,
+including missed explicit icon labels for artifacts/consumables. Use exact title
+or source ID matches, no arbitrary style/art guesses or placeholders. No edits,
+live game, external publication or nested workers. Report reliable structured
+fields and existing content paths; lead defines the shared data contract.
+
+Implementation assignments after offline schema discovery:
+- item_asset_research owns new src/item_icons.rs and narrow pub(crate) visibility
+  in map_import.rs only. Resolve exact native icon references through proven GFX
+  linkage; return bounded PNG. No guessed index mappings. Lead wires module.
+- item_schema_research owns broker_memory.rs, native.rs, wiki_items.rs and
+  wiki_view.rs rich definition capture/transport integration. Shared v2 contract:
+  schemaVersion 2, profile item-details-v1; each item {itemId,name,details}, details
+  has optional description, style, iconResource, requiredLevel,
+  requiredCombatRating, qualityId, categoryId. Do not publish unresolved numeric
+  stats or labels. All strings and fields have independent native provenance.
+  Include known IDs in capture requests. Icon PNG transport integration by lead.
+- item_catalog_research owns wiki src/scripts/equipment.ts, new component-scoped
+  equipment detail styling, and scripts/build-equipment-art.mjs plus source
+  enrichment script/data only. Render details returned by API and visible item
+  names. Exact explicit item icons only; no gallery screenshot fallback. Lead
+  owns worker API/storage/migrations, shared schemas, source publication and Git.
+
+User expanded catalog publication scope: companion must create/update missing
+items/artwork, beyond equipment. Lead authorizes item_schema_research worker to
+own broker_memory.rs, native.rs, session.rs, wiki_items.rs and wiki_view.rs for
+bounded loaded-definition catalog batches after rich capture integration.
+Shared additional fields: WikiCapture.catalog bool and next_cursor u32;
+Submission.scope String (equipment or catalog), equipped remains per-slot.
+Server accepts catalog definition contributions by linked accounts without
+requiring each definition to be equipped; still exact selected-character capture.
+Cache enumeration uses loaded tree only, bounded 50-definition batches after
+cursor, no loading/invoking game. Explicit capture/preview/publication actions.
+
+Rich capture and catalog implementation validated. Native capture independently
+corroborated all 35 occupied slots for the authorized live character, including
+per-slot augment levels and weapon base stats matching the supplied screenshot.
+Decoded exact artwork for 32 definitions (31 unique PNGs); startup libraries 101,
+102 and 103 plus separate libraries were exercised without game input. Catalog
+cursor probes read two disjoint loaded batches through the production reader.
+No private snapshots, source packages, addresses or tokens are committed.
+
+Validation: 305 workspace tests passed (6 opt-in checks ignored; the 2 installed
+icon checks were run separately and passed), 202 headless tests passed serially,
+formatting and all-target strict Clippy passed on stable and Rust 1.95, release
+build/help and 12 installer tests passed. Initial headless parallel run exposed
+pre-existing local transport-test port races; serial full run passed. Independent
+Codex reviews identified partial-definition/payload/preview/description/effect
+contract gaps, all corrected and regression-tested. Final independent review
+reports no actionable findings, including equipment pagination/session guards.
+Matching wiki checks: 220 unit / 39 browser / 25 Cloudflare pass. Installed updated binary
+without restarting the current application or disturbing its memory-only token.
+Publish main and verify the matching live wiki before reporting deployment done.

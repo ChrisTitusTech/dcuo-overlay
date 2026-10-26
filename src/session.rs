@@ -114,6 +114,7 @@ fn retain_feats(
 
 enum Operation {
     WikiItems(u64, Vec<u32>),
+    WikiCatalogItems(u64, u32),
     Refresh,
     Connect(i32, Option<u64>, bool),
     Clear,
@@ -485,6 +486,23 @@ impl Controller {
         let request = self.wiki_request;
         if self.queue(Operation::WikiItems(request, ids)) {
             self.view.wiki_status = "Reading loaded item definitions...".into();
+            request
+        } else {
+            self.view.wiki_status = "Item capture queue is busy; wait and retry".into();
+            0
+        }
+    }
+    pub fn capture_wiki_catalog_items(&mut self, cursor: u32) -> u64 {
+        self.view.wiki_items = None;
+        if !self.view.connected || self.view.paused || self.view.busy {
+            self.view.wiki_status =
+                "Connect to a supported character and wait for other work to finish".into();
+            return 0;
+        }
+        self.wiki_request = self.wiki_request.wrapping_add(1).max(1);
+        let request = self.wiki_request;
+        if self.queue(Operation::WikiCatalogItems(request, cursor)) {
+            self.view.wiki_status = "Reading a batch of loaded item definitions...".into();
             request
         } else {
             self.view.wiki_status = "Item capture queue is busy; wait and retry".into();
@@ -960,6 +978,16 @@ fn worker_loop(
                 continue;
             }
             let update = match command.operation {
+                Operation::WikiCatalogItems(request, cursor) => {
+                    let result = if paused {
+                        Err("Resume the session before capturing items".into())
+                    } else if let Some(reader) = reader.as_mut() {
+                        reader.capture_wiki_catalog_items(request, cursor)
+                    } else {
+                        Err("Connect to a supported game build first".into())
+                    };
+                    Update::WikiItems(request, result)
+                }
                 Operation::WikiItems(request, ids) => {
                     let result = if paused {
                         Err("Resume the session before capturing items".into())
@@ -1806,9 +1834,16 @@ mod tests {
     }
     fn wiki_capture(request_id: u64) -> crate::wiki_items::WikiCapture {
         crate::wiki_items::WikiCapture {
+            catalog: false,
+            next_cursor: 0,
+            equipped: Vec::new(),
             request_id,
             player_name: "Synthetic".into(),
-            items: vec![(123, "Synthetic Helmet".into())],
+            items: vec![crate::wiki_items::NamedItem {
+                item_id: 123,
+                name: "Synthetic Helmet".into(),
+                details: Default::default(),
+            }],
             build: native::PROFILE_ID.into(),
             captured_at: 1,
         }

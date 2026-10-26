@@ -45,3 +45,8 @@ pub mod broker_screen;
 pub mod wiki_items;
 #[cfg(feature = "window")]
 pub mod wiki_view;
+
+#[cfg(feature = "window")]
+pub mod item_icons;
+
+pub mod equipped_items;

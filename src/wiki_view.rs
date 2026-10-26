@@ -39,12 +39,37 @@ fn capture_fresh(timestamp: u64) -> bool {
         .and_then(|now| now.as_secs().checked_sub(timestamp))
         .is_some_and(|age| age <= 300)
 }
+fn equipped_preview_lines(preview: &Submission) -> Vec<String> {
+    let mut lines = Vec::new();
+    for row in &preview.equipped {
+        let name = preview
+            .items
+            .iter()
+            .find(|item| item.item_id == row.item_id)
+            .map(|item| item.name.as_str())
+            .unwrap_or("Name unavailable");
+        lines.push(format!("Slot {} | {}: {}", row.slot, row.item_id, name));
+        lines.push(match row.item_level {
+            Some(level) => format!("Item level: {level}"),
+            None => "Item level: unavailable".into(),
+        });
+        for stat in &row.base_stats {
+            lines.push(format!("Base {}: {}", stat.name, stat.value));
+        }
+        for effect in &row.effects {
+            lines.push(format!("Effect: {effect}"));
+        }
+    }
+    lines
+}
 enum ResultMessage {
     Fetched(Result<MissingItems, String>),
     Sent(Result<Receipt, String>),
 }
 struct Pending {
     epoch: u64,
+    page_cursor: u32,
+    page_binding: Option<Binding>,
     receiver: Receiver<ResultMessage>,
 }
 #[derive(Default)]
@@ -59,8 +84,36 @@ pub struct WikiView {
     preview_request: Option<u64>,
     pending: Option<Pending>,
     status: String,
+    equipment_cursor: u32,
+    catalog: bool,
+    catalog_cursor: u32,
+    batch_next_cursor: u32,
+    catalog_exhausted: bool,
 }
 impl WikiView {
+    fn reset_equipment_page(&mut self) {
+        if self.equipment_cursor != 0 {
+            self.missing = None;
+            self.fetch_attempted = false;
+        }
+        self.equipment_cursor = 0;
+    }
+    fn reset_catalog_cursor(&mut self) {
+        self.catalog_cursor = 0;
+        self.batch_next_cursor = 0;
+        self.catalog_exhausted = false;
+    }
+    fn change_mode(&mut self, catalog: bool) {
+        if self.preview.is_some() || self.pending.is_some() || self.capture_request.is_some() {
+            return;
+        }
+        if self.catalog != catalog {
+            self.reset_equipment_page();
+            self.catalog = catalog;
+            self.reset_catalog_cursor();
+            self.clear_capture();
+        }
+    }
     fn clear_capture(&mut self) {
         self.preview = None;
         self.capture_request = None;
@@ -70,6 +123,8 @@ impl WikiView {
         self.token = self.token.trim().chars().take(256).collect();
         self.epoch = self.epoch.wrapping_add(1);
         self.fetch_attempted = false;
+        self.reset_equipment_page();
+        self.reset_catalog_cursor();
         self.missing = None;
         self.clear_capture();
         self.status = if wiki_items::is_hex64(&self.token) {
@@ -87,7 +142,29 @@ impl WikiView {
         }
     }
     fn begin_fetch(&mut self) -> Option<(String, SyncSender<ResultMessage>)> {
-        if !wiki_items::is_hex64(&self.token) || self.pending.is_some() {
+        self.begin_fetch_page(0)
+    }
+    fn begin_equipment_page(&mut self) -> Option<(String, u32, SyncSender<ResultMessage>)> {
+        if self.catalog
+            || self.pending.is_some()
+            || self.capture_request.is_some()
+            || self.preview.is_some()
+        {
+            return None;
+        }
+        let cursor = self.missing.as_ref()?.next_cursor?;
+        if cursor <= self.equipment_cursor {
+            return None;
+        }
+        let (token, sender) = self.begin_fetch_page(cursor)?;
+        Some((token, cursor, sender))
+    }
+    fn begin_fetch_page(&mut self, cursor: u32) -> Option<(String, SyncSender<ResultMessage>)> {
+        if !wiki_items::is_hex64(&self.token)
+            || self.pending.is_some()
+            || self.preview.is_some()
+            || self.capture_request.is_some()
+        {
             return None;
         }
         self.fetch_attempted = true;
@@ -97,6 +174,8 @@ impl WikiView {
         let (sender, receiver) = mpsc::sync_channel(1);
         self.pending = Some(Pending {
             epoch: self.epoch,
+            page_cursor: cursor,
+            page_binding: self.binding.clone(),
             receiver,
         });
         Some((self.token.clone(), sender))
@@ -104,20 +183,28 @@ impl WikiView {
     fn poll(&mut self, view: &session::View) {
         let current = binding(view);
         if self.binding != current {
+            self.reset_equipment_page();
+            self.reset_catalog_cursor();
             self.clear_capture();
             self.binding = current;
         }
         if let Some(pending) = &self.pending {
             match pending.receiver.try_recv() {
                 Ok(result) => {
-                    let accept = pending.epoch == self.epoch;
+                    let cursor = pending.page_cursor;
+                    let accept = pending.epoch == self.epoch
+                        && (cursor == 0 || pending.page_binding == self.binding);
                     self.pending = None;
+                    if !accept && cursor != 0 {
+                        self.fetch_attempted = false;
+                    }
                     if accept {
                         match result {
                             ResultMessage::Fetched(Ok(missing)) => match missing.validate() {
                                 Ok(()) => {
+                                    self.equipment_cursor = cursor;
                                     self.status = format!(
-                                        "Linked to {} (world {}): {} unresolved items.",
+                                        "Linked to {} (world {}): {} equipped item definitions.",
                                         missing.character.name,
                                         missing.character.world_id,
                                         missing.items.len()
@@ -128,10 +215,20 @@ impl WikiView {
                             },
                             ResultMessage::Sent(Ok(receipt)) => {
                                 self.status = format!(
-                                    "Published {} item names; {} skipped.",
-                                    receipt.submitted, receipt.skipped
+                                    "Published {} item details; {} skipped. Icons uploaded: {}; missing: {}.{}",
+                                    receipt.submitted,
+                                    receipt.skipped,
+                                    receipt.icons_uploaded,
+                                    receipt.icons_missing,
+                                    if receipt.icons_missing > 0 {
+                                        " Artwork is incomplete for this batch."
+                                    } else {
+                                        ""
+                                    }
                                 );
-                                self.missing = None;
+                                if self.catalog {
+                                    self.catalog_cursor = self.batch_next_cursor;
+                                }
                                 self.clear_capture();
                             }
                             ResultMessage::Fetched(Err(error))
@@ -171,12 +268,19 @@ impl WikiView {
                     .is_none_or(|b| b.build != capture.build)
             {
                 self.status = "Capture expired or the build changed. Capture again.".into();
+            } else if capture.catalog != self.catalog {
+                self.status = "Capture mode changed. Capture again.".into();
+            } else if capture.catalog && capture.items.is_empty() {
+                self.catalog_exhausted = capture.next_cursor == self.catalog_cursor;
+                self.catalog_cursor = capture.next_cursor;
+                self.status=if self.catalog_exhausted {"No more loaded item IDs were found after this cursor. This is not a complete game catalog."} else {"This batch had no loaded substantive item details. Capture the next batch to continue."}.into();
             } else if let Some(missing) = &self.missing {
                 match missing.submission(capture) {
                     Ok(preview) => {
+                        self.batch_next_cursor = capture.next_cursor;
                         self.preview = Some(preview);
                         self.preview_request = Some(request);
-                        self.status = "Preview ready. Check names before publishing.".into();
+                        self.status = "Preview ready. Check details before publishing.".into();
                     }
                     Err(error) => self.status = error,
                 }
@@ -197,14 +301,14 @@ impl WikiView {
         let Some(missing) = &self.missing else {
             return Some("Load the linked wiki item list first. Use Refresh to retry.");
         };
-        if missing.items.is_empty() {
-            return Some("No unresolved equipped items. Refresh equipment on the wiki if needed.");
+        if !self.catalog && missing.items.is_empty() {
+            return Some("No equipped items. Refresh equipment on the wiki if needed.");
         }
         if !view.connected {
-            return Some("Connect to the running game to capture item names.");
+            return Some("Connect to the running game to capture item details.");
         }
         if view.paused {
-            return Some("Resume the game connection to capture item names.");
+            return Some("Resume the game connection to capture item details.");
         }
         if view.build.is_none() {
             return Some("Wait for the game build to be verified.");
@@ -224,11 +328,11 @@ impl WikiView {
         self.capture_reason(view).or_else(|| {
             self.preview
                 .is_none()
-                .then_some("Capture item names and check the preview before sending.")
+                .then_some("Capture item details and check the preview before sending.")
         })
     }
     fn begin_capture(&mut self, view: &session::View, queue: impl FnOnce(Vec<u32>) -> u64) {
-        if self.capture_reason(view).is_some() {
+        if self.preview.is_some() || self.capture_reason(view).is_some() {
             return;
         }
         self.clear_capture();
@@ -245,7 +349,25 @@ impl WikiView {
         self.status = if id == 0 {
             "Capture could not be queued."
         } else {
-            "Reading requested item names..."
+            "Reading requested item details..."
+        }
+        .into();
+    }
+    fn begin_catalog_capture(&mut self, view: &session::View, queue: impl FnOnce(u32) -> u64) {
+        if !self.catalog
+            || self.catalog_exhausted
+            || self.preview.is_some()
+            || self.capture_reason(view).is_some()
+        {
+            return;
+        }
+        self.clear_capture();
+        let request = queue(self.catalog_cursor);
+        self.capture_request = (request != 0).then_some(request);
+        self.status = if request == 0 {
+            "Capture could not be queued."
+        } else {
+            "Reading at most 50 loaded item IDs..."
         }
         .into();
     }
@@ -261,9 +383,11 @@ impl WikiView {
         let (sender, receiver) = mpsc::sync_channel(1);
         self.pending = Some(Pending {
             epoch: self.epoch,
+            page_cursor: 0,
+            page_binding: None,
             receiver,
         });
-        self.status = "Publishing item names...".into();
+        self.status = "Publishing item details...".into();
         Some((self.token.clone(), submission, sender))
     }
     pub fn show(
@@ -273,8 +397,8 @@ impl WikiView {
         controller: &mut session::Controller,
     ) {
         self.poll(view);
-        ui.heading("Wiki item names");
-        ui.label("Sending publishes these item names directly to the shared wiki catalog for everyone. Your wiki account history records the contribution.");
+        ui.heading("Wiki item details");
+        ui.label("Sending publishes these item details directly to the shared wiki catalog for everyone. Your wiki account history records the contribution.");
         ui.hyperlink_to(
             "Open wiki token settings",
             "https://dcuo-wiki.com/equipment-identification/#overlay-access",
@@ -297,7 +421,9 @@ impl WikiView {
         }
         let retry = ui
             .add_enabled(
-                wiki_items::is_hex64(&self.token) && self.pending.is_none(),
+                wiki_items::is_hex64(&self.token)
+                    && self.pending.is_none()
+                    && self.preview.is_none(),
                 egui::Button::new("Refresh wiki items"),
             )
             .clicked();
@@ -306,20 +432,75 @@ impl WikiView {
                 let _ = sender.send(ResultMessage::Fetched(wiki_items::fetch(&token)));
             });
         }
+        let next_enabled = !self.catalog
+            && self
+                .missing
+                .as_ref()
+                .and_then(|page| page.next_cursor)
+                .is_some()
+            && self.pending.is_none()
+            && self.capture_request.is_none()
+            && self.preview.is_none();
+        if ui
+            .add_enabled(next_enabled, egui::Button::new("Next equipment batch"))
+            .clicked()
+            && let Some((token, cursor, sender)) = self.begin_equipment_page()
+        {
+            std::thread::spawn(move || {
+                let _ = sender.send(ResultMessage::Fetched(wiki_items::fetch_page(
+                    &token,
+                    Some(cursor),
+                )));
+            });
+        }
         if let Some(missing) = &self.missing {
             ui.label(format!(
-                "Wiki character: {} | world {} | {} unresolved items",
+                "Wiki character: {} | world {} | {} equipped item definitions",
                 missing.character.name,
                 missing.character.world_id,
                 missing.items.len()
             ));
         }
+        let mode_enabled =
+            self.preview.is_none() && self.pending.is_none() && self.capture_request.is_none();
+        let mut catalog = self.catalog;
+        ui.add_enabled_ui(mode_enabled, |ui| {
+            ui.radio_value(&mut catalog, false, "Equipped items");
+            ui.radio_value(&mut catalog, true, "Loaded item catalog");
+        });
+        self.change_mode(catalog);
+        if self.catalog {
+            ui.small("Each batch reads up to 50 IDs already loaded by the game. It may include items beyond your equipment and does not cover the whole game catalog.");
+        }
         let reason = self.capture_reason(view);
+        let label = if self.catalog {
+            if self.catalog_cursor == 0 {
+                "Capture loaded items"
+            } else {
+                "Capture next loaded items"
+            }
+        } else {
+            "Capture item details"
+        };
         if ui
-            .add_enabled(reason.is_none(), egui::Button::new("Capture item names"))
+            .add_enabled(
+                reason.is_none() && self.preview.is_none() && !self.catalog_exhausted,
+                egui::Button::new(label),
+            )
             .clicked()
         {
-            self.begin_capture(view, |ids| controller.capture_wiki_items(ids));
+            if self.catalog {
+                self.begin_catalog_capture(view, |cursor| {
+                    controller.capture_wiki_catalog_items(cursor)
+                });
+            } else {
+                self.begin_capture(view, |ids| controller.capture_wiki_items(ids));
+            }
+        }
+        if self.preview.is_some() && self.pending.is_none() && ui.button("Clear preview").clicked()
+        {
+            self.catalog_cursor = self.batch_next_cursor;
+            self.clear_capture();
         }
         if let Some(reason) = reason {
             ui.small(reason);
@@ -329,7 +510,7 @@ impl WikiView {
         }
         if let Some(preview) = &self.preview {
             ui.label(format!(
-                "{} | world {} | {} names",
+                "{} | world {} | {} items",
                 preview.character.name,
                 preview.character.world_id,
                 preview.items.len()
@@ -337,19 +518,55 @@ impl WikiView {
             egui::ScrollArea::vertical()
                 .max_height(260.0)
                 .show(ui, |ui| {
+                    for line in equipped_preview_lines(preview) {
+                        ui.label(line);
+                    }
+                    if !preview.equipped.is_empty() {
+                        ui.separator();
+                    }
                     for item in &preview.items {
                         ui.label(format!("{}: {}", item.item_id, item.name));
+                        if let Some(description) = &item.details.description {
+                            ui.label(description);
+                        }
+                        if let Some(style) = &item.details.style {
+                            ui.small(format!("Style: {style}"));
+                        }
+                        if let Some(icon) = &item.details.icon_resource {
+                            ui.small(format!("Icon: {icon}"));
+                        }
+                        if let Some(level) = item.details.required_level {
+                            ui.small(format!("Required level: {level}"));
+                        }
+                        if let Some(cr) = item.details.required_combat_rating {
+                            ui.small(format!("Required combat rating: {cr}"));
+                        }
+                        if let Some(quality) = item.details.quality_id {
+                            ui.small(format!("Quality ID: {quality}"));
+                        }
+                        if let Some(category) = item.details.category_id {
+                            ui.small(format!("Category ID: {category}"));
+                        }
+                        ui.separator();
                     }
                 });
         }
         let reason = self.send_reason(view);
         if ui
-            .add_enabled(reason.is_none(), egui::Button::new("Send names to wiki"))
+            .add_enabled(
+                reason.is_none(),
+                egui::Button::new("Send item details to wiki"),
+            )
             .clicked()
             && let Some((token, submission, sender)) = self.begin_send(view)
         {
+            let icon_source = view.build.as_ref().and_then(|b| b.map_source.clone());
             std::thread::spawn(move || {
-                let _ = sender.send(ResultMessage::Sent(wiki_items::submit(&token, &submission)));
+                let _ = sender.send(ResultMessage::Sent(wiki_items::submit_with_icons(
+                    &token,
+                    &submission,
+                    icon_source.as_deref(),
+                )));
             });
         }
         if let Some(reason) = reason {
@@ -386,6 +603,7 @@ mod tests {
     }
     fn missing() -> MissingItems {
         MissingItems {
+            next_cursor: None,
             character: wiki_items::Character {
                 id: "1".into(),
                 name: "Hero".into(),
@@ -396,9 +614,16 @@ mod tests {
     }
     fn capture(request: u64, name: &str) -> wiki_items::WikiCapture {
         wiki_items::WikiCapture {
+            catalog: false,
+            next_cursor: 0,
+            equipped: Vec::new(),
             request_id: request,
             player_name: name.into(),
-            items: vec![(7, "Item name".into())],
+            items: vec![wiki_items::NamedItem {
+                item_id: 7,
+                name: "Item name".into(),
+                details: Default::default(),
+            }],
             build: "a".repeat(64),
             captured_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -463,6 +688,7 @@ mod tests {
             .send(ResultMessage::Sent(Ok(Receipt {
                 submitted: 1,
                 skipped: 0,
+                ..Default::default()
             })))
             .unwrap();
         state.poll(&view);
@@ -527,7 +753,7 @@ mod tests {
                 0 => result.player_name = "Other".into(),
                 1 => result.items.clear(),
                 2 => result.captured_at = 1,
-                _ => result.items[0].0 = 9,
+                _ => result.items[0].item_id = 9,
             };
             view.wiki_items = Some(result);
             state.poll(&view);
@@ -576,12 +802,7 @@ mod tests {
         state.poll(&view);
         assert!(state.capture_reason(&view).unwrap().contains("fresh"));
         state.missing.as_mut().unwrap().items.clear();
-        assert!(
-            state
-                .capture_reason(&view)
-                .unwrap()
-                .contains("No unresolved")
-        );
+        assert!(state.capture_reason(&view).unwrap().contains("No equipped"));
     }
     #[test]
     fn stale_token_publication_receipt_cannot_change_new_pairing() {
@@ -597,11 +818,210 @@ mod tests {
             .send(ResultMessage::Sent(Ok(Receipt {
                 submitted: 1,
                 skipped: 0,
+                ..Default::default()
             })))
             .unwrap();
         state.poll(&view);
         assert!(!state.status.contains("Published"));
         assert!(state.missing.is_none());
         assert!(!state.fetch_attempted);
+    }
+    #[test]
+    fn catalog_preview_requires_send_or_clear_and_resets_on_owner_change() {
+        let mut view = live();
+        let mut state = paired(&view);
+        state.change_mode(true);
+        state.begin_catalog_capture(&view, |cursor| {
+            assert_eq!(cursor, 0);
+            17
+        });
+        let mut result = capture(17, "Hero");
+        result.catalog = true;
+        result.next_cursor = 999;
+        result.items[0].item_id = 999;
+        result.items[0].details.description = Some("Details".into());
+        view.wiki_items = Some(result);
+        state.poll(&view);
+        assert!(state.preview.is_some());
+        assert_eq!(state.catalog_cursor, 0);
+        assert_eq!(state.batch_next_cursor, 999);
+        state.begin_catalog_capture(&view, |_| panic!("must retain unsent preview"));
+        state.change_mode(false);
+        assert!(state.catalog);
+        assert!(state.preview.is_some());
+        view.native.as_mut().unwrap().feats_binding = Some((0x20000, 9));
+        state.poll(&view);
+        assert!(state.preview.is_none());
+        assert_eq!(state.catalog_cursor, 0);
+        assert_eq!(state.batch_next_cursor, 0);
+    }
+    #[test]
+    fn empty_catalog_batches_advance_cursor_without_claiming_complete_catalog() {
+        let mut view = live();
+        let mut state = paired(&view);
+        state.change_mode(true);
+        state.begin_catalog_capture(&view, |_| 1);
+        let mut result = capture(1, "Hero");
+        result.catalog = true;
+        result.next_cursor = 50;
+        result.items.clear();
+        view.wiki_items = Some(result);
+        state.poll(&view);
+        assert_eq!(state.catalog_cursor, 50);
+        assert!(state.preview.is_none());
+        assert!(!state.catalog_exhausted);
+        state.begin_catalog_capture(&view, |cursor| {
+            assert_eq!(cursor, 50);
+            2
+        });
+        let mut result = capture(2, "Hero");
+        result.catalog = true;
+        result.next_cursor = 50;
+        result.items.clear();
+        view.wiki_items = Some(result);
+        state.poll(&view);
+        assert!(state.catalog_exhausted);
+        assert!(state.status.contains("not a complete game catalog"));
+    }
+    #[test]
+    fn successful_catalog_send_advances_without_losing_pairing_and_token_resets_cursor() {
+        let mut view = live();
+        let mut state = paired(&view);
+        state.change_mode(true);
+        state.begin_catalog_capture(&view, |_| 1);
+        let mut result = capture(1, "Hero");
+        result.catalog = true;
+        result.next_cursor = 123;
+        result.items[0].details.description = Some("Details".into());
+        view.wiki_items = Some(result);
+        state.poll(&view);
+        let (_, submission, sender) = state.begin_send(&view).unwrap();
+        assert_eq!(submission.scope, "catalog");
+        assert!(submission.equipped.is_empty());
+        sender
+            .send(ResultMessage::Sent(Ok(Receipt {
+                submitted: 1,
+                skipped: 0,
+                ..Default::default()
+            })))
+            .unwrap();
+        state.poll(&view);
+        assert_eq!(state.catalog_cursor, 123);
+        assert!(state.missing.is_some());
+        assert!(state.preview.is_none());
+        state.token_changed();
+        assert_eq!(state.catalog_cursor, 0);
+        assert_eq!(state.batch_next_cursor, 0);
+    }
+    #[test]
+    fn partial_icon_receipt_keeps_incomplete_artwork_visible() {
+        let mut view = live();
+        let mut state = paired(&view);
+        state.begin_capture(&view, |_| 1);
+        view.wiki_items = Some(capture(1, "Hero"));
+        state.poll(&view);
+        let (_, _, sender) = state.begin_send(&view).unwrap();
+        sender
+            .send(ResultMessage::Sent(Ok(Receipt {
+                submitted: 1,
+                skipped: 0,
+                icons_uploaded: 0,
+                icons_missing: 1,
+            })))
+            .unwrap();
+        state.poll(&view);
+        assert!(state.status.contains("missing: 1"));
+        assert!(state.status.contains("Artwork is incomplete"));
+    }
+    #[test]
+    fn equipped_preview_discloses_distinct_slot_levels_stats_and_effects() {
+        let missing = missing();
+        let mut capture = capture(1, "Hero");
+        capture.equipped = vec![
+            crate::equipped_items::EquippedItem {
+                slot: "24".into(),
+                item_id: 7,
+                item_level: Some(381),
+                effects: vec!["First effect".into()],
+                base_stats: vec![crate::equipped_items::EquippedStat {
+                    name: "Health".into(),
+                    value: 100,
+                }],
+            },
+            crate::equipped_items::EquippedItem {
+                slot: "25".into(),
+                item_id: 7,
+                item_level: Some(407),
+                effects: vec![],
+                base_stats: vec![crate::equipped_items::EquippedStat {
+                    name: "Health".into(),
+                    value: 200,
+                }],
+            },
+        ];
+        let preview = missing.submission(&capture).unwrap();
+        let lines = equipped_preview_lines(&preview);
+        assert_eq!(
+            lines,
+            vec![
+                "Slot 24 | 7: Item name",
+                "Item level: 381",
+                "Base Health: 100",
+                "Effect: First effect",
+                "Slot 25 | 7: Item name",
+                "Item level: 407",
+                "Base Health: 200"
+            ]
+        );
+    }
+    #[test]
+    fn next_equipment_batch_uses_cursor_and_preserves_requested_id_membership() {
+        let mut view = live();
+        let mut state = paired(&view);
+        state.missing.as_mut().unwrap().next_cursor = Some(50);
+        let (_, cursor, sender) = state.begin_equipment_page().unwrap();
+        assert_eq!(cursor, 50);
+        let mut page = missing();
+        page.items = vec![wiki_items::ItemId { item_id: 51 }];
+        page.next_cursor = Some(100);
+        sender.send(ResultMessage::Fetched(Ok(page))).unwrap();
+        state.poll(&view);
+        assert_eq!(state.equipment_cursor, 50);
+        state.begin_capture(&view, |ids| {
+            assert_eq!(ids, vec![51]);
+            2
+        });
+        let mut result = capture(2, "Hero");
+        result.items[0].item_id = 51;
+        view.wiki_items = Some(result);
+        state.poll(&view);
+        assert!(state.preview.is_some());
+        assert!(state.begin_equipment_page().is_none());
+        assert!(state.begin_fetch().is_none());
+        state.clear_capture();
+        let (_, cursor, _) = state.begin_equipment_page().unwrap();
+        assert_eq!(cursor, 100);
+    }
+    #[test]
+    fn stale_owner_cannot_restore_pending_equipment_page_and_refresh_starts_at_zero() {
+        let mut view = live();
+        let mut state = paired(&view);
+        state.missing.as_mut().unwrap().next_cursor = Some(50);
+        let (_, _, sender) = state.begin_equipment_page().unwrap();
+        view.native.as_mut().unwrap().feats_binding = Some((0x30000, 9));
+        state.poll(&view);
+        let mut page = missing();
+        page.items[0].item_id = 51;
+        page.next_cursor = Some(100);
+        sender.send(ResultMessage::Fetched(Ok(page))).unwrap();
+        state.poll(&view);
+        assert_eq!(state.equipment_cursor, 0);
+        assert!(state.missing.is_none());
+        assert!(!state.fetch_attempted);
+        let (_, sender) = state.begin_fetch().unwrap();
+        sender.send(ResultMessage::Fetched(Ok(missing()))).unwrap();
+        state.poll(&view);
+        assert_eq!(state.equipment_cursor, 0);
+        assert_eq!(state.missing.as_ref().unwrap().items[0].item_id, 7);
     }
 }

@@ -553,17 +553,22 @@ signals or changed ownership. This identifies an area, not a floor or calibratio
 
 ## Wiki item contribution
 
-The companion supports explicit, read-only capture of missing equipped item names
-for dcuo-wiki.com. One bounded operation on the selected session reader resolves
-only IDs requested by the linked wiki profile; unsupported builds and changing
-character bindings fail closed. Preview names before an explicit send. The
-companion token stays in memory, has no moderation/article permissions, and
-captured names publish directly with history. Raw memory, addresses, chat and positions are
-not uploaded. Item stats/icons remain outside this capture until independently
-proven. See the wiki repository's docs/overlay-item-capture.md for the API contract.
+The companion supports explicit, read-only capture of equipped and loaded catalog
+item definitions for dcuo-wiki.com. The exact-build selected-session reader bounds
+cache batches to 50 IDs and rechecks character/source identity. Preview before
+explicit Send. Definition fields and exact decoded artwork may create/update
+substantive wiki item pages; existing source mappings retain their articles.
+The token grants item contributions only and stays in memory. No raw memory,
+addresses, chat, positions or personal snapshots are uploaded or committed.
+
+Equipped levels/effects/base stats remain separate by character/world/slot/itemID;
+base stats do not claim socket or conditional bonuses. Missing fields/icons remain
+explicitly unavailable. Names/enum IDs alone do not create empty articles. Icon
+resources resolve exact GFX symbols and texture exports, never positional/name
+inference. See the wiki docs/overlay-item-capture.md for API/version/limits.
 
 Wiki token onboarding uses the authenticated wiki response for the linked
-character/world and missing equipment IDs. Pasting a complete token loads that
+character/world and equipped item IDs, including known names. Pasting a complete token loads that
 account data once without requiring a separate character-reference lookup or a
 running game. Capture still requires a fresh supported selected session, and its
 memory-read character name must match the linked wiki character. Loading gaps

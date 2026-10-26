@@ -584,6 +584,19 @@ fn collectible_position(
     Ok(position)
 }
 
+fn capture_wiki_equipment(
+    base: usize,
+    names: &crate::broker_memory::ItemNames,
+    read: impl FnMut(usize, usize) -> Result<Vec<u8>, String>,
+) -> Result<Vec<crate::equipped_items::EquippedItem>, String> {
+    let ids = names
+        .items
+        .iter()
+        .map(|item| item.item_id)
+        .collect::<Vec<_>>();
+    crate::equipped_items::capture(base, &ids, read)
+}
+
 impl Reader {
     pub fn new(pid: i32) -> Result<Self, String> {
         Self::attach(process::candidate(pid).map_err(|e| e.to_string())?)
@@ -1621,6 +1634,13 @@ impl Reader {
                 }
                 self.read(address, len)
             })?;
+        let equipped =
+            capture_wiki_equipment(self.candidate.mapping.start, &names, |address, len| {
+                if started.elapsed() > std::time::Duration::from_millis(500) {
+                    return Err("Item read exceeded time budget".into());
+                }
+                self.read(address, len)
+            })?;
         let after = self.sample()?;
         if names.entity != binding.0
             || after.feats_binding != Some(binding)
@@ -1630,8 +1650,71 @@ impl Reader {
         }
         Ok(crate::wiki_items::WikiCapture {
             request_id,
+            catalog: false,
+            next_cursor: 0,
             player_name: names.player_name,
             items: names.items,
+            equipped,
+            build: PROFILE_ID.into(),
+            captured_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "System clock is before Unix epoch")?
+                .as_secs(),
+        })
+    }
+    /// Capture a bounded batch from the existing reader's loaded definition cache.
+    pub fn capture_wiki_catalog_items(
+        &mut self,
+        request_id: u64,
+        after_cursor: u32,
+    ) -> Result<crate::wiki_items::WikiCapture, String> {
+        let before = self.sample()?;
+        let binding = before
+            .feats_binding
+            .ok_or("Current character binding is unavailable")?;
+        self.scope_start.set(Instant::now());
+        self.scope_bytes.set(0);
+        self.scope_reads.set(0);
+        let started = Instant::now();
+        let ids = crate::broker_memory::cached_item_ids(
+            self.candidate.mapping.start,
+            after_cursor,
+            |address, len| {
+                if started.elapsed() > std::time::Duration::from_millis(500) {
+                    return Err("Catalog read exceeded time budget".into());
+                }
+                self.read(address, len)
+            },
+        )?;
+        let next_cursor = ids.last().copied().unwrap_or(after_cursor);
+        let names = crate::broker_memory::item_names(
+            self.candidate.mapping.start,
+            &ids,
+            |address, len| {
+                if started.elapsed() > std::time::Duration::from_millis(750) {
+                    return Err("Catalog read exceeded time budget".into());
+                }
+                self.read(address, len)
+            },
+        )?;
+        let after = self.sample()?;
+        if names.entity != binding.0
+            || after.feats_binding != Some(binding)
+            || !before.same_character_owner(&after)
+        {
+            return Err("Character changed during catalog capture; try again".into());
+        }
+        Ok(crate::wiki_items::WikiCapture {
+            request_id,
+            catalog: true,
+            next_cursor,
+            player_name: names.player_name,
+            items: names
+                .items
+                .into_iter()
+                .filter(|item| item.details.substantive())
+                .collect(),
+            equipped: Vec::new(),
             build: PROFILE_ID.into(),
             captured_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2869,5 +2952,61 @@ mod tests {
             world_chain: None,
         }));
         assert_ne!(original, replaced);
+    }
+    #[test]
+    fn partial_definition_capture_omits_equipped_rows_without_definitions() {
+        let base = 0x10000000;
+        let manager = 0x20000000;
+        let entity = 0x21000000;
+        let data = 0x22000000;
+        let nodes = 0x23000000;
+        let component = 0x24000000;
+        let owner = 0x25000000;
+        let slots = 0x26000000;
+        let entry = 0x27000000;
+        let mut memory = std::collections::HashMap::new();
+        let mut put = |address: usize, bytes: &[u8]| {
+            for (i, b) in bytes.iter().enumerate() {
+                memory.insert(address + i, *b);
+            }
+        };
+        for (a, v) in [
+            (base + 0x2134130, manager),
+            (manager + 0x94, entity),
+            (entity + 8, data),
+            (data + 0x90, nodes),
+            (nodes + 0x1c + 0x14, component),
+            (component + 0xac, owner),
+            (owner + 0x1c, slots),
+            (slots, entry),
+            (slots + 8, entry + 0x1000),
+        ] {
+            put(a, &(v as u64).to_le_bytes());
+        }
+        for (a, v) in [
+            (data + 0x98, 1u32),
+            (nodes + 0x1c + 0x10, 0x16),
+            (entry + 0x10 + 0x298, 123),
+            (entry + 0x1000 + 0x10 + 0x298, 456),
+        ] {
+            put(a, &v.to_le_bytes());
+        }
+        put(owner + 0x14, &2u16.to_le_bytes());
+        let names = crate::broker_memory::ItemNames {
+            entity,
+            player_name: "Hero".into(),
+            items: vec![crate::wiki_items::NamedItem {
+                item_id: 123,
+                name: "Loaded definition".into(),
+                ..Default::default()
+            }],
+        };
+        let rows = capture_wiki_equipment(base, &names, |a, n| {
+            Ok((a..a + n).map(|i| *memory.get(&i).unwrap_or(&0)).collect())
+        })
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].item_id, 123);
+        assert_eq!(rows[0].slot, "0");
     }
 }

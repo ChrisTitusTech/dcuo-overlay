@@ -37,7 +37,7 @@ pub struct Snapshot {
 pub struct ItemNames {
     pub entity: usize,
     pub player_name: String,
-    pub items: Vec<(u32, String)>,
+    pub items: Vec<crate::wiki_items::NamedItem>,
 }
 
 /// Caller establishes exact process/build identity before using these offsets.
@@ -71,8 +71,15 @@ pub fn item_names(
     reader.remember(address, &bytes)?;
     let mut items = Vec::with_capacity(ids.len());
     for &id in ids {
-        if let Some(name) = reader.item_name(base, manager, id)? {
-            items.push((id, name));
+        if let Some(definition) = reader.item_definition(base, manager, id)?
+            && let Some(name) = reader.definition_name(definition)?
+        {
+            let details = reader.definition_details(definition)?;
+            items.push(crate::wiki_items::NamedItem {
+                item_id: id,
+                name,
+                details,
+            });
         }
     }
     // This capture's proof is intentionally stricter than Broker snapshots:
@@ -92,6 +99,75 @@ pub fn item_names(
         player_name,
         items,
     })
+}
+
+/// Enumerate one ascending batch of already-loaded item-definition cache keys.
+/// This reads no instances and never asks the game to load a definition.
+pub fn cached_item_ids(
+    base: usize,
+    after: u32,
+    read: impl FnMut(usize, usize) -> Result<Vec<u8>, String>,
+) -> Result<Vec<u32>, String> {
+    let mut reader = Reader {
+        read,
+        calls: 0,
+        bytes: 0,
+        name_proofs: BTreeMap::new(),
+        name_nodes: BTreeMap::new(),
+        named_wrappers: HashSet::new(),
+    };
+    let manager = pointer(address_at(&reader.watched(add(base, 0x2134130)?, 8)?, 0)?)?;
+    let root = address_at(&reader.watched(add(manager, 0x21cc)?, 8)?, 0)?;
+    // Explicit bounds validate the binary-search ordering and reject aliases/cycles.
+    let mut stack = vec![(root, -1i64, u32::MAX as i64 + 1, false)];
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+    while let Some((address, low, high, visit)) = stack.pop() {
+        if address == 0 {
+            continue;
+        }
+        if visit {
+            let node = reader
+                .name_nodes
+                .get(&address)
+                .ok_or("Missing item cache proof")?;
+            if address_at(node, 8)? == add(base, 0x2153402)? {
+                ids.push(u32_at(node, 0x50));
+                if ids.len() == 50 {
+                    break;
+                }
+            }
+            continue;
+        }
+        if seen.len() >= 4096 || !seen.insert(address) {
+            return Err("Item catalog cache traversal exceeds bound or cycles".into());
+        }
+        pointer(address)?;
+        let node: [u8; 0x80] = reader
+            .watched(address, 0x80)?
+            .try_into()
+            .map_err(|_| "Short item cache node")?;
+        let key = u32_at(&node, 0x50) as i64;
+        if key <= low || key >= high {
+            return Err("Invalid item catalog cache ordering".into());
+        }
+        let left = address_at(&node, 0x60)?;
+        let right = address_at(&node, 0x68)?;
+        reader.name_nodes.insert(address, node);
+        if key <= after as i64 {
+            stack.push((right, key, high, false));
+        } else {
+            stack.push((right, key, high, false));
+            stack.push((address, low, high, true));
+            stack.push((left, low, key, false));
+        }
+    }
+    for ((a, n), before) in std::mem::take(&mut reader.name_proofs) {
+        if reader.bytes(a, n)? != before {
+            return Err("Item catalog cache changed; capture discarded".into());
+        }
+    }
+    Ok(ids)
 }
 
 fn add(address: usize, offset: usize) -> Result<usize, String> {
@@ -153,12 +229,12 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         }
         Ok(bytes)
     }
-    fn item_name(
+    fn item_definition(
         &mut self,
         base: usize,
         manager: usize,
         item_id: u32,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<usize>, String> {
         if item_id == 0 {
             return Ok(None);
         }
@@ -198,18 +274,62 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
                     return Ok(None);
                 }
                 pointer(definition)?;
-                let holder = self.watched(add(definition, 0x250)?, 16)?;
-                if u32_at(&holder, 8) == 0 {
-                    return Ok(None);
-                }
-                let (text_address, bytes, text) = self.item_string(&holder)?;
-                self.remember(text_address, &bytes)?;
                 self.named_wrappers.insert(address);
-                return Ok(Some(text));
+                return Ok(Some(definition));
             }
             address = address_at(&node, if item_id < key { 0x60 } else { 0x68 })?;
         }
         Err("Broker item name path exceeds bound".into())
+    }
+    fn item_name(
+        &mut self,
+        base: usize,
+        manager: usize,
+        item_id: u32,
+    ) -> Result<Option<String>, String> {
+        match self.item_definition(base, manager, item_id)? {
+            Some(definition) => self.definition_name(definition),
+            None => Ok(None),
+        }
+    }
+    fn definition_name(&mut self, definition: usize) -> Result<Option<String>, String> {
+        self.optional_definition_string(definition, 0x250, 512)
+    }
+    fn optional_definition_string(
+        &mut self,
+        definition: usize,
+        offset: usize,
+        max: usize,
+    ) -> Result<Option<String>, String> {
+        let holder = self.watched(add(definition, offset)?, 16)?;
+        if u32_at(&holder, 8) == 0 {
+            return Ok(None);
+        }
+        let (address, bytes, text) = self.bounded_text(&holder, max, offset == 0x1a8)?;
+        self.remember(address, &bytes)?;
+        Ok(Some(text))
+    }
+    fn definition_details(
+        &mut self,
+        definition: usize,
+    ) -> Result<crate::wiki_items::ItemDetails, String> {
+        let description = self.optional_definition_string(definition, 0x1a8, 4096)?;
+        let icon_resource = self.optional_definition_string(definition, 0x168, 512)?;
+        let style = self.optional_definition_string(definition, 0x4a8, 512)?;
+        let level = self.watched(add(definition, 0x828)?, 1)?[0];
+        let cr = self.watched(add(definition, 0x82a)?, 2)?;
+        let category = u32_at(&self.watched(add(definition, 0x83c)?, 4)?, 0);
+        let quality = u32_at(&self.watched(add(definition, 0x840)?, 4)?, 0);
+        Ok(crate::wiki_items::ItemDetails {
+            icon_png: None,
+            description,
+            style,
+            icon_resource,
+            required_level: Some(level),
+            required_combat_rating: Some(u16::from_le_bytes([cr[0], cr[1]])),
+            quality_id: (quality != u32::MAX).then_some(quality),
+            category_id: (category != u32::MAX).then_some(category),
+        })
     }
     fn item_string(&mut self, holder: &[u8]) -> Result<(usize, Vec<u8>, String), String> {
         self.bounded_string(holder, 512)
@@ -222,6 +342,14 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         holder: &[u8],
         max: usize,
     ) -> Result<(usize, Vec<u8>, String), String> {
+        self.bounded_text(holder, max, false)
+    }
+    fn bounded_text(
+        &mut self,
+        holder: &[u8],
+        max: usize,
+        whitespace: bool,
+    ) -> Result<(usize, Vec<u8>, String), String> {
         let address = pointer(address_at(holder, 0)?)?;
         let len = u32_at(holder, 8) as usize;
         let capacity = u32_at(holder, 12) as usize;
@@ -231,7 +359,11 @@ impl<F: FnMut(usize, usize) -> Result<Vec<u8>, String>> Reader<F> {
         let bytes = self.bytes(address, len)?;
         let text =
             String::from_utf8(bytes.clone()).map_err(|_| "Unsupported Broker name encoding")?;
-        if text.trim().is_empty() || text.chars().any(char::is_control) {
+        if text.trim().is_empty()
+            || text
+                .chars()
+                .any(|ch| ch.is_control() && !(whitespace && matches!(ch, '\n' | '\r' | '\t')))
+        {
             return Err("Invalid Broker name text".into());
         }
         Ok((address, bytes, text))
@@ -526,13 +658,80 @@ mod tests {
         .unwrap();
         assert_eq!(result.player_name, "Player");
         assert_eq!(result.entity, ENTITY);
-        assert_eq!(result.items, vec![(123, "Synthetic item".into())]);
+        assert_eq!(
+            result.items,
+            vec![crate::wiki_items::NamedItem {
+                item_id: 123,
+                name: "Synthetic item".into(),
+                details: crate::wiki_items::ItemDetails {
+                    required_level: Some(0),
+                    required_combat_rating: Some(0),
+                    quality_id: Some(0),
+                    category_id: Some(0),
+                    ..Default::default()
+                }
+            }]
+        );
         assert!(
             item_names(BASE, &[], |a, n| m.read(a, n))
                 .unwrap()
                 .items
                 .is_empty()
         );
+    }
+    #[test]
+    fn item_details_preserve_definition_fields_and_recheck_each_source() {
+        let mut m = named_fixture();
+        let mut sources = Vec::new();
+        for (offset, address, text) in [
+            (0x168, ITEM_NAME + 128, "Package.Icon"),
+            (0x1a8, ITEM_NAME + 256, "Useful description"),
+            (0x4a8, ITEM_NAME + 384, "Synthetic style"),
+        ] {
+            m.u64(DEFINITION + offset, address as u64);
+            m.u32(DEFINITION + offset + 8, text.len() as u32);
+            m.u32(DEFINITION + offset + 12, 64);
+            m.put(address, text.as_bytes());
+            sources.extend([DEFINITION + offset, address]);
+        }
+        m.put(DEFINITION + 0x828, &[30]);
+        m.put(DEFINITION + 0x82a, &100u16.to_le_bytes());
+        m.u32(DEFINITION + 0x83c, 14);
+        m.u32(DEFINITION + 0x840, 4);
+        let result = item_names(BASE, &[123], |a, n| m.read(a, n)).unwrap();
+        let details = &result.items[0].details;
+        assert_eq!(details.description.as_deref(), Some("Useful description"));
+        assert_eq!(details.icon_resource.as_deref(), Some("Package.Icon"));
+        assert_eq!(details.style.as_deref(), Some("Synthetic style"));
+        assert_eq!(details.required_level, Some(30));
+        assert_eq!(details.required_combat_rating, Some(100));
+        assert_eq!(details.category_id, Some(14));
+        assert_eq!(details.quality_id, Some(4));
+        sources.extend([
+            DEFINITION + 0x828,
+            DEFINITION + 0x82a,
+            DEFINITION + 0x83c,
+            DEFINITION + 0x840,
+        ]);
+        for changed in sources {
+            let mut reads = 0;
+            assert!(
+                item_names(BASE, &[123], |a, n| {
+                    let mut bytes = m.read(a, n)?;
+                    if a == changed {
+                        reads += 1;
+                        if reads == 2 {
+                            bytes[0] ^= 1;
+                        }
+                    }
+                    Ok(bytes)
+                })
+                .is_err(),
+                "mutated source {changed:x}"
+            );
+        }
+        m.u32(DEFINITION + 0x1b0, 4097);
+        assert!(item_names(BASE, &[123], |a, n| m.read(a, n)).is_err());
     }
     #[test]
     fn item_capture_rejects_invalid_ids_before_reading() {
@@ -897,5 +1096,73 @@ mod tests {
         );
         assert!((414..=MAX_READS).contains(&calls));
         assert!(bytes <= MAX_BYTES);
+    }
+    #[test]
+    fn catalog_batches_seek_ascending_and_recheck_sources() {
+        let mut m = named_fixture();
+        for index in 0..55 {
+            let address = NODE + index * 0x100;
+            m.u32(address + 0x50, index as u32 + 1);
+            m.u64(address + 8, (BASE + 0x2153402) as u64);
+            m.u64(address + 0x60, 0);
+            m.u64(
+                address + 0x68,
+                if index < 54 {
+                    (address + 0x100) as u64
+                } else {
+                    0
+                },
+            );
+        }
+        assert_eq!(
+            cached_item_ids(BASE, 0, |a, n| m.read(a, n)).unwrap(),
+            (1..=50).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            cached_item_ids(BASE, 50, |a, n| m.read(a, n)).unwrap(),
+            (51..=55).collect::<Vec<_>>()
+        );
+        assert!(
+            cached_item_ids(BASE, 55, |a, n| m.read(a, n))
+                .unwrap()
+                .is_empty()
+        );
+        for changed in [BASE + 0x2134130, MANAGER + 0x21cc, NODE, NODE + 20 * 0x100] {
+            let mut calls = 0;
+            assert!(
+                cached_item_ids(BASE, 0, |a, n| {
+                    let mut bytes = m.read(a, n)?;
+                    if a == changed {
+                        calls += 1;
+                        if calls == 2 {
+                            bytes[0] ^= 1;
+                        }
+                    }
+                    Ok(bytes)
+                })
+                .is_err()
+            );
+        }
+        m.u64(NODE + 0x68, NODE as u64);
+        assert!(cached_item_ids(BASE, 0, |a, n| m.read(a, n)).is_err());
+        m.u64(NODE + 0x68, (NODE + 0x100) as u64);
+        m.u32(NODE + 0x100 + 0x50, 1);
+        assert!(cached_item_ids(BASE, 0, |a, n| m.read(a, n)).is_err());
+    }
+    #[test]
+    fn multiline_description_is_captured_but_names_remain_strict() {
+        let mut m = named_fixture();
+        let text = b"Line one\nLine two\r\n\tIndented";
+        m.u64(DEFINITION + 0x1a8, (ITEM_NAME + 256) as u64);
+        m.u32(DEFINITION + 0x1b0, text.len() as u32);
+        m.u32(DEFINITION + 0x1b4, 64);
+        m.put(ITEM_NAME + 256, text);
+        let result = item_names(BASE, &[123], |a, n| m.read(a, n)).unwrap();
+        assert_eq!(
+            result.items[0].details.description.as_deref(),
+            Some(std::str::from_utf8(text).unwrap())
+        );
+        m.put(ITEM_NAME, b"Bad\nname");
+        assert!(item_names(BASE, &[123], |a, n| m.read(a, n)).is_err());
     }
 }

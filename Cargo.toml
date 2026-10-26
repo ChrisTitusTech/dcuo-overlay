@@ -11,6 +11,7 @@ default = ["window"]
 window = ["dep:eframe", "dep:winit", "dep:x11rb", "dep:image", "dep:lzokay"]
 
 [dependencies]
+base64 = "0.23.1"
 libc = "0.2.186"
 sha2 = "0.10.9"
 ureq = "3.4.2"

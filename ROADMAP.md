@@ -430,3 +430,15 @@ account after a complete token paste, retain that account target across game
 sampling gaps, and gate capture/send on their actual live-memory/preview needs.
 Cover the reported token-only path and stale-result rejection with offline UI
 state tests before installing and publishing the correction.
+
+## Rich wiki catalog capture (2026-10-26)
+
+Expand exact-build definitions to independently proven descriptions, requirements,
+styles and icon references. Decode exact installed game textures; publish PNGs
+to wiki R2. Keep per-slot levels/effects/base stats separate from global item
+definitions. Loaded catalog mode seeks bounded batches beyond equipped IDs, with
+explicit preview/send and partial-art receipts. The wiki creates substantive item
+articles and enriches source pages without replacing community edits. Validate
+reader mutation/identity guards, complete API/D1/R2/article/editor flow, repeated
+item IDs in distinct slots, actual installed icons and live character values.
+Lead owns main publication, installation and live acceptance.

@@ -121,24 +121,24 @@ struct Tile {
     format: u32,
     cache: String,
 }
-struct Export {
-    class: i32,
-    name: String,
-    start: usize,
-    size: usize,
+pub(crate) struct Export {
+    pub(crate) class: i32,
+    pub(crate) name: String,
+    pub(crate) start: usize,
+    pub(crate) size: usize,
 }
-struct Package {
-    bytes: Vec<u8>,
-    names: Vec<String>,
-    imports: Vec<String>,
-    exports: Vec<Export>,
+pub(crate) struct Package {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) names: Vec<String>,
+    pub(crate) imports: Vec<String>,
+    pub(crate) exports: Vec<Export>,
 }
-struct Reader<'a> {
-    bytes: &'a [u8],
-    pos: usize,
+pub(crate) struct Reader<'a> {
+    pub(crate) bytes: &'a [u8],
+    pub(crate) pos: usize,
 }
 impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, pos: 0 }
     }
     fn at(bytes: &'a [u8], pos: usize) -> Result<Self, String> {
@@ -147,7 +147,7 @@ impl<'a> Reader<'a> {
         }
         Ok(Self { bytes, pos })
     }
-    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
+    pub(crate) fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
         let end = self.pos.checked_add(n).ok_or("Range overflow")?;
         let value = self.bytes.get(self.pos..end).ok_or_else(|| {
             format!(
@@ -159,20 +159,20 @@ impl<'a> Reader<'a> {
         self.pos = end;
         Ok(value)
     }
-    fn u32(&mut self) -> Result<u32, String> {
+    pub(crate) fn u32(&mut self) -> Result<u32, String> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
-    fn i32(&mut self) -> Result<i32, String> {
+    pub(crate) fn i32(&mut self) -> Result<i32, String> {
         Ok(self.u32()? as i32)
     }
-    fn count(&mut self, limit: usize) -> Result<usize, String> {
+    pub(crate) fn count(&mut self, limit: usize) -> Result<usize, String> {
         let n = self.u32()? as usize;
         if n > limit {
             return Err("Count exceeds decoder limit".into());
         }
         Ok(n)
     }
-    fn fname(&mut self, names: &[String]) -> Result<String, String> {
+    pub(crate) fn fname(&mut self, names: &[String]) -> Result<String, String> {
         let index = self.u32()? as usize;
         let number = self.u32()?;
         if number > 1024 {
@@ -185,7 +185,7 @@ impl<'a> Reader<'a> {
             Ok(format!("{name}_{}", number - 1))
         }
     }
-    fn string(&mut self) -> Result<String, String> {
+    pub(crate) fn string(&mut self) -> Result<String, String> {
         let n = self.count(512)?;
         if n == 0 {
             return Ok(String::new());
@@ -208,7 +208,7 @@ fn checked_range(bytes: &[u8], start: usize, size: usize) -> Result<&[u8], Strin
         .get(start..end)
         .ok_or_else(|| "File range exceeds available bytes".into())
 }
-fn open_confined(root: &Path, relative: &Path) -> Result<File, String> {
+pub(crate) fn open_confined(root: &Path, relative: &Path) -> Result<File, String> {
     if relative
         .components()
         .any(|c| !matches!(c, Component::Normal(_)))
@@ -235,7 +235,7 @@ fn open_confined(root: &Path, relative: &Path) -> Result<File, String> {
     }
     Ok(file)
 }
-fn read_confined(root: &Path, relative: &Path, limit: usize) -> Result<Vec<u8>, String> {
+pub(crate) fn read_confined(root: &Path, relative: &Path, limit: usize) -> Result<Vec<u8>, String> {
     let file = open_confined(root, relative)?;
     if file.metadata().map_err(|e| e.to_string())?.len() > limit as u64 {
         return Err("Local file exceeds import limit".into());
@@ -249,7 +249,7 @@ fn read_confined(root: &Path, relative: &Path, limit: usize) -> Result<Vec<u8>, 
     }
     Ok(bytes)
 }
-fn decode_chunk(data: &[u8], expected: usize, limit: usize) -> Result<Vec<u8>, String> {
+pub(crate) fn decode_chunk(data: &[u8], expected: usize, limit: usize) -> Result<Vec<u8>, String> {
     if expected == 0 || expected > limit {
         return Err("Invalid decompressed chunk length".into());
     }
@@ -302,7 +302,7 @@ fn decode_chunk(data: &[u8], expected: usize, limit: usize) -> Result<Vec<u8>, S
     Ok(out)
 }
 impl Package {
-    fn parse(raw: &[u8]) -> Result<Self, String> {
+    pub(crate) fn parse(raw: &[u8]) -> Result<Self, String> {
         if raw.len() > PACKAGE_LIMIT {
             return Err("Package exceeds decoder limit".into());
         }
@@ -415,7 +415,7 @@ impl Package {
             exports,
         })
     }
-    fn class(&self, export: &Export) -> Result<&str, String> {
+    pub(crate) fn class(&self, export: &Export) -> Result<&str, String> {
         let index = export
             .class
             .checked_neg()
@@ -426,7 +426,7 @@ impl Package {
             .map(String::as_str)
             .ok_or_else(|| "Unsupported export class reference".into())
     }
-    fn export(&self, class: &str) -> Result<&Export, String> {
+    pub(crate) fn export(&self, class: &str) -> Result<&Export, String> {
         let mut found = None;
         for e in &self.exports {
             if e.class < 0 && self.class(e)? == class {
@@ -438,19 +438,22 @@ impl Package {
         }
         found.ok_or_else(|| format!("Missing map export class {class}"))
     }
-    fn export_reader(&self, e: &Export) -> Result<Reader<'_>, String> {
+    pub(crate) fn export_reader(&self, e: &Export) -> Result<Reader<'_>, String> {
         let mut r = Reader::new(checked_range(&self.bytes, e.start, e.size)?);
         r.i32()?;
         Ok(r)
     }
 }
-struct Property<'a> {
-    name: String,
-    kind: String,
-    structure: Option<String>,
-    data: &'a [u8],
+pub(crate) struct Property<'a> {
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) structure: Option<String>,
+    pub(crate) data: &'a [u8],
 }
-fn properties<'a>(r: &mut Reader<'a>, names: &[String]) -> Result<Vec<Property<'a>>, String> {
+pub(crate) fn properties<'a>(
+    r: &mut Reader<'a>,
+    names: &[String],
+) -> Result<Vec<Property<'a>>, String> {
     let mut values = Vec::new();
     let mut unique = HashSet::new();
     for _ in 0..128 {
@@ -488,7 +491,7 @@ fn properties<'a>(r: &mut Reader<'a>, names: &[String]) -> Result<Vec<Property<'
     }
     Err("Too many object properties".into())
 }
-fn property<'a, 'b>(
+pub(crate) fn property<'a, 'b>(
     values: &'b [Property<'a>],
     name: &str,
     kind: &str,
@@ -696,7 +699,7 @@ pub fn load_metadata(cooked_pc: &Path, area: &str) -> Result<MapMetadata, String
     let bytes = read_confined(&root, &package_path(area)?, PACKAGE_LIMIT)?;
     metadata(&Package::parse(&bytes)?)
 }
-fn remap(bytes: &[u8]) -> Result<HashMap<u32, u32>, String> {
+pub(crate) fn remap(bytes: &[u8]) -> Result<HashMap<u32, u32>, String> {
     if bytes.len() > REMAP_LIMIT {
         return Err("Remap file exceeds limit".into());
     }
@@ -719,7 +722,7 @@ fn remap(bytes: &[u8]) -> Result<HashMap<u32, u32>, String> {
     }
     Ok(out)
 }
-fn texture_hash(key: &str) -> u32 {
+pub(crate) fn texture_hash(key: &str) -> u32 {
     let mut table = [0u32; 256];
     for (i, item) in table.iter_mut().enumerate() {
         let mut v = (i as u32) << 24;
