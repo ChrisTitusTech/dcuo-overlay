@@ -1728,3 +1728,17 @@ installed test directory, remove those test DLLs before uninstall, and repeat th
 same launch/uninstall checks. Release payload retains the actual game machine's
 graphics driver requirement. Latest Linux candidate builds, package smoke and
 artifact upload are green; the CI-built RPM also installs/runs/removes in Fedora44.
+
+Candidate ff7593c is green on native Linux and Windows in GitHub Actions run
+40395688843. Linux: 307 workspace tests / 203 headless tests, strict Clippy,
+AppImage startup/relaunch and RPM creation. Windows: 303 workspace tests (7
+opt-in ignored), 208 headless tests, both isolated native desktop checks, release
+build, NSIS packaging, installed GUI launch using test-only Mesa, and uninstall
+all pass. Final Windows executable imports only OS DLLs; static CRT removes the
+separate VC++ runtime requirement. All independent Codex reviews are clean.
+The final AppImage, RPM and installer plus SHA256SUMS are staged in ignored
+`dist/v0.1.0`. Candidate code is pushed on codex/release-0.1. The user has the
+installer download and a pending request to check live-game auto-connect,
+current area and character data. Do not claim that manual check passed. Final
+main integration, tag and public v0.1.0 release await that result; no release or
+release tag has been created. This status-only commit reuses ff7593c code checks.
