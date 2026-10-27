@@ -559,7 +559,10 @@ item definitions for dcuo-wiki.com. The exact-build selected-session reader boun
 cache batches to 50 IDs and rechecks character/source identity. Preview before
 explicit Send. Definition fields and exact decoded artwork may create/update
 substantive wiki item pages; existing source mappings retain their articles.
-The token grants item contributions only and stays in memory. No raw memory,
+The token grants item contributions only. Complete tokens are saved separately
+from preferences and restored on startup: user-bound DPAPI encryption on Windows,
+and a user-owned 0600 file in a private 0700 directory on Linux. Clear token
+removes the saved copy; failed saves/deletions remain visible. No raw memory,
 addresses, chat, positions or personal snapshots are uploaded or committed.
 
 Equipped levels/effects/base stats remain separate by character/world/slot/itemID;

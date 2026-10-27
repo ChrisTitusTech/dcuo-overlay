@@ -162,3 +162,9 @@ search field. Run the search normally; fresh results prepare the lowest observed
 single-item price minus $1. Back on the same item, the next hotkey fills **Sell Price**
 without submitting. No arm button. Requires the supported 2560x1440 English layout
 and Tesseract; see [Broker workflow](docs/broker.md) for setup and limits.
+
+Wiki tokens in the current source version are saved automatically and restored
+on restart. Windows protects them with user-bound DPAPI encryption; Linux uses
+a separate user-owned 0600 file in a private configuration directory. **Clear
+token** removes the saved copy. Storage failures are shown in the Wiki tab.
+This behavior is newer than the published v0.1.0 packages.

@@ -1750,3 +1750,28 @@ artifacts; SHA256SUMS verifies all three locally. Release integration changes on
 planning/release documentation, with application/build code unchanged from that
 validated commit. Publish on main with the v0.1.0 tag and four download assets.
 Windows live-game testing remains pending and must not be described as passed.
+
+## Wiki token persistence (2026-10-27)
+
+v0.1.0 was published on main at ccad30e with all four checksum-verified assets.
+The user now requests saving the entered wiki token across restarts. Implement
+auto-save/restore and persistent clear, DPAPI on Windows and private Linux file
+storage, separate from shareable preferences. No actual user tokens are read
+or used in validation. This supersedes the earlier memory-only token design.
+
+Implemented automatic token save/restore, replacement and persistent clear, with
+visible storage errors and retry. Windows uses current-user DPAPI; Linux uses a
+user-owned 0600 file within a 0700 directory. Credentials remain separate from
+shareable settings. Synthetic tests cover restart, replacement, invalid edits,
+clear, unsafe paths/permissions and storage failure without credential leakage.
+
+Validation: `cargo fmt --all -- --check`, `git diff --check`, strict workspace
+all-target Clippy for Linux and x86_64-pc-windows-gnu passed. Workspace tests:
+314 passed / 6 opt-in ignored; headless library: 203 passed. Windows library
+build passed and 35 Wiki tests passed under isolated Wine, including DPAPI and
+restart/clear behavior. No native Windows live-game test is claimed. Published
+v0.1.0 assets remain unchanged; this source change requires a later package build.
+
+Independent `codex review --uncommitted` completed with no actionable findings,
+including the new credential store. The supplemental CodeRabbit review also
+reported zero findings. Local implementation is complete; no release republished.

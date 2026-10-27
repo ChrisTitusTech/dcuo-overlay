@@ -452,3 +452,11 @@ Build Linux and Windows candidates, test Linux artifacts and Windows installer,
 complete independent review and publish tagged 0.1.0 with AppImage, RPM, EXE
 installer and SHA256SUMS. The user explicitly authorized publication on October 26
 before their manual Windows game test; track that test as pending after release.
+
+## Wiki token persistence (2026-10-27)
+
+Save and restore the scoped wiki token across restarts on both platforms. Lead
+owns UI/startup integration, docs and validation; wiki_token_storage worker owns
+the bounded separate credential store. Preserve explicit capture/send and
+stale-result rejection. Test restart, replacement, clear and visible failures
+with synthetic tokens only. Existing v0.1.0 release assets remain unchanged.

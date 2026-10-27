@@ -371,7 +371,12 @@ struct Probe {
 impl Probe {
     fn new(options: Options, name: String) -> Self {
         let (preferences, warning) = settings::load();
-        Self::with_preferences(options, name, preferences, warning)
+        let restore_token = options.smoke.is_none();
+        let mut app = Self::with_preferences(options, name, preferences, warning);
+        if restore_token {
+            app.wiki = crate::wiki_view::WikiView::restore();
+        }
+        app
     }
 
     fn with_preferences(

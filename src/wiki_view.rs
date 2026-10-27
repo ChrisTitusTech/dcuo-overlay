@@ -75,6 +75,9 @@ struct Pending {
 #[derive(Default)]
 pub struct WikiView {
     token: String,
+    token_store: Option<crate::wiki_token::Store>,
+    token_storage_status: String,
+    token_storage_error: bool,
     epoch: u64,
     fetch_attempted: bool,
     binding: Option<Binding>,
@@ -91,6 +94,55 @@ pub struct WikiView {
     catalog_exhausted: bool,
 }
 impl WikiView {
+    pub(crate) fn restore() -> Self {
+        Self::with_token_store(crate::wiki_token::Store::default())
+    }
+
+    fn with_token_store(store: crate::wiki_token::Store) -> Self {
+        let mut state = Self::default();
+        match store.load() {
+            Ok(Some(token)) => {
+                state.token = token;
+                state.token_changed();
+                state.token_storage_status = "Saved wiki token restored.".into();
+            }
+            Ok(None) => {}
+            Err(_) => {
+                state.token_storage_status =
+                    "Saved wiki token could not be loaded. Paste it again or clear it.".into();
+            }
+        }
+        state.token_store = Some(store);
+        state
+    }
+
+    fn persist_token(&mut self) {
+        let Some(store) = &self.token_store else {
+            return;
+        };
+        let valid = wiki_items::is_hex64(&self.token);
+        let result = if valid {
+            store.save(&self.token)
+        } else {
+            store.clear()
+        };
+        self.token_storage_error = result.is_err();
+        self.token_storage_status = match result {
+            Ok(()) if valid => "Wiki token saved for next time.".into(),
+            Ok(()) => "Saved wiki token removed.".into(),
+            Err(_) if valid => {
+                "Wiki token could not be saved. It is available only until you close the app."
+                    .into()
+            }
+            Err(_) => "Saved wiki token could not be removed. Retry before closing the app.".into(),
+        };
+    }
+
+    fn token_edited(&mut self) {
+        self.token_changed();
+        self.persist_token();
+    }
+
     fn reset_equipment_page(&mut self) {
         if self.equipment_cursor != 0 {
             self.missing = None;
@@ -403,7 +455,7 @@ impl WikiView {
             "Open wiki token settings",
             "https://dcuo-wiki.com/equipment-identification/#overlay-access",
         );
-        ui.label("Paste your scoped wiki token. Account items load automatically; the token stays only in this app's memory.");
+        ui.label("Paste your scoped wiki token. It is saved on this computer and restored next time. Clear token removes the saved copy.");
         if ui
             .add(
                 egui::TextEdit::singleline(&mut self.token)
@@ -413,11 +465,17 @@ impl WikiView {
             )
             .changed()
         {
-            self.token_changed();
+            self.token_edited();
         }
         if ui.button("Clear token").clicked() {
             self.token.clear();
-            self.token_changed();
+            self.token_edited();
+        }
+        if !self.token_storage_status.is_empty() {
+            ui.label(&self.token_storage_status);
+        }
+        if self.token_storage_error && ui.button("Retry token storage").clicked() {
+            self.persist_token();
         }
         let retry = ui
             .add_enabled(
@@ -582,6 +640,78 @@ impl WikiView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn token_test_path() -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "dcuo-wiki-view-token-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        crate::storage::create_directory(&directory).unwrap();
+        directory.join("token")
+    }
+
+    #[test]
+    fn token_edit_survives_restart_and_clear_removes_saved_pairing() {
+        let path = token_test_path();
+        let mut view = WikiView::with_token_store(crate::wiki_token::Store::at(path.clone()));
+        view.token = format!(" {}\n", "a".repeat(64));
+        view.token_edited();
+        assert!(!view.token_storage_error);
+        drop(view);
+
+        let mut restored = WikiView::with_token_store(crate::wiki_token::Store::at(path.clone()));
+        assert_eq!(restored.token, "a".repeat(64));
+        assert!(restored.next_fetch(false).is_some());
+        assert!(restored.next_fetch(false).is_none());
+        restored.token = "b".repeat(64);
+        restored.token_edited();
+        assert_eq!(
+            crate::wiki_token::Store::at(path.clone()).load().unwrap(),
+            Some("b".repeat(64))
+        );
+        restored.token.clear();
+        restored.token_edited();
+        let cleared = WikiView::with_token_store(crate::wiki_token::Store::at(path.clone()));
+        assert!(cleared.token.is_empty());
+        assert!(!path.exists());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn invalid_edit_does_not_restore_an_old_token_after_restart() {
+        let path = token_test_path();
+        let mut view = WikiView::with_token_store(crate::wiki_token::Store::at(path.clone()));
+        view.token = "a".repeat(64);
+        view.token_edited();
+        view.token.push('a');
+        view.token_edited();
+        assert!(view.next_fetch(false).is_none());
+        assert!(
+            crate::wiki_token::Store::at(path.clone())
+                .load()
+                .unwrap()
+                .is_none()
+        );
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn storage_failure_is_visible_without_exposing_or_discarding_token() {
+        let mut view =
+            WikiView::with_token_store(crate::wiki_token::Store::at("relative/token".into()));
+        view.token = "a".repeat(64);
+        view.token_edited();
+        assert!(view.token_storage_error);
+        assert!(!view.token_storage_status.contains(&view.token));
+        assert!(view.next_fetch(false).is_some());
+        view.token.clear();
+        view.token_edited();
+        assert!(view.token_storage_error);
+        assert!(view.token_storage_status.contains("could not be removed"));
+    }
     fn live() -> session::View {
         let mut native = crate::native::Sample::synthetic(1);
         native.feats_binding = Some((10, 20));

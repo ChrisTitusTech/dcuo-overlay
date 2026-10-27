@@ -44,6 +44,8 @@ pub mod broker_screen;
 
 pub mod wiki_items;
 #[cfg(feature = "window")]
+mod wiki_token;
+#[cfg(feature = "window")]
 pub mod wiki_view;
 
 #[cfg(feature = "window")]
