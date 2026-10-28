@@ -1831,3 +1831,21 @@ Wrangler attempt lacked credentials; the existing Git deployment completed witho
 new credentials. No production item submissions or user tokens were used.
 Windows live-game acceptance remains pending with the user. Original v0.1.0
 assets are preserved. This final status commit changes documentation only.
+
+## Browser links correction (2026-10-27, complete)
+
+User reports Open wiki token settings does nothing in the installed companion.
+Confirmed eframe defaults are disabled and the explicitly selected features omit
+links; the pinned egui-winit backend logs a warning and does not open URLs without
+this feature. Enable the cross-platform eframe links feature, validate Linux and
+Windows builds, and update/restart the local installation. Existing tokens and
+settings are preserved. Published 0.1.1 artifacts remain unchanged by this fix.
+
+Enabled eframe/links and locked webbrowser 1.2.5. Linux workspace check, strict
+Clippy, 323 workspace tests (6 opt-in ignored), Windows all-target cross-check,
+format/diff checks and release build pass. A synthetic browser backend probe
+received the exact wiki settings URL and fragment. Independent Codex review
+reported no actionable findings. Upgraded the owned local installation, verified
+its bytes match the new release build, passed two managed X11 startup/relaunch
+checks and restarted the previously running companion. No token data was read.
+Published 0.1.1 packages are unchanged; this correction is currently local only.
