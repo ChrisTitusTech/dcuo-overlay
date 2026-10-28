@@ -34,7 +34,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
           rpm -qpl dist/*.rpm
-          xvfb-run -a python3 scripts/check_x11.py --binary dist/DCUO-Companion-0.1.1-x86_64.AppImage
+          xvfb-run -a python3 scripts/check_x11.py --binary dist/DCUO-Companion-0.1.2-x86_64.AppImage
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: linux-packages

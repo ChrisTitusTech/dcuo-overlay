@@ -177,3 +177,6 @@ The running character must match the linked wiki character. Existing wiki IDs
 are skipped. This covers supported item data, not every Census record type.
 Automatic uploads require the matching wiki server update; older servers block
 automatic uploads. See [0.1.1 release notes](docs/release-0.1.1.md).
+
+Version 0.1.2 fixes external links, including **Open wiki token settings**, on
+Linux and Windows. See [0.1.2 release notes](docs/release-0.1.2.md).

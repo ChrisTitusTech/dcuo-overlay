@@ -1849,3 +1849,10 @@ reported no actionable findings. Upgraded the owned local installation, verified
 its bytes match the new release build, passed two managed X11 startup/relaunch
 checks and restarted the previously running companion. No token data was read.
 Published 0.1.1 packages are unchanged; this correction is currently local only.
+
+## Publish browser-link correction as 0.1.2 (2026-10-27, active)
+
+User authorizes updating the releases with the browser-link fix. Publish a new
+v0.1.2 with Windows installer, AppImage, RPM and checksums, retaining older releases.
+Reuse the completed review/tests of a94701f; validate packaging/version changes
+and run native Linux/Windows package gates. No wiki deployment is needed.

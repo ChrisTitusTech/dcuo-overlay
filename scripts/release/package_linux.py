@@ -25,7 +25,7 @@ def stage(appdir, binary):
     copy(binary, appdir / 'usr/bin/dcuo-companion')
     copy(ROOT / 'assets/dcuo-companion.desktop', appdir / 'usr/share/applications/dcuo-companion.desktop')
     copy(ROOT / 'assets/dcuo-companion.svg', appdir / 'usr/share/icons/hicolor/scalable/apps/dcuo-companion.svg')
-    for source in ('LICENSE', 'README.md', 'docs/release-0.1.md', 'docs/release-0.1.1.md'):
+    for source in ('LICENSE', 'README.md', 'docs/release-0.1.md', 'docs/release-0.1.1.md', 'docs/release-0.1.2.md'):
         copy(ROOT / source, appdir / 'usr/share/doc/dcuo-companion' / Path(source).name)
 
 
@@ -95,6 +95,7 @@ cp -a "{appdir}/usr" %{{buildroot}}/
 %doc /usr/share/doc/dcuo-companion/README.md
 %doc /usr/share/doc/dcuo-companion/release-0.1.md
 %doc /usr/share/doc/dcuo-companion/release-0.1.1.md
+%doc /usr/share/doc/dcuo-companion/release-0.1.2.md
 %license /usr/share/doc/dcuo-companion/LICENSE
 '''
             spec_path = top / 'SPECS/dcuo-companion.spec'
