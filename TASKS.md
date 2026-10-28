@@ -1806,7 +1806,7 @@ is committed locally in dcuo-wiki as 3b4d0a6. Both repositories remain local-onl
 for this change; updated server deployment and companion packaging are required
 for installed users. Existing v0.1.0 release assets are unchanged.
 
-## Publish wiki and companion 0.1.1 (2026-10-27, active)
+## Publish wiki and companion 0.1.1 (2026-10-27, complete)
 
 User explicitly authorizes updating both the wiki and companion installers.
 Deploy wiki 3b4d0a6, publish source on main, build/test native Linux and Windows
@@ -1814,3 +1814,20 @@ packages, and publish a new v0.1.1 release with AppImage, RPM, EXE and SHA256SUM
 Preserve the original v0.1.0 release. Reuse passing source tests and independent
 reviews for unchanged implementation; validate version/packaging changes and
 new CI artifacts. Windows live-game acceptance remains the user's manual test.
+
+Published https://github.com/ChrisTitusTech/dcuo-overlay/releases/tag/v0.1.1
+from tested commit 8900a17. Native package run 40607525764 and cross-platform
+checks 40607525989 passed. Linux: 323 workspace / 206 headless tests, AppImage
+startup/relaunch and RPM packaging. Windows: 317 workspace / 211 headless tests,
+2 native desktop checks, installer GUI startup using test-only Mesa, and uninstall.
+Uploaded AppImage, RPM, Windows EXE and SHA256SUMS; all four remote asset digests
+and sizes match local files. Packaging review found no actionable defects.
+
+Wiki main 3b4d0a6 is pushed and deployed by the existing Cloudflare Git integration.
+Verified active version 45f10b41 at 100% traffic, Ready, for that exact commit.
+Wiki GitHub run 40606823931 passed all gates; live homepage returns 200 and
+unauthenticated overlay lookup correctly returns 401. The initial direct local
+Wrangler attempt lacked credentials; the existing Git deployment completed without
+new credentials. No production item submissions or user tokens were used.
+Windows live-game acceptance remains pending with the user. Original v0.1.0
+assets are preserved. This final status commit changes documentation only.
