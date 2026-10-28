@@ -1850,9 +1850,20 @@ its bytes match the new release build, passed two managed X11 startup/relaunch
 checks and restarted the previously running companion. No token data was read.
 Published 0.1.1 packages are unchanged; this correction is currently local only.
 
-## Publish browser-link correction as 0.1.2 (2026-10-27, active)
+## Publish browser-link correction as 0.1.2 (2026-10-27, complete)
 
 User authorizes updating the releases with the browser-link fix. Publish a new
 v0.1.2 with Windows installer, AppImage, RPM and checksums, retaining older releases.
 Reuse the completed review/tests of a94701f; validate packaging/version changes
 and run native Linux/Windows package gates. No wiki deployment is needed.
+
+Published https://github.com/ChrisTitusTech/dcuo-overlay/releases/tag/v0.1.2
+from tested commit 9937da5, including browser-link fix a94701f. Independent Codex
+packaging review found no actionable defects. Native package run 40613201776 and
+cross-platform checks 40613202175 passed. Linux: 323 workspace / 206 headless tests,
+AppImage startup/relaunch and RPM inspection. Windows: 317 workspace / 211 headless
+tests, 2 native desktop checks, installer startup and uninstall. Published Windows
+EXE, AppImage, RPM and SHA256SUMS; all four remote asset digests and sizes match
+local CI artifacts. Earlier releases remain available. No wiki deployment or
+user credentials were needed. Windows live-game acceptance remains pending with
+the user. This final status update changes documentation only.
