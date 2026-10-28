@@ -1,4 +1,6 @@
-//! Explicit pairing, local capture preview, and background wiki publication.
+//! Wiki pairing, manual previews and automatic missing-item contributions.
+#[path = "wiki_auto.rs"]
+mod automatic;
 use crate::{
     session,
     wiki_items::{self, MissingItems, Receipt, Submission},
@@ -75,6 +77,7 @@ struct Pending {
 #[derive(Default)]
 pub struct WikiView {
     token: String,
+    automatic: automatic::Automatic,
     token_store: Option<crate::wiki_token::Store>,
     token_storage_status: String,
     token_storage_error: bool,
@@ -344,6 +347,9 @@ impl WikiView {
         }
     }
     fn capture_reason(&self, view: &session::View) -> Option<&'static str> {
+        if self.automatic.busy() {
+            return Some("Wait for the automatic wiki contribution to finish.");
+        }
         if !wiki_items::is_hex64(&self.token) {
             return Some("Paste a complete wiki token first.");
         }
@@ -442,6 +448,33 @@ impl WikiView {
         self.status = "Publishing item details...".into();
         Some((self.token.clone(), submission, sender))
     }
+    pub(crate) fn update(&mut self, view: &session::View, controller: &mut session::Controller) {
+        self.poll(view);
+        if let Some((token, sender)) = self.next_fetch(false) {
+            std::thread::spawn(move || {
+                let _ = sender.send(ResultMessage::Fetched(wiki_items::fetch(&token)));
+            });
+        }
+        let blocked = self.pending.is_some()
+            || self.preview.is_some()
+            || self.capture_request.is_some()
+            || !wiki_items::is_hex64(&self.token);
+        if let Some(work) = self.automatic.step(
+            view,
+            self.epoch,
+            self.missing.as_ref(),
+            blocked,
+            std::time::Instant::now(),
+            |cursor| controller.capture_wiki_catalog_items(cursor),
+        ) {
+            work.run(
+                self.token.clone(),
+                view.build
+                    .as_ref()
+                    .and_then(|build| build.map_source.clone()),
+            );
+        }
+    }
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -450,6 +483,12 @@ impl WikiView {
     ) {
         self.poll(view);
         ui.heading("Wiki item details");
+        ui.checkbox(
+            &mut self.automatic.paused,
+            "Pause automatic missing-item uploads",
+        );
+        ui.label("With a wiki token and matching game character, loaded Census item IDs are checked automatically. Unknown item definitions and available icons are uploaded in bounded batches, even on other tabs.");
+        ui.label(&self.automatic.status);
         ui.label("Sending publishes these item details directly to the shared wiki catalog for everyone. Your wiki account history records the contribution.");
         ui.hyperlink_to(
             "Open wiki token settings",

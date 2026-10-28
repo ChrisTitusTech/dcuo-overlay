@@ -168,3 +168,12 @@ on restart. Windows protects them with user-bound DPAPI encryption; Linux uses
 a separate user-owned 0600 file in a private configuration directory. **Clear
 token** removes the saved copy. Storage failures are shown in the Wiki tab.
 This behavior is newer than the published v0.1.0 packages.
+
+With a wiki token, the current source automatically checks loaded Census item IDs
+and contributes unknown item definitions and available icons, even while another
+tab is open. Batches contain at most 50 IDs and run at least 90 seconds apart.
+The Wiki tab shows progress and offers **Pause automatic missing-item uploads**.
+The running character must match the linked wiki character. Existing wiki IDs
+are skipped. This covers supported item data, not every Census record type.
+Both the companion and wiki server must include the missing-only API update;
+older servers block automatic uploads. The published v0.1.0 packages are unchanged.

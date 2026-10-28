@@ -554,10 +554,17 @@ signals or changed ownership. This identifies an area, not a floor or calibratio
 
 ## Wiki item contribution
 
-The companion supports explicit, read-only capture of equipped and loaded catalog
+The companion supports read-only capture of equipped and loaded catalog
 item definitions for dcuo-wiki.com. The exact-build selected-session reader bounds
-cache batches to 50 IDs and rechecks character/source identity. Preview before
-explicit Send. Definition fields and exact decoded artwork may create/update
+cache batches to 50 IDs and rechecks character/source identity. Manual contributions use preview and explicit Send. With a saved wiki token,
+automatic contributions scan loaded catalog IDs in bounded batches at least 90
+seconds apart, check the wiki for unknown identities and upload only those IDs.
+The wiki enforces missing-only writes atomically, including concurrent contributions.
+Known identities are skipped; this does not upload arbitrary Census record types.
+Automatic work runs on all tabs, can be paused, and requires a fresh matching
+character/session. Session/token changes discard pending checks; failures back off.
+Old servers without the missing-only capability cannot enable automatic uploads.
+Definition fields and exact decoded artwork may create/update
 substantive wiki item pages; existing source mappings retain their articles.
 The token grants item contributions only. Complete tokens are saved separately
 from preferences and restored on startup: user-bound DPAPI encryption on Windows,
@@ -576,8 +583,9 @@ character/world and equipped item IDs, including known names. Pasting a complete
 account data once without requiring a separate character-reference lookup or a
 running game. Capture still requires a fresh supported selected session, and its
 memory-read character name must match the linked wiki character. Loading gaps
-clear capture previews, not the fetched account target. Publication stays an
-explicit Send after a valid preview; show actionable reasons for disabled actions.
+clear capture previews, not the fetched account target. Manual publication uses explicit Send after a valid preview. Automatic catalog
+publication uses the same character/build/freshness validation and a separate
+missing-only API contract. Show actionable reasons for unavailable actions.
 
 ## First cross-platform 0.1 release
 

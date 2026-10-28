@@ -250,12 +250,74 @@ pub fn fetch_page(token: &str, cursor: Option<u32>) -> Result<MissingItems, Stri
     result.validate()?;
     Ok(result)
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MissingOnlyResponse<T> {
+    #[serde(flatten)]
+    value: T,
+    #[serde(default)]
+    missing_only_supported: bool,
+}
+fn missing_query(ids: &[u32]) -> Result<String, String> {
+    let mut seen = HashSet::new();
+    if ids.is_empty() || ids.len() > MAX_ITEMS || ids.iter().any(|id| *id == 0 || !seen.insert(*id))
+    {
+        return Err("Missing-item lookup requires 1-50 unique positive item IDs.".into());
+    }
+    Ok(format!(
+        "{ENDPOINT}?ids={}",
+        ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+    ))
+}
+fn validate_missing_response(
+    response: MissingOnlyResponse<MissingItems>,
+    ids: &[u32],
+) -> Result<MissingItems, String> {
+    missing_query(ids)?;
+    if !response.missing_only_supported {
+        return Err("Wiki does not support missing-only item synchronization.".into());
+    }
+    response.value.validate()?;
+    if response
+        .value
+        .items
+        .iter()
+        .any(|item| !ids.contains(&item.item_id))
+    {
+        return Err("Wiki returned item IDs outside the missing-item lookup.".into());
+    }
+    Ok(response.value)
+}
+pub fn fetch_missing(token: &str, ids: &[u32]) -> Result<MissingItems, String> {
+    let url = missing_query(ids)?;
+    let response = agent()
+        .get(&url)
+        .header("Authorization", authorization(token)?)
+        .header("Accept", "application/json")
+        .call()
+        .map_err(|_| "Could not reach the wiki.".to_string())?;
+    validate_missing_response(decode(response)?, ids)
+}
+#[cfg(feature = "window")]
+pub fn submit_missing_with_icons(
+    token: &str,
+    submission: &Submission,
+    source: Option<&std::path::Path>,
+) -> Result<Receipt, String> {
+    let submission = submission_with_icons(submission, source);
+    submit_mode(token, &submission, true)
+}
 #[cfg(feature = "window")]
 pub fn submit_with_icons(
     token: &str,
     submission: &Submission,
     source: Option<&std::path::Path>,
 ) -> Result<Receipt, String> {
+    let submission = submission_with_icons(submission, source);
+    submit(token, &submission)
+}
+#[cfg(feature = "window")]
+fn submission_with_icons(submission: &Submission, source: Option<&std::path::Path>) -> Submission {
     let mut submission = submission.clone();
     let resources: Vec<_> = submission
         .items
@@ -266,7 +328,7 @@ pub fn submit_with_icons(
         let icons = crate::item_icons::decode_icons(source, &resources);
         attach_available_icons(&mut submission.items, &icons);
     }
-    submit(token, &submission)
+    submission
 }
 #[cfg(feature = "window")]
 fn attach_available_icons(
@@ -289,6 +351,27 @@ fn attach_available_icons(
     }
 }
 fn bounded_submission_body(submission: &Submission) -> Result<Vec<u8>, String> {
+    bounded_submission_body_mode(submission, false)
+}
+fn bounded_submission_body_mode(
+    submission: &Submission,
+    missing_only: bool,
+) -> Result<Vec<u8>, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Body<'a> {
+        #[serde(flatten)]
+        submission: &'a Submission,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        missing_only: bool,
+    }
+    let encode = |submission: &Submission| {
+        serde_json::to_vec(&Body {
+            submission,
+            missing_only,
+        })
+        .map_err(|_| "Could not prepare submission.")
+    };
     let mut bounded = submission.clone();
     let mut total = 0usize;
     for item in &mut bounded.items {
@@ -300,11 +383,11 @@ fn bounded_submission_body(submission: &Submission) -> Result<Vec<u8>, String> {
             }
         }
     }
-    let mut body = serde_json::to_vec(&bounded).map_err(|_| "Could not prepare submission.")?;
+    let mut body = encode(&bounded)?;
     if body.len() > 4 * 1024 * 1024 {
         for index in (0..bounded.items.len()).rev() {
             if bounded.items[index].details.icon_png.take().is_some() {
-                body = serde_json::to_vec(&bounded).map_err(|_| "Could not prepare submission.")?;
+                body = encode(&bounded)?;
                 if body.len() <= 4 * 1024 * 1024 {
                     return Ok(body);
                 }
@@ -315,7 +398,15 @@ fn bounded_submission_body(submission: &Submission) -> Result<Vec<u8>, String> {
     Ok(body)
 }
 pub fn submit(token: &str, submission: &Submission) -> Result<Receipt, String> {
-    if !matches!(submission.scope.as_str(), "equipment" | "catalog")
+    submit_mode(token, submission, false)
+}
+fn submit_mode(
+    token: &str,
+    submission: &Submission,
+    missing_only: bool,
+) -> Result<Receipt, String> {
+    if (missing_only && submission.scope != "catalog")
+        || !matches!(submission.scope.as_str(), "equipment" | "catalog")
         || (submission.scope == "catalog" && !submission.equipped.is_empty())
         || submission.schema_version != 2
         || submission.profile != "item-details-v1"
@@ -340,20 +431,46 @@ pub fn submit(token: &str, submission: &Submission) -> Result<Receipt, String> {
     }) {
         return Err("Invalid wiki item details.".into());
     }
-    let body = bounded_submission_body(submission)?;
+    let body = if missing_only {
+        bounded_submission_body_mode(submission, true)?
+    } else {
+        bounded_submission_body(submission)?
+    };
     let response = agent()
         .post(ENDPOINT)
         .header("Authorization", authorization(token)?)
         .header("Content-Type", "application/json")
         .send(body)
         .map_err(|_| "Submission response unavailable. Refresh before retrying.".to_string())?;
-    let receipt: Receipt = decode(response)?;
+    let receipt = if missing_only {
+        validate_missing_receipt(decode(response)?, submission.items.len())?
+    } else {
+        decode(response)?
+    };
     if receipt.submitted.checked_add(receipt.skipped) != Some(submission.items.len()) {
         return Err(
             "Wiki returned inconsistent submission counts. Refresh before retrying.".into(),
         );
     }
     Ok(receipt)
+}
+
+fn validate_missing_receipt(
+    response: MissingOnlyResponse<Receipt>,
+    count: usize,
+) -> Result<Receipt, String> {
+    if !response.missing_only_supported {
+        return Err(
+            "Wiki does not support missing-only item synchronization. Refresh before retrying."
+                .into(),
+        );
+    }
+    if response.value.submitted.checked_add(response.value.skipped) != Some(count) {
+        return Err(
+            "Wiki returned inconsistent submission counts. Refresh before retrying.".into(),
+        );
+    }
+    Ok(response.value)
 }
 
 fn deserialize_optional_item_id<'de, D: serde::Deserializer<'de>>(
@@ -390,6 +507,57 @@ mod tests {
             .status(status)
             .body(ureq::Body::builder().data(data))
             .unwrap()
+    }
+    #[test]
+    fn missing_query_is_bounded_and_canonical() {
+        assert_eq!(
+            missing_query(&[7, u32::MAX]).unwrap(),
+            format!("{ENDPOINT}?ids=7,4294967295")
+        );
+        for ids in [vec![], vec![0], vec![7, 7], (1..=51).collect()] {
+            assert!(missing_query(&ids).is_err());
+        }
+        assert!(missing_query(&(1..=50).collect::<Vec<_>>()).is_ok());
+    }
+    #[test]
+    fn missing_lookup_fails_closed_and_checks_returned_ids() {
+        let data = |capability: &str, items: &str| {
+            format!(
+                r#"{{"character":{{"id":"1","name":"Hero","worldId":"2"}},"items":{items}{capability}}}"#
+            )
+        };
+        for capability in ["", r#", "missingOnlySupported":false"#] {
+            let response = serde_json::from_str(&data(capability, "[]")).unwrap();
+            assert!(validate_missing_response(response, &[7]).is_err());
+        }
+        for items in [r#"[{"itemId":"8"}]"#, r#"[{"itemId":"7"},{"itemId":"7"}]"#] {
+            let response =
+                serde_json::from_str(&data(r#", "missingOnlySupported":true"#, items)).unwrap();
+            assert!(validate_missing_response(response, &[7]).is_err());
+        }
+        for items in ["[]", r#"[{"itemId":"7"}]"#] {
+            let response =
+                serde_json::from_str(&data(r#", "missingOnlySupported":true"#, items)).unwrap();
+            assert!(validate_missing_response(response, &[7, 8]).is_ok());
+        }
+    }
+    #[test]
+    fn missing_receipt_requires_capability_and_consistent_counts() {
+        for data in [
+            r#"{"submitted":1,"skipped":0}"#,
+            r#"{"submitted":1,"skipped":0,"missingOnlySupported":false}"#,
+            r#"{"submitted":2,"skipped":0,"missingOnlySupported":true}"#,
+        ] {
+            assert!(validate_missing_receipt(serde_json::from_str(data).unwrap(), 1).is_err());
+        }
+        assert!(
+            validate_missing_receipt(
+                serde_json::from_str(r#"{"submitted":0,"skipped":1,"missingOnlySupported":true}"#)
+                    .unwrap(),
+                1
+            )
+            .is_ok()
+        );
     }
     #[test]
     fn created_receipt_is_accepted() {
@@ -627,6 +795,18 @@ mod tests {
         assert!(body.len() <= 4 * 1024 * 1024);
         let decoded: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(decoded["items"].as_array().unwrap().len(), 50);
+        assert!(decoded.get("missingOnly").is_none());
+        let missing_body = bounded_submission_body_mode(&submission, true).unwrap();
+        assert!(missing_body.len() <= 4 * 1024 * 1024);
+        let missing: serde_json::Value = serde_json::from_slice(&missing_body).unwrap();
+        assert_eq!(missing["missingOnly"], true);
+        assert_eq!(missing["items"], decoded["items"]);
+        let mut equipment = submission.clone();
+        equipment.scope = "equipment".into();
+        assert_eq!(
+            submit_missing_with_icons("", &equipment, None).unwrap_err(),
+            "Invalid wiki submission."
+        );
     }
     #[test]
     fn equipment_page_cursor_is_optional_canonical_numeric_text() {

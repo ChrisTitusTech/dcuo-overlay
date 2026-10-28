@@ -460,3 +460,13 @@ owns UI/startup integration, docs and validation; wiki_token_storage worker owns
 the bounded separate credential store. Preserve explicit capture/send and
 stale-result rejection. Test restart, replacement, clear and visible failures
 with synthetic tokens only. Existing v0.1.0 release assets remain unchanged.
+
+## Automatic missing wiki items (2026-10-27)
+
+User authorizes automatic contributions for observed Census item IDs absent from
+the wiki. Lead owns bounded background scheduling, UI pause/status, session/token
+guards, integration and local commits. wiki_auto_transport owns missing-only
+transport and synthetic lifecycle tests; wiki_auto_contract owns the adjacent wiki
+lookup, atomic missing-only publication and server tests. Preserve manual capture,
+existing entries and the single read-only game reader. No release or deployment
+is included in this source change; both client and wiki server need an update.

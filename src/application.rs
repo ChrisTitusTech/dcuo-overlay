@@ -632,6 +632,8 @@ impl eframe::App for Probe {
         self.feats
             .select(self.controller.view().api.as_ref().map(|r| r.id.as_str()));
         self.feats.poll();
+        let wiki_view = self.controller.view().clone();
+        self.wiki.update(&wiki_view, &mut self.controller);
         self.spawn_cache.update(
             self.controller.view(),
             self.preferences.show_ground_spawns,

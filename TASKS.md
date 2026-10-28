@@ -1775,3 +1775,33 @@ v0.1.0 assets remain unchanged; this source change requires a later package buil
 Independent `codex review --uncommitted` completed with no actionable findings,
 including the new credential store. The supplemental CodeRabbit review also
 reported zero findings. Local implementation is complete; no release republished.
+
+## Automatic missing wiki items (2026-10-27)
+
+The user requests automatic uploads of observed Census IDs absent from the wiki.
+Implement supported item definitions/icons, with all-tab scheduling, batches of
+at most 50 loaded IDs, a 90-second minimum interval and visible pause/status.
+The adjacent wiki requires an arbitrary-ID lookup and atomic missing-only writes;
+known identities (including name-only mappings) are skipped. Existing token
+scope does not support other Census record types. No real credentials or game
+snapshots are used for validation; no deployment or release publication requested.
+
+Implemented automatic all-tab catalog capture/check/send with matching character,
+build/session freshness, token invalidation, a pause control, no overlapping jobs,
+and at least 90 seconds between batches/retries. The shared reader remains
+read-only. Missing-only transport rejects old servers and unexpected IDs. The
+wiki lookup skips all existing identities; publication atomically skips races.
+
+Validation: 323 workspace tests passed (6 opt-in ignored), 206 headless tests
+passed, strict all-target Clippy on Linux and Windows passed, Windows library
+build passed and 44 Wiki tests passed under isolated Wine. Formatting and diff
+checks pass. Wiki unit tests: 224 passed; local Cloudflare/D1 tests: 26 passed,
+including concurrent duplicate contributions and preservation of known entries.
+No real token, game snapshot, production upload or Windows live-game test used.
+
+Independent Codex reviews of both repositories completed without actionable
+findings, including the untracked automatic scheduler. Wiki check/build/budget
+gates passed (zero errors/warnings; 16,195 static files). Server implementation
+is committed locally in dcuo-wiki as 3b4d0a6. Both repositories remain local-only
+for this change; updated server deployment and companion packaging are required
+for installed users. Existing v0.1.0 release assets are unchanged.
