@@ -2,7 +2,7 @@ Unicode True
 !include "MUI2.nsh"
 !include "x64.nsh"
 !ifndef VERSION
-!define VERSION "0.1.0"
+!define VERSION "0.1.1"
 !endif
 !ifndef BINARY
 !define BINARY "..\target\release\dcuo-companion.exe"
@@ -36,6 +36,7 @@ Section "DCUO Companion" SEC_MAIN
   File "..\LICENSE"
   File "..\README.md"
   File "..\docs\release-0.1.md"
+  File "..\docs\release-0.1.1.md"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\DCUO Companion"
   CreateShortcut "$SMPROGRAMS\DCUO Companion\DCUO Companion.lnk" "$INSTDIR\dcuo-companion.exe"
@@ -57,6 +58,7 @@ Section "Uninstall"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\README.md"
   Delete "$INSTDIR\release-0.1.md"
+  Delete "$INSTDIR\release-0.1.1.md"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DCUO Companion"

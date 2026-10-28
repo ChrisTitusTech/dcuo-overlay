@@ -163,17 +163,17 @@ single-item price minus $1. Back on the same item, the next hotkey fills **Sell 
 without submitting. No arm button. Requires the supported 2560x1440 English layout
 and Tesseract; see [Broker workflow](docs/broker.md) for setup and limits.
 
-Wiki tokens in the current source version are saved automatically and restored
+Starting with 0.1.1, wiki tokens are saved automatically and restored
 on restart. Windows protects them with user-bound DPAPI encryption; Linux uses
 a separate user-owned 0600 file in a private configuration directory. **Clear
 token** removes the saved copy. Storage failures are shown in the Wiki tab.
-This behavior is newer than the published v0.1.0 packages.
+Version 0.1.0 required pasting the token after each restart.
 
-With a wiki token, the current source automatically checks loaded Census item IDs
+With a wiki token, version 0.1.1 automatically checks loaded Census item IDs
 and contributes unknown item definitions and available icons, even while another
 tab is open. Batches contain at most 50 IDs and run at least 90 seconds apart.
 The Wiki tab shows progress and offers **Pause automatic missing-item uploads**.
 The running character must match the linked wiki character. Existing wiki IDs
 are skipped. This covers supported item data, not every Census record type.
-Both the companion and wiki server must include the missing-only API update;
-older servers block automatic uploads. The published v0.1.0 packages are unchanged.
+Automatic uploads require the matching wiki server update; older servers block
+automatic uploads. See [0.1.1 release notes](docs/release-0.1.1.md).

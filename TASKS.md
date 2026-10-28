@@ -1805,3 +1805,12 @@ gates passed (zero errors/warnings; 16,195 static files). Server implementation
 is committed locally in dcuo-wiki as 3b4d0a6. Both repositories remain local-only
 for this change; updated server deployment and companion packaging are required
 for installed users. Existing v0.1.0 release assets are unchanged.
+
+## Publish wiki and companion 0.1.1 (2026-10-27, active)
+
+User explicitly authorizes updating both the wiki and companion installers.
+Deploy wiki 3b4d0a6, publish source on main, build/test native Linux and Windows
+packages, and publish a new v0.1.1 release with AppImage, RPM, EXE and SHA256SUMS.
+Preserve the original v0.1.0 release. Reuse passing source tests and independent
+reviews for unchanged implementation; validate version/packaging changes and
+new CI artifacts. Windows live-game acceptance remains the user's manual test.
